@@ -78,9 +78,6 @@ function _G.PF_ESP_Functions.DetectTeams()
     local playersFolder = Workspace:FindFirstChild("Players")
     if not playersFolder then return false end
     
-    teamFolders.friendly = nil
-    teamFolders.enemy = nil
-    
     for _, teamFolder in ipairs(playersFolder:GetChildren()) do
         if teamFolder:IsA("Folder") then
             for _, model in ipairs(teamFolder:GetChildren()) do
@@ -98,9 +95,9 @@ function _G.PF_ESP_Functions.DetectTeams()
                                 for _, other in ipairs(playersFolder:GetChildren()) do
                                     if other:IsA("Folder") and other.Name ~= teamFolders.friendly then
                                         teamFolders.enemy = other.Name
+                                        return true
                                     end
                                 end
-                                return true
                             end
                         end
                     end
@@ -139,7 +136,7 @@ local function getOrCreateCham(model)
     local cham = Instance.new("Highlight")
     cham.Name = "PF_Cham"
     cham.FillTransparency = settings.ChamFillTransparency
-    cham.OutlineTransparency = math.min(1, settings.ChamFillTransparency - 0.25)
+    cham.OutlineTransparency = 0.5
     cham.FillColor = settings.ChamColor
     cham.OutlineColor = settings.ChamColor
     cham.Adornee = model
@@ -268,7 +265,7 @@ local function updateESP()
             local centerPos = head and head.Position or parts[1].Position
             local dist = myPos and (myPos - centerPos).Magnitude or 0
             
-            -- Chams
+            -- Chams (show on all if team check off, enemies only if on)
             local showChams = settings.Chams and (not settings.TeamCheck or not isFriendly)
             if showChams then
                 local cham = getOrCreateCham(model)
@@ -278,7 +275,7 @@ local function updateESP()
                 removeCham(model)
             end
             
-            -- Skip friendly for ESP
+            -- Skip box/tracer for friendlies
             if isFriendly then
                 if espCache[model] then
                     for _, v in pairs(espCache[model]) do v.Visible = false end
@@ -363,3 +360,5 @@ task.spawn(function()
 end)
 
 RunService.RenderStepped:Connect(updateESP)
+
+print("PF ESP Engine loaded")
