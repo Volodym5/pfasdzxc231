@@ -26,7 +26,8 @@ local settings = _G.PF_ESP_Settings
 local espCache = {}
 local modelCache = {}
 local chamCache = {}
-local teamFolders = { friendly = nil, enemy = nil }
+local myTeamFolder = nil
+local enemyTeamFolder = nil
 local myPosCache = { pos = nil, time = 0 }
 local running = true
 
@@ -38,7 +39,7 @@ chamContainer.Parent = game:GetService("CoreGui")
 _G.PF_ESP_Functions = {}
 
 function _G.PF_ESP_Functions.GetTeamInfo()
-    return teamFolders
+    return { friendly = myTeamFolder, enemy = enemyTeamFolder }
 end
 
 function _G.PF_ESP_Functions.RefreshCache()
@@ -84,36 +85,40 @@ function _G.PF_ESP_Functions.DetectTeams()
     local playersFolder = Workspace:FindFirstChild("Players")
     if not playersFolder then return false end
     
-    teamFolders.friendly = nil
-    teamFolders.enemy = nil
+    myTeamFolder = nil
+    enemyTeamFolder = nil
     
     for _, teamFolder in ipairs(playersFolder:GetChildren()) do
         if teamFolder:IsA("Folder") then
+            local hasMatch = false
             for _, model in ipairs(teamFolder:GetChildren()) do
                 if model:IsA("Model") then
-                    local checked = 0
                     for _, part in ipairs(model:GetDescendants()) do
-                        if checked >= 10 then break end
-                        if part:IsA("BasePart") then
-                            checked = checked + 1
+                        if part:IsA("BasePart") and part.Transparency < 0.5 then
                             local bc = part.BrickColor
-                            if bc.Number == myColorNumber or
-                               bc.Name == "Earth blue" or
-                               bc.Name == "Royal blue" then
-                                teamFolders.friendly = teamFolder.Name
-                                for _, other in ipairs(playersFolder:GetChildren()) do
-                                    if other:IsA("Folder") and other.Name ~= teamFolders.friendly then
-                                        teamFolders.enemy = other.Name
-                                    end
-                                end
-                                return true
+                            if bc.Number == myColorNumber or bc.Name == "Earth blue" or bc.Name == "Royal blue" then
+                                myTeamFolder = teamFolder
+                                hasMatch = true
+                                break
                             end
                         end
                     end
+                    if hasMatch then break end
                 end
+            end
+            if hasMatch then break end
+        end
+    end
+    
+    if myTeamFolder then
+        for _, other in ipairs(playersFolder:GetChildren()) do
+            if other:IsA("Folder") and other ~= myTeamFolder then
+                enemyTeamFolder = other
+                return true
             end
         end
     end
+    
     return false
 end
 
@@ -231,7 +236,7 @@ local function updateESP()
     for _, teamFolder in ipairs(playersFolder:GetChildren()) do
         if not teamFolder:IsA("Folder") then continue end
         
-        local isFriendly = settings.TeamCheck and teamFolders.friendly and teamFolder.Name == teamFolders.friendly
+        local isFriendly = settings.TeamCheck and myTeamFolder and teamFolder == myTeamFolder
         
         for _, model in ipairs(teamFolder:GetChildren()) do
             if not model:IsA("Model") then continue end
@@ -281,7 +286,7 @@ local function updateESP()
             local dist = myPos and (myPos - centerPos).Magnitude or 0
             local inRange = dist < settings.MaxDistance
             
-            -- Chams - directly check settings.Chams here
+            -- Chams
             local showChams = settings.Chams and inRange and (not settings.TeamCheck or not isFriendly)
             if showChams then
                 local cham = getOrCreateCham(model)
@@ -373,7 +378,7 @@ end
 
 task.spawn(function()
     while task.wait(2) do
-        if not teamFolders.friendly then
+        if not myTeamFolder then
             _G.PF_ESP_Functions.DetectTeams()
         end
     end
