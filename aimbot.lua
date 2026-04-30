@@ -35,39 +35,75 @@ fovCircle.Color = Color3.fromRGB(255, 50, 50)
 fovCircle.Filled = false
 fovCircle.Transparency = 0.7
 
--- Get team color from player
-local function getPlayerTeamColor(player)
-    if not player.Character then return nil end
-    for _, part in ipairs(player.Character:GetDescendants()) do
-        if part:IsA("BasePart") and part.Transparency < 0.5 then
-            local bc = part.BrickColor
-            if bc.Name ~= "Black" and bc.Name ~= "White" and bc.Name ~= "Medium stone grey" and
-               bc.Name ~= "Cashmere" and bc.Name ~= "Seashell" and bc.Name ~= "Dark taupe" and
-               bc.Name ~= "Medium brown" and bc.Name ~= "Brown" and bc.Name ~= "Black metallic" then
-                return bc.Number, bc.Name
+-- Find the actual head part of a character model (highest visible part)
+local function getHeadPart(model)
+    local highest = nil
+    local highestY = -math.huge
+    
+    for _, part in ipairs(model:GetDescendants()) do
+        if part:IsA("BasePart") and part.Transparency < 0.7 then
+            if part.Position.Y > highestY then
+                highestY = part.Position.Y
+                highest = part
             end
         end
     end
-    return nil
+    
+    return highest
 end
 
--- Check if player is teammate
+-- Find torso (middle-height part) or fallback
+local function getTorsoPart(model)
+    local parts = {}
+    for _, part in ipairs(model:GetDescendants()) do
+        if part:IsA("BasePart") and part.Transparency < 0.7 then
+            table.insert(parts, part)
+        end
+    end
+    
+    if #parts == 0 then return nil end
+    
+    -- Sort by Y position
+    table.sort(parts, function(a, b) return a.Position.Y > b.Position.Y end)
+    
+    -- Return middle part
+    return parts[math.floor(#parts / 2)]
+end
+
+-- Get target part based on settings
+local function getTargetPart(character)
+    if settings.TargetPart == "Head" then
+        return getHeadPart(character)
+    elseif settings.TargetPart == "UpperTorso" then
+        return getTorsoPart(character)
+    elseif settings.TargetPart == "HumanoidRootPart" then
+        -- Just use the torso/center part
+        return getTorsoPart(character)
+    end
+    return getHeadPart(character)
+end
+
+-- Check if teammate
 local function isTeammate(player)
+    if not player.Character then return false end
     local myTeamColor = LocalPlayer.TeamColor
     if not myTeamColor then return false end
     
-    local playerColorNum, playerColorName = getPlayerTeamColor(player)
-    if not playerColorNum then return false end
+    local myColorNumber = myTeamColor.Number
     
-    if playerColorNum == myTeamColor.Number then return true end
-    if playerColorName == "Earth blue" or playerColorName == "Royal blue" then
-        return myTeamColor.Name == "Bright blue" or myTeamColor.Name == "Earth blue" or myTeamColor.Name == "Royal blue"
+    for _, part in ipairs(player.Character:GetDescendants()) do
+        if part:IsA("BasePart") and part.Transparency < 0.5 then
+            local bc = part.BrickColor
+            if bc.Number == myColorNumber or bc.Name == "Earth blue" or bc.Name == "Royal blue" then
+                return true
+            end
+        end
     end
     
     return false
 end
 
--- Get closest target to mouse within FOV
+-- Get closest target
 local function getClosestTarget()
     local closest = nil
     local shortestDist = settings.FOV
@@ -77,7 +113,7 @@ local function getClosestTarget()
         if player == LocalPlayer then continue end
         if not player.Character then continue end
         
-        local targetPart = player.Character:FindFirstChild(settings.TargetPart)
+        local targetPart = getTargetPart(player.Character)
         if not targetPart then continue end
         
         -- Team check
@@ -85,16 +121,13 @@ local function getClosestTarget()
         
         -- Visibility check
         if settings.VisibilityCheck then
-            local ignoreList = {LocalPlayer.Character, player.Character}
             local rayOrigin = Camera.CFrame.Position
             local rayDir = (targetPart.Position - rayOrigin).Unit * 1000
             local rayParams = RaycastParams.new()
-            rayParams.FilterDescendantsInstances = ignoreList
+            rayParams.FilterDescendantsInstances = {LocalPlayer.Character, player.Character}
             rayParams.FilterType = Enum.RaycastFilterType.Blacklist
             local rayResult = workspace:Raycast(rayOrigin, rayDir, rayParams)
-            if rayResult and rayResult.Instance:IsDescendantOf(player.Character) == false then
-                continue
-            end
+            if rayResult then continue end
         end
         
         local screenPos, onScreen = Camera:WorldToViewportPoint(targetPart.Position)
@@ -110,7 +143,7 @@ local function getClosestTarget()
     return closest
 end
 
--- FOV circle update
+-- FOV circle
 task.spawn(function()
     while task.wait() do
         if settings.ShowFOV then
@@ -125,7 +158,7 @@ task.spawn(function()
     end
 end)
 
--- Track RMB state
+-- Track RMB
 UIS.InputBegan:Connect(function(input, gameProcessed)
     if gameProcessed then return end
     if input.UserInputType == Enum.UserInputType.MouseButton2 then
@@ -147,7 +180,7 @@ RunService.RenderStepped:Connect(function()
     local target = getClosestTarget()
     if not target then return end
     
-    local targetPart = target.Character:FindFirstChild(settings.TargetPart)
+    local targetPart = getTargetPart(target.Character)
     if not targetPart then return end
     
     local targetPos = targetPart.Position
@@ -171,4 +204,4 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
-print("PF Aimbot Engine loaded")
+print("PF Aimbot loaded")
