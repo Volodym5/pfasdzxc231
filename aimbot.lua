@@ -1,4 +1,4 @@
--- Phantom Forces Aimbot
+-- Phantom Forces Aimbot with Debug
 
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
@@ -36,7 +36,17 @@ fovCircle.Color = Color3.fromRGB(255, 50, 50)
 fovCircle.Filled = false
 fovCircle.Transparency = 0.7
 
--- Debug lines to show what the aimbot sees
+-- Debug text
+local debugText = Drawing.new("Text")
+debugText.Visible = false
+debugText.Size = 14
+debugText.Color = Color3.fromRGB(255, 255, 255)
+debugText.Center = true
+debugText.Outline = true
+debugText.Font = Drawing.Fonts.Monospace
+debugText.Position = Vector2.new(200, 200)
+
+-- Debug lines
 local debugLines = {}
 local function clearDebugLines()
     for _, line in ipairs(debugLines) do
@@ -53,25 +63,27 @@ local function addDebugLine(from, to, color)
     line.Thickness = 1
     line.Transparency = 0.5
     table.insert(debugLines, line)
-    return line
 end
 
--- Find head (highest part)
+-- Find all parts that could be a head
 local function getHeadPart(model)
     local highest = nil
     local highestY = -math.huge
+    local partCount = 0
+    
     for _, part in ipairs(model:GetDescendants()) do
-        if part:IsA("BasePart") and part.Transparency < 0.7 then
-            if part.Position.Y > highestY then
+        if part:IsA("BasePart") then
+            partCount = partCount + 1
+            if part.Transparency < 0.7 and part.Position.Y > highestY then
                 highestY = part.Position.Y
                 highest = part
             end
         end
     end
-    return highest
+    
+    return highest, partCount
 end
 
--- Find torso (middle part)
 local function getTorsoPart(model)
     local parts = {}
     for _, part in ipairs(model:GetDescendants()) do
@@ -86,9 +98,10 @@ end
 
 local function getTargetPart(character)
     if settings.TargetPart == "Head" then
-        return getHeadPart(character)
+        local head, count = getHeadPart(character)
+        return head, count
     else
-        return getTorsoPart(character)
+        return getTorsoPart(character), 0
     end
 end
 
@@ -117,24 +130,62 @@ local function getClosestTarget()
     local shortestDist = settings.FOV
     local mousePos = Vector2.new(Mouse.X, Mouse.Y)
     local guiInset = game:GetService("GuiService"):GetGuiInset()
+    local debugInfo = ""
     
+    -- First, check workspace.Players folder
+    local playersFolder = workspace:FindFirstChild("Players")
+    local folderModels = 0
+    
+    if playersFolder then
+        for _, teamFolder in ipairs(playersFolder:GetChildren()) do
+            if teamFolder:IsA("Folder") then
+                for _, model in ipairs(teamFolder:GetChildren()) do
+                    if model:IsA("Model") then
+                        folderModels = folderModels + 1
+                    end
+                end
+            end
+        end
+    end
+    
+    -- Check all players via Players service
     for _, player in ipairs(Players:GetPlayers()) do
         if player == LocalPlayer then continue end
-        if not player.Character then continue end
         
-        local targetPart = getTargetPart(player.Character)
-        if not targetPart then continue end
+        local char = player.Character
+        if not char then continue end
         
-        if settings.TeamCheck and isTeammate(player) then continue end
+        local targetPart, partCount = getTargetPart(char)
+        
+        if not targetPart then
+            -- Try finding any part
+            local anyPart = char:FindFirstChildWhichIsA("BasePart")
+            if not anyPart then
+                -- Check if character model has children
+                local childCount = 0
+                for _ in ipairs(char:GetChildren()) do childCount = childCount + 1 end
+                debugInfo = debugInfo .. player.Name .. ": no parts (" .. childCount .. " children)\n"
+            else
+                debugInfo = debugInfo .. player.Name .. ": has parts but no target\n"
+            end
+            continue
+        end
+        
+        if settings.TeamCheck and isTeammate(player) then
+            debugInfo = debugInfo .. player.Name .. ": teammate (skip)\n"
+            continue
+        end
         
         local screenPos, onScreen = Camera:WorldToViewportPoint(targetPart.Position)
-        if not onScreen then continue end
+        if not onScreen then
+            debugInfo = debugInfo .. player.Name .. ": off screen\n"
+            continue
+        end
         
         local dist = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude
         
-        -- Debug: show line to every valid target in FOV
-        if settings.ShowDebug and dist < settings.FOV then
-            local color = (closest == nil or dist < shortestDist) and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 100, 100)
+        if settings.ShowDebug and dist < settings.FOV * 2 then
+            local color = dist < settings.FOV and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 100, 100)
             addDebugLine(
                 Vector2.new(Mouse.X, Mouse.Y + guiInset.Y),
                 Vector2.new(screenPos.X, screenPos.Y),
@@ -148,17 +199,19 @@ local function getClosestTarget()
         end
     end
     
-    -- Highlight selected target with bright line
-    if closest and settings.ShowDebug then
-        local tp = getTargetPart(closest.Character)
-        if tp then
-            local sp = Camera:WorldToViewportPoint(tp.Position)
-            addDebugLine(
-                Vector2.new(Mouse.X, Mouse.Y + guiInset.Y),
-                Vector2.new(sp.X, sp.Y),
-                Color3.fromRGB(0, 255, 255)
-            )
-        end
+    -- Show debug info
+    if settings.ShowDebug then
+        debugInfo = debugInfo .. "Folder models: " .. folderModels .. "\n"
+        debugInfo = debugInfo .. "Players: " .. (#Players:GetPlayers() - 1) .. "\n"
+        debugInfo = debugInfo .. "Closest: " .. (closest and closest.Name or "none") .. "\n"
+        debugInfo = debugInfo .. "Dist: " .. (closest and math.floor(shortestDist) or "N/A") .. "\n"
+        debugInfo = debugInfo .. "FOV: " .. settings.FOV
+        
+        debugText.Visible = true
+        debugText.Text = debugInfo
+        debugText.Position = Vector2.new(Camera.ViewportSize.X / 2, 50)
+    else
+        debugText.Visible = false
     end
     
     return closest
@@ -179,7 +232,7 @@ task.spawn(function()
     end
 end)
 
--- Hold RMB to lock
+-- Hold RMB
 UIS.InputBegan:Connect(function(input, gameProcessed)
     if gameProcessed then return end
     if input.UserInputType == Enum.UserInputType.MouseButton2 then
@@ -191,6 +244,7 @@ UIS.InputEnded:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton2 then
         locked = false
         clearDebugLines()
+        debugText.Visible = false
     end
 end)
 
@@ -198,22 +252,24 @@ end)
 RunService.RenderStepped:Connect(function()
     if not settings.Enabled then
         clearDebugLines()
+        debugText.Visible = false
         return
     end
+    
     if not locked then
         clearDebugLines()
+        debugText.Visible = false
         return
     end
     
     local target = getClosestTarget()
     if not target then return end
     
-    local targetPart = getTargetPart(target.Character)
+    local targetPart, _ = getTargetPart(target.Character)
     if not targetPart then return end
     
     local targetPos = targetPart.Position
     
-    -- Prediction
     if settings.Prediction and targetPart.Velocity then
         targetPos = targetPos + targetPart.Velocity * settings.PredAmount / 100
     end
