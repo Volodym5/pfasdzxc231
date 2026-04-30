@@ -28,6 +28,7 @@ local chamCache = {}
 local teamFolders = { friendly = nil, enemy = nil }
 local myPosCache = { pos = nil, time = 0 }
 local running = true
+local needsRefresh = false
 
 _G.PF_ESP_Functions = {}
 
@@ -42,19 +43,18 @@ function _G.PF_ESP_Functions.GetESPCount()
 end
 
 function _G.PF_ESP_Functions.ForceRefresh()
-    -- Clear all caches so everything rebuilds next frame
-    modelCache = {}
-    for model, _ in pairs(espCache) do
-        removeESP(model)
-    end
-    for model, _ in pairs(chamCache) do
-        removeCham(model)
-    end
+    needsRefresh = true
 end
 
 function _G.PF_ESP_Functions.Stop()
     running = false
-    _G.PF_ESP_Functions.ForceRefresh()
+    for _, d in pairs(espCache) do
+        for _, v in pairs(d) do pcall(function() v:Remove() end) end
+    end
+    for _, c in pairs(chamCache) do pcall(function() c:Destroy() end) end
+    espCache = {}
+    modelCache = {}
+    chamCache = {}
 end
 
 function _G.PF_ESP_Functions.Start()
@@ -118,23 +118,14 @@ local function getOrCreateESP(model)
     
     local d = {}
     
-    local hasBox = settings.Boxes
-    local hasTracer = settings.Tracers
-    
-    -- Check if we should even create these
-    if not hasBox and not hasTracer then
-        espCache[model] = {}
-        return {}
-    end
-    
-    if hasBox then
+    if settings.Boxes then
         d.box = Drawing.new("Square")
         d.box.Visible = false
         d.box.Filled = false
         d.box.Transparency = 1
     end
     
-    if hasTracer then
+    if settings.Tracers then
         d.tracer = Drawing.new("Line")
         d.tracer.Visible = false
         d.tracer.Transparency = 1
@@ -146,6 +137,8 @@ end
 
 local function getOrCreateCham(model)
     if chamCache[model] then return chamCache[model] end
+    
+    if not settings.Chams then return nil end
     
     local cham = Instance.new("Highlight")
     cham.Name = "PF_Cham"
@@ -215,31 +208,39 @@ local function getMyPosition()
     return nil
 end
 
--- Track previous settings to detect changes
-local prevSettings = {}
-local function settingsChanged()
-    local changed = false
-    for k, v in pairs(settings) do
-        if prevSettings[k] ~= v then
-            changed = true
-            break
+-- Watch for setting changes
+local settingWatchers = {}
+do
+    local mt = {
+        __newindex = function(_, key, value)
+            local old = settings[key]
+            rawset(settings, key, value)
+            if old ~= value then
+                needsRefresh = true
+            end
         end
+    }
+    setmetatable(settings, mt)
+end
+
+local function doRefresh()
+    -- Destroy all existing ESP and chams
+    for _, d in pairs(espCache) do
+        for _, v in pairs(d) do pcall(function() v:Remove() end) end
     end
-    
-    -- Update prevSettings
-    for k, v in pairs(settings) do
-        prevSettings[k] = v
-    end
-    
-    return changed
+    for _, c in pairs(chamCache) do pcall(function() c:Destroy() end) end
+    espCache = {}
+    chamCache = {}
+    modelCache = {}
+    needsRefresh = false
 end
 
 local function updateESP()
     if not running then return end
     
-    -- If settings changed, force rebuild
-    if settingsChanged() then
-        _G.PF_ESP_Functions.ForceRefresh()
+    -- Handle refresh
+    if needsRefresh then
+        doRefresh()
     end
     
     local playersFolder = Workspace:FindFirstChild("Players")
@@ -307,8 +308,10 @@ local function updateESP()
             local showChams = settings.Chams and (not settings.TeamCheck or not isFriendly)
             if showChams then
                 local cham = getOrCreateCham(model)
-                cham.Enabled = dist < settings.MaxDistance
-                updateCham(cham)
+                if cham then
+                    cham.Enabled = dist < settings.MaxDistance
+                    updateCham(cham)
+                end
             else
                 removeCham(model)
             end
