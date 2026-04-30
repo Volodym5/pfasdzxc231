@@ -41,15 +41,20 @@ function _G.PF_ESP_Functions.GetESPCount()
     return count
 end
 
+function _G.PF_ESP_Functions.ForceRefresh()
+    -- Clear all caches so everything rebuilds next frame
+    modelCache = {}
+    for model, _ in pairs(espCache) do
+        removeESP(model)
+    end
+    for model, _ in pairs(chamCache) do
+        removeCham(model)
+    end
+end
+
 function _G.PF_ESP_Functions.Stop()
     running = false
-    for _, d in pairs(espCache) do
-        for _, v in pairs(d) do pcall(function() v:Remove() end) end
-    end
-    for _, c in pairs(chamCache) do pcall(function() c:Destroy() end) end
-    espCache = {}
-    modelCache = {}
-    chamCache = {}
+    _G.PF_ESP_Functions.ForceRefresh()
 end
 
 function _G.PF_ESP_Functions.Start()
@@ -113,14 +118,23 @@ local function getOrCreateESP(model)
     
     local d = {}
     
-    if settings.Boxes then
+    local hasBox = settings.Boxes
+    local hasTracer = settings.Tracers
+    
+    -- Check if we should even create these
+    if not hasBox and not hasTracer then
+        espCache[model] = {}
+        return {}
+    end
+    
+    if hasBox then
         d.box = Drawing.new("Square")
         d.box.Visible = false
         d.box.Filled = false
         d.box.Transparency = 1
     end
     
-    if settings.Tracers then
+    if hasTracer then
         d.tracer = Drawing.new("Line")
         d.tracer.Visible = false
         d.tracer.Transparency = 1
@@ -136,7 +150,7 @@ local function getOrCreateCham(model)
     local cham = Instance.new("Highlight")
     cham.Name = "PF_Cham"
     cham.FillTransparency = settings.ChamFillTransparency
-    cham.OutlineTransparency = 0.5
+    cham.OutlineTransparency = math.min(1, settings.ChamFillTransparency - 0.25)
     cham.FillColor = settings.ChamColor
     cham.OutlineColor = settings.ChamColor
     cham.Adornee = model
@@ -201,8 +215,32 @@ local function getMyPosition()
     return nil
 end
 
+-- Track previous settings to detect changes
+local prevSettings = {}
+local function settingsChanged()
+    local changed = false
+    for k, v in pairs(settings) do
+        if prevSettings[k] ~= v then
+            changed = true
+            break
+        end
+    end
+    
+    -- Update prevSettings
+    for k, v in pairs(settings) do
+        prevSettings[k] = v
+    end
+    
+    return changed
+end
+
 local function updateESP()
     if not running then return end
+    
+    -- If settings changed, force rebuild
+    if settingsChanged() then
+        _G.PF_ESP_Functions.ForceRefresh()
+    end
     
     local playersFolder = Workspace:FindFirstChild("Players")
     if not playersFolder then return end
@@ -265,7 +303,7 @@ local function updateESP()
             local centerPos = head and head.Position or parts[1].Position
             local dist = myPos and (myPos - centerPos).Magnitude or 0
             
-            -- Chams (show on all if team check off, enemies only if on)
+            -- Chams
             local showChams = settings.Chams and (not settings.TeamCheck or not isFriendly)
             if showChams then
                 local cham = getOrCreateCham(model)
