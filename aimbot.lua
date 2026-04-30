@@ -1,4 +1,4 @@
--- Phantom Forces Aimbot with Debug
+-- Phantom Forces Aimbot
 
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
@@ -25,6 +25,8 @@ _G.PF_Aimbot_Settings = _G.PF_Aimbot_Settings or {
 
 local settings = _G.PF_Aimbot_Settings
 local locked = false
+local myTeamFolder = nil
+local enemyTeamFolder = nil
 
 -- FOV circle
 local fovCircle = Drawing.new("Circle")
@@ -65,25 +67,58 @@ local function addDebugLine(from, to, color)
     table.insert(debugLines, line)
 end
 
--- Find all parts that could be a head
-local function getHeadPart(model)
-    local highest = nil
-    local highestY = -math.huge
-    local partCount = 0
+-- Detect teams by finding which folder has OUR TeamColor
+local function detectTeams()
+    myTeamFolder = nil
+    enemyTeamFolder = nil
     
-    for _, part in ipairs(model:GetDescendants()) do
-        if part:IsA("BasePart") then
-            partCount = partCount + 1
-            if part.Transparency < 0.7 and part.Position.Y > highestY then
-                highestY = part.Position.Y
-                highest = part
+    local myTeamColor = LocalPlayer.TeamColor
+    if not myTeamColor then return false end
+    
+    local myColorNumber = myTeamColor.Number
+    local playersFolder = workspace:FindFirstChild("Players")
+    if not playersFolder then return false end
+    
+    for _, teamFolder in ipairs(playersFolder:GetChildren()) do
+        if teamFolder:IsA("Folder") then
+            for _, model in ipairs(teamFolder:GetChildren()) do
+                if model:IsA("Model") then
+                    for _, part in ipairs(model:GetDescendants()) do
+                        if part:IsA("BasePart") and part.Transparency < 0.5 then
+                            local bc = part.BrickColor
+                            if bc.Number == myColorNumber or bc.Name == "Earth blue" or bc.Name == "Royal blue" then
+                                myTeamFolder = teamFolder
+                                -- Find the other folder
+                                for _, other in ipairs(playersFolder:GetChildren()) do
+                                    if other:IsA("Folder") and other ~= myTeamFolder then
+                                        enemyTeamFolder = other
+                                    end
+                                end
+                                return true
+                            end
+                        end
+                    end
+                end
             end
         end
     end
-    
-    return highest, partCount
+    return false
 end
 
+-- Find head (highest part of a model)
+local function getHeadPart(model)
+    local highest = nil
+    local highestY = -math.huge
+    for _, part in ipairs(model:GetDescendants()) do
+        if part:IsA("BasePart") and part.Transparency < 0.7 and part.Position.Y > highestY then
+            highestY = part.Position.Y
+            highest = part
+        end
+    end
+    return highest, highestY
+end
+
+-- Find torso (middle part)
 local function getTorsoPart(model)
     local parts = {}
     for _, part in ipairs(model:GetDescendants()) do
@@ -96,125 +131,95 @@ local function getTorsoPart(model)
     return parts[math.floor(#parts / 2)]
 end
 
-local function getTargetPart(character)
+local function getTargetPart(model)
     if settings.TargetPart == "Head" then
-        local head, count = getHeadPart(character)
-        return head, count
+        return getHeadPart(model)
     else
-        return getTorsoPart(character), 0
+        return getTorsoPart(model)
     end
 end
 
--- Team check
-local function isTeammate(player)
-    if not player.Character then return false end
-    local myTeamColor = LocalPlayer.TeamColor
-    if not myTeamColor then return false end
-    local myColorNumber = myTeamColor.Number
-    for _, part in ipairs(player.Character:GetDescendants()) do
-        if part:IsA("BasePart") and part.Transparency < 0.5 then
-            local bc = part.BrickColor
-            if bc.Number == myColorNumber or bc.Name == "Earth blue" or bc.Name == "Royal blue" then
-                return true
-            end
-        end
-    end
-    return false
-end
-
--- Get closest target
+-- Get closest enemy model from workspace.Players
 local function getClosestTarget()
     clearDebugLines()
     
     local closest = nil
+    local closestPart = nil
     local shortestDist = settings.FOV
     local mousePos = Vector2.new(Mouse.X, Mouse.Y)
     local guiInset = game:GetService("GuiService"):GetGuiInset()
     local debugInfo = ""
     
-    -- First, check workspace.Players folder
+    -- Re-detect teams if needed
+    if not myTeamFolder then
+        detectTeams()
+    end
+    
     local playersFolder = workspace:FindFirstChild("Players")
-    local folderModels = 0
+    if not playersFolder then
+        debugText.Text = "No Players folder"
+        debugText.Visible = true
+        return nil
+    end
     
-    if playersFolder then
-        for _, teamFolder in ipairs(playersFolder:GetChildren()) do
-            if teamFolder:IsA("Folder") then
-                for _, model in ipairs(teamFolder:GetChildren()) do
-                    if model:IsA("Model") then
-                        folderModels = folderModels + 1
-                    end
-                end
+    local totalModels = 0
+    local enemyModels = 0
+    
+    -- Only scan ENEMY team folder
+    local targetFolder = settings.TeamCheck and enemyTeamFolder or playersFolder
+    local foldersToScan = settings.TeamCheck and {enemyTeamFolder} or playersFolder:GetChildren()
+    
+    for _, folder in ipairs(foldersToScan) do
+        if not folder or not folder:IsA("Folder") then continue end
+        
+        for _, model in ipairs(folder:GetChildren()) do
+            if not model:IsA("Model") then continue end
+            totalModels = totalModels + 1
+            
+            if settings.TeamCheck and folder == myTeamFolder then continue end
+            enemyModels = enemyModels + 1
+            
+            local targetPart = getTargetPart(model)
+            if not targetPart then continue end
+            
+            local screenPos, onScreen = Camera:WorldToViewportPoint(targetPart.Position)
+            if not onScreen then continue end
+            
+            local dist = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude
+            
+            if settings.ShowDebug and dist < settings.FOV * 2 then
+                local color = dist < settings.FOV and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 100, 100)
+                addDebugLine(
+                    Vector2.new(Mouse.X, Mouse.Y + guiInset.Y),
+                    Vector2.new(screenPos.X, screenPos.Y),
+                    color
+                )
+            end
+            
+            if dist < shortestDist then
+                shortestDist = dist
+                closest = model
+                closestPart = targetPart
             end
         end
     end
     
-    -- Check all players via Players service
-    for _, player in ipairs(Players:GetPlayers()) do
-        if player == LocalPlayer then continue end
-        
-        local char = player.Character
-        if not char then continue end
-        
-        local targetPart, partCount = getTargetPart(char)
-        
-        if not targetPart then
-            -- Try finding any part
-            local anyPart = char:FindFirstChildWhichIsA("BasePart")
-            if not anyPart then
-                -- Check if character model has children
-                local childCount = 0
-                for _ in ipairs(char:GetChildren()) do childCount = childCount + 1 end
-                debugInfo = debugInfo .. player.Name .. ": no parts (" .. childCount .. " children)\n"
-            else
-                debugInfo = debugInfo .. player.Name .. ": has parts but no target\n"
-            end
-            continue
-        end
-        
-        if settings.TeamCheck and isTeammate(player) then
-            debugInfo = debugInfo .. player.Name .. ": teammate (skip)\n"
-            continue
-        end
-        
-        local screenPos, onScreen = Camera:WorldToViewportPoint(targetPart.Position)
-        if not onScreen then
-            debugInfo = debugInfo .. player.Name .. ": off screen\n"
-            continue
-        end
-        
-        local dist = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude
-        
-        if settings.ShowDebug and dist < settings.FOV * 2 then
-            local color = dist < settings.FOV and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 100, 100)
-            addDebugLine(
-                Vector2.new(Mouse.X, Mouse.Y + guiInset.Y),
-                Vector2.new(screenPos.X, screenPos.Y),
-                color
-            )
-        end
-        
-        if dist < shortestDist then
-            shortestDist = dist
-            closest = player
-        end
-    end
-    
-    -- Show debug info
     if settings.ShowDebug then
-        debugInfo = debugInfo .. "Folder models: " .. folderModels .. "\n"
-        debugInfo = debugInfo .. "Players: " .. (#Players:GetPlayers() - 1) .. "\n"
-        debugInfo = debugInfo .. "Closest: " .. (closest and closest.Name or "none") .. "\n"
-        debugInfo = debugInfo .. "Dist: " .. (closest and math.floor(shortestDist) or "N/A") .. "\n"
+        debugInfo = debugInfo .. "My team: " .. (myTeamFolder and myTeamFolder.Name or "?") .. "\n"
+        debugInfo = debugInfo .. "Enemy team: " .. (enemyTeamFolder and enemyTeamFolder.Name or "?") .. "\n"
+        debugInfo = debugInfo .. "Total models: " .. totalModels .. "\n"
+        debugInfo = debugInfo .. "Enemy models: " .. enemyModels .. "\n"
+        debugInfo = debugInfo .. "Closest dist: " .. (closest and math.floor(shortestDist) or "none") .. "\n"
         debugInfo = debugInfo .. "FOV: " .. settings.FOV
         
         debugText.Visible = true
         debugText.Text = debugInfo
-        debugText.Position = Vector2.new(Camera.ViewportSize.X / 2, 50)
+        debugText.Position = Vector2.new(Camera.ViewportSize.X / 2, 60)
     else
         debugText.Visible = false
     end
     
-    return closest
+    return closest, closestPart
 end
 
 -- FOV circle
@@ -262,11 +267,8 @@ RunService.RenderStepped:Connect(function()
         return
     end
     
-    local target = getClosestTarget()
-    if not target then return end
-    
-    local targetPart, _ = getTargetPart(target.Character)
-    if not targetPart then return end
+    local model, targetPart = getClosestTarget()
+    if not model or not targetPart then return end
     
     local targetPos = targetPart.Position
     
@@ -287,4 +289,11 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
-print("PF Aimbot loaded")
+-- Re-detect teams every 3 seconds
+task.spawn(function()
+    while task.wait(3) do
+        detectTeams()
+    end
+end)
+
+print("PF Aimbot loaded - scans workspace.Players directly")
