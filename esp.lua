@@ -29,16 +29,15 @@ local teamFolders = { friendly = nil, enemy = nil }
 local myPosCache = { pos = nil, time = 0 }
 local running = true
 
+-- Safer container for Highlights (not parented to enemy models)
+local chamContainer = Instance.new("Folder")
+chamContainer.Name = "PF_ESP_Chams"
+chamContainer.Parent = game:GetService("CoreGui")
+
 _G.PF_ESP_Functions = {}
 
 function _G.PF_ESP_Functions.GetTeamInfo()
     return teamFolders
-end
-
-function _G.PF_ESP_Functions.GetESPCount()
-    local count = 0
-    for _ in pairs(espCache) do count = count + 1 end
-    return count
 end
 
 function _G.PF_ESP_Functions.Stop()
@@ -137,13 +136,10 @@ local function getOrCreateCham(model)
     if chamCache[model] then return chamCache[model] end
     
     local cham = Instance.new("Highlight")
-    cham.Name = "PF_Cham"
-    cham.FillTransparency = settings.ChamFillTransparency
-    cham.OutlineTransparency = math.min(1, settings.ChamFillTransparency - 0.25)
-    cham.FillColor = settings.ChamColor
-    cham.OutlineColor = settings.ChamColor
+    cham.Name = model.Name
     cham.Adornee = model
-    cham.Parent = model
+    cham.Parent = chamContainer
+    cham.Enabled = false
     
     chamCache[model] = cham
     return cham
@@ -267,18 +263,23 @@ local function updateESP()
             
             local centerPos = head and head.Position or parts[1].Position
             local dist = myPos and (myPos - centerPos).Magnitude or 0
+            local inRange = dist < settings.MaxDistance
             
             -- Chams
-            local showChams = settings.Chams and (not settings.TeamCheck or not isFriendly)
+            local showChams = settings.Chams and inRange and (not settings.TeamCheck or not isFriendly)
             if showChams then
                 local cham = getOrCreateCham(model)
-                cham.Enabled = dist < settings.MaxDistance
-                updateCham(cham)
+                if cham then
+                    cham.Enabled = true
+                    updateCham(cham)
+                end
             else
-                removeCham(model)
+                if chamCache[model] then
+                    chamCache[model].Enabled = false
+                end
             end
             
-            -- Skip friendly for ESP
+            -- Skip friendly for boxes/tracers
             if isFriendly then
                 if espCache[model] then
                     for _, v in pairs(espCache[model]) do v.Visible = false end
@@ -315,7 +316,7 @@ local function updateESP()
             end
             
             local cs = Camera:WorldToViewportPoint(centerPos)
-            local show = mz > 0 and dist < settings.MaxDistance
+            local show = mz > 0 and inRange
             
             if d.box then
                 d.box.Visible = show
