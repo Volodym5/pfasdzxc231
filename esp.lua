@@ -13,6 +13,7 @@ _G.PF_ESP_Settings = _G.PF_ESP_Settings or {
     Chams = false,
     MaxDistance = 800,
     TeamCheck = true,
+    TracerFromCrosshair = false,
     EnemyColor = Color3.fromRGB(255, 50, 50),
     BoxThickness = 1,
     TracerThickness = 1,
@@ -29,15 +30,19 @@ local teamFolders = { friendly = nil, enemy = nil }
 local myPosCache = { pos = nil, time = 0 }
 local running = true
 
--- Safer container for Highlights (not parented to enemy models)
+-- Randomized container for Highlights
 local chamContainer = Instance.new("Folder")
-chamContainer.Name = "PF_ESP_Chams"
+chamContainer.Name = "RBX_" .. tostring(math.random(100000, 999999))
 chamContainer.Parent = game:GetService("CoreGui")
 
 _G.PF_ESP_Functions = {}
 
 function _G.PF_ESP_Functions.GetTeamInfo()
     return teamFolders
+end
+
+function _G.PF_ESP_Functions.RefreshCache()
+    modelCache = {}
 end
 
 function _G.PF_ESP_Functions.Stop()
@@ -156,7 +161,8 @@ local function updateCham(cham)
     cham.FillColor = settings.ChamColor
     cham.OutlineColor = settings.ChamColor
     cham.FillTransparency = settings.ChamFillTransparency
-    cham.OutlineTransparency = math.min(1, settings.ChamFillTransparency - 0.25)
+    -- Slight random offset to avoid exact value detection
+    cham.OutlineTransparency = math.min(0.99, settings.ChamFillTransparency - 0.23 + math.random() * 0.04)
 end
 
 local function removeESP(model)
@@ -219,6 +225,7 @@ local function updateESP()
     local vs = Camera.ViewportSize
     local screenCX = vs.X / 2
     local screenBY = vs.Y
+    local tracerOriginY = settings.TracerFromCrosshair and (vs.Y / 2) or vs.Y
     
     for _, teamFolder in ipairs(playersFolder:GetChildren()) do
         if not teamFolder:IsA("Folder") then continue end
@@ -236,7 +243,7 @@ local function updateESP()
                 local hy = -math.huge
                 
                 for _, part in ipairs(model:GetDescendants()) do
-                    if part:IsA("BasePart") and part.Transparency < 0.7 then
+                    if part:IsA("BasePart") and part.Transparency < 0.95 then
                         parts[#parts + 1] = part
                         local py = part.Position.Y
                         if py > hy then
@@ -253,11 +260,20 @@ local function updateESP()
             local parts = md.p
             local head = md.h
             
-            if #parts == 0 then
+            -- Check if any parts are actually visible (not death fade)
+            local anyVisible = false
+            for _, part in ipairs(parts) do
+                if part.Transparency < 0.95 then
+                    anyVisible = true
+                    break
+                end
+            end
+            
+            if not anyVisible or #parts == 0 then
                 if espCache[model] then
                     for _, v in pairs(espCache[model]) do v.Visible = false end
                 end
-                removeCham(model)
+                if chamCache[model] then chamCache[model].Enabled = false end
                 continue
             end
             
@@ -279,7 +295,7 @@ local function updateESP()
                 end
             end
             
-            -- Skip friendly for boxes/tracers
+            -- Skip friendly for ESP
             if isFriendly then
                 if espCache[model] then
                     for _, v in pairs(espCache[model]) do v.Visible = false end
@@ -289,9 +305,11 @@ local function updateESP()
             
             local d = getOrCreateESP(model)
             
+            -- Bounding box with fixed max sample count
             local mx, my, Mx, My = math.huge, math.huge, -math.huge, -math.huge
             local mz = math.huge
-            local step = math.max(1, math.floor(#parts / 8))
+            local maxParts = math.min(#parts, 12)
+            local step = math.max(1, math.floor(#parts / maxParts))
             
             for i = 1, #parts, step do
                 local part = parts[i]
@@ -333,7 +351,7 @@ local function updateESP()
                 if show then
                     d.tracer.Color = settings.EnemyColor
                     d.tracer.Thickness = settings.TracerThickness
-                    d.tracer.From = Vector2.new(screenCX, screenBY)
+                    d.tracer.From = Vector2.new(screenCX, tracerOriginY)
                     d.tracer.To = Vector2.new(cs.X, cs.Y)
                 end
             end
