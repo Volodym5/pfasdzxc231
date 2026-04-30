@@ -1,5 +1,6 @@
--- Phantom Forces ESP - Rendering Logic Only
--- Settings are controlled externally via _G.PF_ESP_Settings
+-- Phantom Forces ESP - Rendering Engine
+-- Settings controlled via _G.PF_ESP_Settings
+-- Functions exposed via _G.PF_ESP_Functions
 
 local Workspace = workspace
 local Players = game:GetService("Players")
@@ -7,7 +8,7 @@ local LocalPlayer = Players.LocalPlayer
 local Camera = Workspace.CurrentCamera
 local RunService = game:GetService("RunService")
 
--- Shared settings table
+-- Settings table (modified by external UI)
 _G.PF_ESP_Settings = _G.PF_ESP_Settings or {
     Enabled = true,
     Boxes = true,
@@ -17,7 +18,6 @@ _G.PF_ESP_Settings = _G.PF_ESP_Settings or {
     MaxDistance = 800,
     TeamCheck = true,
     EnemyColor = Color3.fromRGB(255, 50, 50),
-    FriendlyColor = Color3.fromRGB(50, 255, 50),
     BoxThickness = 2,
     TracerThickness = 1,
     FontSize = 13
@@ -25,13 +25,42 @@ _G.PF_ESP_Settings = _G.PF_ESP_Settings or {
 
 local settings = _G.PF_ESP_Settings
 
--- Cache
+-- Internal state
 local espCache = {}
 local modelCache = {}
 local teamFolders = { friendly = nil, enemy = nil }
 local myPosCache = { pos = nil, time = 0 }
+local running = true
 
--- Pre-computed corner offsets
+-- Functions exposed to main script
+_G.PF_ESP_Functions = {}
+
+function _G.PF_ESP_Functions.GetTeamInfo()
+    return teamFolders
+end
+
+function _G.PF_ESP_Functions.GetESPCount()
+    local count = 0
+    for _ in pairs(espCache) do count = count + 1 end
+    return count
+end
+
+function _G.PF_ESP_Functions.Stop()
+    running = false
+    for _, d in pairs(espCache) do
+        for _, v in pairs(d) do
+            pcall(function() v:Remove() end)
+        end
+    end
+    espCache = {}
+    modelCache = {}
+end
+
+function _G.PF_ESP_Functions.Start()
+    running = true
+end
+
+-- Corner calculation
 local function getCorners(cf, size)
     local sx, sy, sz = size.X * 0.5, size.Y * 0.5, size.Z * 0.5
     return {
@@ -46,8 +75,8 @@ local function getCorners(cf, size)
     }
 end
 
--- Detect teams
-local function detectTeams()
+-- Detect which team folder is friendly
+function _G.PF_ESP_Functions.DetectTeams()
     local myTeamColor = LocalPlayer.TeamColor
     if not myTeamColor then return false end
     
@@ -170,6 +199,8 @@ end
 
 -- Main update
 local function updateESP()
+    if not running then return end
+    
     if not settings.Enabled then
         for _, d in pairs(espCache) do
             for _, v in pairs(d) do v.Visible = false end
@@ -230,7 +261,7 @@ local function updateESP()
             
             local d = getOrCreateESP(model)
             
-            -- Bounding box (skip parts for performance)
+            -- Bounding box
             local mx, my, Mx, My = math.huge, math.huge, -math.huge, -math.huge
             local mz = math.huge
             local step = math.max(1, math.floor(#parts / 8))
@@ -325,21 +356,14 @@ end
 task.spawn(function()
     while task.wait(2) do
         if not teamFolders.friendly then
-            detectTeams()
+            _G.PF_ESP_Functions.DetectTeams()
         end
     end
 end)
 
--- Cleanup function for external use
-function _G.PF_ESP_Cleanup()
-    for _, d in pairs(espCache) do
-        for _, v in pairs(d) do
-            pcall(function() v:Remove() end)
-        end
-    end
-    espCache = {}
-    modelCache = {}
-end
-
--- Start
+-- Start rendering
 RunService.RenderStepped:Connect(updateESP)
+
+print("PF ESP Engine loaded")
+print("Use _G.PF_ESP_Settings to control")
+print("Use _G.PF_ESP_Functions for actions")
