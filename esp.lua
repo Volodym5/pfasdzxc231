@@ -1,5 +1,5 @@
--- Phantom Forces ESP - Standalone
--- Upload this to GitHub raw, then use: loadstring(game:HttpGet("YOUR_RAW_URL"))()
+-- Phantom Forces ESP - Rendering Logic Only
+-- Settings are controlled externally via _G.PF_ESP_Settings
 
 local Workspace = workspace
 local Players = game:GetService("Players")
@@ -7,20 +7,23 @@ local LocalPlayer = Players.LocalPlayer
 local Camera = Workspace.CurrentCamera
 local RunService = game:GetService("RunService")
 
--- Settings
-local settings = {
-    enabled = true,
-    boxes = true,
-    names = true,
-    distance = true,
-    tracers = true,
-    maxDistance = 800,
-    teamCheck = true,
-    enemyColor = Color3.fromRGB(255, 50, 50),
-    boxThickness = 2,
-    tracerThickness = 1,
-    fontSize = 13
+-- Shared settings table
+_G.PF_ESP_Settings = _G.PF_ESP_Settings or {
+    Enabled = true,
+    Boxes = true,
+    Names = true,
+    Distance = true,
+    Tracers = true,
+    MaxDistance = 800,
+    TeamCheck = true,
+    EnemyColor = Color3.fromRGB(255, 50, 50),
+    FriendlyColor = Color3.fromRGB(50, 255, 50),
+    BoxThickness = 2,
+    TracerThickness = 1,
+    FontSize = 13
 }
+
+local settings = _G.PF_ESP_Settings
 
 -- Cache
 local espCache = {}
@@ -28,11 +31,20 @@ local modelCache = {}
 local teamFolders = { friendly = nil, enemy = nil }
 local myPosCache = { pos = nil, time = 0 }
 
--- Pre-allocated corner vectors
-local cornerMultipliers = {
-    {1, 1, 1}, {-1, 1, 1}, {1, -1, 1}, {1, 1, -1},
-    {-1, -1, 1}, {-1, 1, -1}, {1, -1, -1}, {-1, -1, -1}
-}
+-- Pre-computed corner offsets
+local function getCorners(cf, size)
+    local sx, sy, sz = size.X * 0.5, size.Y * 0.5, size.Z * 0.5
+    return {
+        Vector3.new(cf.X + sx, cf.Y + sy, cf.Z + sz),
+        Vector3.new(cf.X - sx, cf.Y + sy, cf.Z + sz),
+        Vector3.new(cf.X + sx, cf.Y - sy, cf.Z + sz),
+        Vector3.new(cf.X + sx, cf.Y + sy, cf.Z - sz),
+        Vector3.new(cf.X - sx, cf.Y - sy, cf.Z + sz),
+        Vector3.new(cf.X - sx, cf.Y + sy, cf.Z - sz),
+        Vector3.new(cf.X + sx, cf.Y - sy, cf.Z - sz),
+        Vector3.new(cf.X - sx, cf.Y - sy, cf.Z - sz),
+    }
+end
 
 -- Detect teams
 local function detectTeams()
@@ -52,9 +64,10 @@ local function detectTeams()
                         if checked >= 10 then break end
                         if part:IsA("BasePart") then
                             checked = checked + 1
-                            if part.BrickColor.Number == myColorNumber or
-                               part.BrickColor.Name == "Earth blue" or
-                               part.BrickColor.Name == "Royal blue" then
+                            local bc = part.BrickColor
+                            if bc.Number == myColorNumber or
+                               bc.Name == "Earth blue" or
+                               bc.Name == "Royal blue" then
                                 teamFolders.friendly = teamFolder.Name
                                 for _, other in ipairs(playersFolder:GetChildren()) do
                                     if other:IsA("Folder") and other.Name ~= teamFolders.friendly then
@@ -78,14 +91,14 @@ local function getOrCreateESP(model)
     
     local d = {}
     
-    if settings.boxes then
+    if settings.Boxes then
         d.box = Drawing.new("Square")
         d.box.Visible = false
         d.box.Filled = false
         d.box.Transparency = 1
     end
     
-    if settings.names then
+    if settings.Names then
         d.name = Drawing.new("Text")
         d.name.Visible = false
         d.name.Center = true
@@ -94,7 +107,7 @@ local function getOrCreateESP(model)
         d.name.Transparency = 1
     end
     
-    if settings.distance then
+    if settings.Distance then
         d.dist = Drawing.new("Text")
         d.dist.Visible = false
         d.dist.Center = true
@@ -103,7 +116,7 @@ local function getOrCreateESP(model)
         d.dist.Transparency = 1
     end
     
-    if settings.tracers then
+    if settings.Tracers then
         d.tracer = Drawing.new("Line")
         d.tracer.Visible = false
         d.tracer.Transparency = 1
@@ -157,7 +170,7 @@ end
 
 -- Main update
 local function updateESP()
-    if not settings.enabled then
+    if not settings.Enabled then
         for _, d in pairs(espCache) do
             for _, v in pairs(d) do v.Visible = false end
         end
@@ -175,7 +188,7 @@ local function updateESP()
     
     for _, teamFolder in ipairs(playersFolder:GetChildren()) do
         if not teamFolder:IsA("Folder") then continue end
-        if settings.teamCheck and teamFolders.friendly and teamFolder.Name == teamFolders.friendly then
+        if settings.TeamCheck and teamFolders.friendly and teamFolder.Name == teamFolders.friendly then
             continue
         end
         
@@ -224,15 +237,10 @@ local function updateESP()
             
             for i = 1, #parts, step do
                 local part = parts[i]
-                local cf = part.CFrame
-                local s = part.Size * 0.5
+                local corners = getCorners(part.CFrame, part.Size)
                 
                 for j = 1, 8 do
-                    local cm = cornerMultipliers[j]
-                    local wx = cf.X + cm[1] * s.X
-                    local wy = cf.Y + cm[2] * s.Y
-                    local wz = cf.Z + cm[3] * s.Z
-                    local sp, on = Camera:WorldToViewportPoint(Vector3.new(wx, wy, wz))
+                    local sp, on = Camera:WorldToViewportPoint(corners[j])
                     if on then
                         if sp.X < mx then mx = sp.X end
                         if sp.Y < my then my = sp.Y end
@@ -251,14 +259,14 @@ local function updateESP()
             local centerPos = head and head.Position or parts[1].Position
             local cs = Camera:WorldToViewportPoint(centerPos)
             local dist = myPos and (myPos - centerPos).Magnitude or 0
-            local show = mz > 0 and dist < settings.maxDistance
+            local show = mz > 0 and dist < settings.MaxDistance
             
             -- Box
             if d.box then
                 d.box.Visible = show
                 if show then
-                    d.box.Color = settings.enemyColor
-                    d.box.Thickness = settings.boxThickness
+                    d.box.Color = settings.EnemyColor
+                    d.box.Thickness = settings.BoxThickness
                     d.box.Position = Vector2.new(mx, my)
                     d.box.Size = Vector2.new(Mx - mx, My - my)
                 end
@@ -269,8 +277,8 @@ local function updateESP()
                 d.name.Visible = show
                 if show then
                     d.name.Color = Color3.new(1, 1, 1)
-                    d.name.Size = settings.fontSize
-                    d.name.Position = Vector2.new(cs.X, my - settings.fontSize - 2)
+                    d.name.Size = settings.FontSize
+                    d.name.Position = Vector2.new(cs.X, my - settings.FontSize - 2)
                     d.name.Text = "Enemy"
                 end
             end
@@ -280,7 +288,7 @@ local function updateESP()
                 d.dist.Visible = show
                 if show then
                     d.dist.Color = Color3.new(0.8, 0.8, 0.8)
-                    d.dist.Size = settings.fontSize - 1
+                    d.dist.Size = settings.FontSize - 1
                     d.dist.Position = Vector2.new(cs.X, My + 2)
                     d.dist.Text = string.format("%.0fm", dist * 0.28)
                 end
@@ -290,8 +298,8 @@ local function updateESP()
             if d.tracer then
                 d.tracer.Visible = show
                 if show then
-                    d.tracer.Color = settings.enemyColor
-                    d.tracer.Thickness = settings.tracerThickness
+                    d.tracer.Color = settings.EnemyColor
+                    d.tracer.Thickness = settings.TracerThickness
                     d.tracer.From = Vector2.new(screenCX, screenBY)
                     d.tracer.To = Vector2.new(cs.X, cs.Y)
                 end
@@ -313,102 +321,25 @@ local function updateESP()
     end
 end
 
--- Simple UI
-local sg = Instance.new("ScreenGui")
-sg.Name = "PF_ESP"
-sg.Parent = game:GetService("CoreGui")
-
-local f = Instance.new("Frame")
-f.Size = UDim2.new(0, 170, 0, 160)
-f.Position = UDim2.new(0, 10, 0.5, -80)
-f.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
-f.BorderSizePixel = 0
-f.Active = true
-f.Draggable = true
-f.Parent = sg
-
-local t = Instance.new("TextLabel")
-t.Size = UDim2.new(1, 0, 0, 22)
-t.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
-t.TextColor3 = Color3.fromRGB(255, 255, 255)
-t.Text = "PF ESP"
-t.Font = Enum.Font.GothamBold
-t.TextSize = 13
-t.Parent = f
-
-local sl = Instance.new("TextLabel")
-sl.Size = UDim2.new(1, -10, 0, 30)
-sl.Position = UDim2.new(0, 5, 0, 25)
-sl.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-sl.TextColor3 = Color3.fromRGB(255, 200, 100)
-sl.Text = "Teams: detecting..."
-sl.TextWrapped = true
-sl.Font = Enum.Font.Code
-sl.TextSize = 9
-sl.Parent = f
-
-local y = 58
-local toggles = {"enabled", "teamCheck", "boxes", "names", "distance", "tracers"}
-local buttons = {}
-
-for _, name in ipairs(toggles) do
-    local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(1, -20, 0, 18)
-    btn.Position = UDim2.new(0, 10, 0, y)
-    btn.BackgroundColor3 = settings[name] and Color3.fromRGB(0, 150, 80) or Color3.fromRGB(150, 0, 0)
-    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    btn.Text = name
-    btn.Font = Enum.Font.Gotham
-    btn.TextSize = 10
-    btn.AutoButtonColor = false
-    btn.Parent = f
-    buttons[name] = btn
-    
-    btn.MouseButton1Click:Connect(function()
-        settings[name] = not settings[name]
-        btn.BackgroundColor3 = settings[name] and Color3.fromRGB(0, 150, 80) or Color3.fromRGB(150, 0, 0)
-        -- Rebuild ESP if needed
-        if name == "boxes" or name == "names" or name == "distance" or name == "tracers" then
-            for model, _ in pairs(espCache) do removeESP(model) end
-        end
-    end)
-    
-    y = y + 20
-end
-
--- Close button
-local cb = Instance.new("TextButton")
-cb.Size = UDim2.new(0, 20, 0, 20)
-cb.Position = UDim2.new(1, -22, 0, 1)
-cb.BackgroundColor3 = Color3.fromRGB(180, 40, 40)
-cb.TextColor3 = Color3.fromRGB(255, 255, 255)
-cb.Text = "X"
-cb.Font = Enum.Font.GothamBold
-cb.TextSize = 12
-cb.Parent = f
-cb.MouseButton1Click:Connect(function()
-    for _, d in pairs(espCache) do
-        for _, v in pairs(d) do pcall(function() v:Remove() end) end
-    end
-    sg:Destroy()
-end)
-
 -- Team detection loop
 task.spawn(function()
     while task.wait(2) do
         if not teamFolders.friendly then
             detectTeams()
         end
-        if teamFolders.friendly then
-            local ec = 0
-            for _ in pairs(espCache) do ec = ec + 1 end
-            sl.Text = "Friendly: " .. teamFolders.friendly .. "\nEnemy: " .. (teamFolders.enemy or "?") .. "\nShowing: " .. ec
-            sl.TextColor3 = Color3.fromRGB(150, 255, 150)
-        else
-            sl.Text = "Teams: detecting..."
-        end
     end
 end)
+
+-- Cleanup function for external use
+function _G.PF_ESP_Cleanup()
+    for _, d in pairs(espCache) do
+        for _, v in pairs(d) do
+            pcall(function() v:Remove() end)
+        end
+    end
+    espCache = {}
+    modelCache = {}
+end
 
 -- Start
 RunService.RenderStepped:Connect(updateESP)
