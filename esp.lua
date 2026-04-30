@@ -35,8 +35,14 @@ function _G.PF_ESP_Functions.GetTeamInfo()
     return teamFolders
 end
 
-function _G.PF_ESP_Functions.Refresh()
-    -- Nuke everything, rebuild from scratch
+function _G.PF_ESP_Functions.GetESPCount()
+    local count = 0
+    for _ in pairs(espCache) do count = count + 1 end
+    return count
+end
+
+function _G.PF_ESP_Functions.Stop()
+    running = false
     for _, d in pairs(espCache) do
         for _, v in pairs(d) do pcall(function() v:Remove() end) end
     end
@@ -44,11 +50,6 @@ function _G.PF_ESP_Functions.Refresh()
     espCache = {}
     modelCache = {}
     chamCache = {}
-end
-
-function _G.PF_ESP_Functions.Stop()
-    running = false
-    _G.PF_ESP_Functions.Refresh()
 end
 
 function _G.PF_ESP_Functions.Start()
@@ -77,7 +78,6 @@ function _G.PF_ESP_Functions.DetectTeams()
     local playersFolder = Workspace:FindFirstChild("Players")
     if not playersFolder then return false end
     
-    -- Reset
     teamFolders.friendly = nil
     teamFolders.enemy = nil
     
@@ -91,13 +91,10 @@ function _G.PF_ESP_Functions.DetectTeams()
                         if part:IsA("BasePart") then
                             checked = checked + 1
                             local bc = part.BrickColor
-                            -- Match our TeamColor
                             if bc.Number == myColorNumber or
                                bc.Name == "Earth blue" or
                                bc.Name == "Royal blue" then
-                                -- The folder containing blue parts is OUR team
                                 teamFolders.friendly = teamFolder.Name
-                                -- Find the other folder
                                 for _, other in ipairs(playersFolder:GetChildren()) do
                                     if other:IsA("Folder") and other.Name ~= teamFolders.friendly then
                                         teamFolders.enemy = other.Name
@@ -119,14 +116,18 @@ local function getOrCreateESP(model)
     
     local d = {}
     
-    d.box = Drawing.new("Square")
-    d.box.Visible = false
-    d.box.Filled = false
-    d.box.Transparency = 1
+    if settings.Boxes then
+        d.box = Drawing.new("Square")
+        d.box.Visible = false
+        d.box.Filled = false
+        d.box.Transparency = 1
+    end
     
-    d.tracer = Drawing.new("Line")
-    d.tracer.Visible = false
-    d.tracer.Transparency = 1
+    if settings.Tracers then
+        d.tracer = Drawing.new("Line")
+        d.tracer.Visible = false
+        d.tracer.Transparency = 1
+    end
     
     espCache[model] = d
     return d
@@ -137,23 +138,39 @@ local function getOrCreateCham(model)
     
     local cham = Instance.new("Highlight")
     cham.Name = "PF_Cham"
+    cham.FillTransparency = settings.ChamFillTransparency
+    cham.OutlineTransparency = math.min(1, settings.ChamFillTransparency - 0.25)
+    cham.FillColor = settings.ChamColor
+    cham.OutlineColor = settings.ChamColor
     cham.Adornee = model
     cham.Parent = model
-    cham.Enabled = false
     
     chamCache[model] = cham
     return cham
 end
 
-local function removeESP(model)
-    if espCache[model] then
-        for _, v in pairs(espCache[model]) do pcall(function() v:Remove() end) end
-        espCache[model] = nil
-    end
+local function removeCham(model)
     if chamCache[model] then
         pcall(function() chamCache[model]:Destroy() end)
         chamCache[model] = nil
     end
+end
+
+local function updateCham(cham)
+    cham.FillColor = settings.ChamColor
+    cham.OutlineColor = settings.ChamColor
+    cham.FillTransparency = settings.ChamFillTransparency
+    cham.OutlineTransparency = math.min(1, settings.ChamFillTransparency - 0.25)
+end
+
+local function removeESP(model)
+    if espCache[model] then
+        for _, drawing in pairs(espCache[model]) do
+            pcall(function() drawing:Remove() end)
+        end
+        espCache[model] = nil
+    end
+    removeCham(model)
 end
 
 local function getMyPosition()
@@ -190,18 +207,14 @@ end
 local function updateESP()
     if not running then return end
     
-    -- Clear model cache every frame so changes apply instantly
-    modelCache = {}
-    
     local playersFolder = Workspace:FindFirstChild("Players")
     if not playersFolder then return end
     
     if not settings.Enabled then
         for _, d in pairs(espCache) do
-            d.box.Visible = false
-            d.tracer.Visible = false
+            for _, v in pairs(d) do v.Visible = false end
         end
-        for _, c in pairs(chamCache) do c.Enabled = false end
+        for model, _ in pairs(chamCache) do removeCham(model) end
         return
     end
     
@@ -214,68 +227,67 @@ local function updateESP()
     for _, teamFolder in ipairs(playersFolder:GetChildren()) do
         if not teamFolder:IsA("Folder") then continue end
         
-        -- Team check: friendly folder = skip
         local isFriendly = settings.TeamCheck and teamFolders.friendly and teamFolder.Name == teamFolders.friendly
         
         for _, model in ipairs(teamFolder:GetChildren()) do
             if not model:IsA("Model") then continue end
             activeModels[model] = true
             
-            -- Gather parts
-            local parts = {}
-            local head = nil
-            local hy = -math.huge
-            
-            for _, part in ipairs(model:GetDescendants()) do
-                if part:IsA("BasePart") and part.Transparency < 0.7 then
-                    parts[#parts + 1] = part
-                    local py = part.Position.Y
-                    if py > hy then
-                        hy = py
-                        head = part
+            local md = modelCache[model]
+            if not md or md.t + 0.5 < tick() then
+                local parts = {}
+                local head = nil
+                local hy = -math.huge
+                
+                for _, part in ipairs(model:GetDescendants()) do
+                    if part:IsA("BasePart") and part.Transparency < 0.7 then
+                        parts[#parts + 1] = part
+                        local py = part.Position.Y
+                        if py > hy then
+                            hy = py
+                            head = part
+                        end
                     end
                 end
+                
+                md = { p = parts, h = head, t = tick() }
+                modelCache[model] = md
             end
             
-            modelCache[model] = { p = parts, h = head }
+            local parts = md.p
+            local head = md.h
             
             if #parts == 0 then
                 if espCache[model] then
-                    espCache[model].box.Visible = false
-                    espCache[model].tracer.Visible = false
+                    for _, v in pairs(espCache[model]) do v.Visible = false end
                 end
-                if chamCache[model] then chamCache[model].Enabled = false end
+                removeCham(model)
                 continue
             end
             
             local centerPos = head and head.Position or parts[1].Position
             local dist = myPos and (myPos - centerPos).Magnitude or 0
-            local inRange = dist < settings.MaxDistance
             
             -- Chams
-            if settings.Chams and inRange and not isFriendly then
+            local showChams = settings.Chams and (not settings.TeamCheck or not isFriendly)
+            if showChams then
                 local cham = getOrCreateCham(model)
-                cham.Enabled = true
-                cham.FillColor = settings.ChamColor
-                cham.OutlineColor = settings.ChamColor
-                cham.FillTransparency = settings.ChamFillTransparency
-                cham.OutlineTransparency = math.min(1, settings.ChamFillTransparency - 0.25)
-            elseif chamCache[model] then
-                chamCache[model].Enabled = false
+                cham.Enabled = dist < settings.MaxDistance
+                updateCham(cham)
+            else
+                removeCham(model)
             end
             
-            -- Box/Tracer - skip friendlies
+            -- Skip friendly for ESP
             if isFriendly then
                 if espCache[model] then
-                    espCache[model].box.Visible = false
-                    espCache[model].tracer.Visible = false
+                    for _, v in pairs(espCache[model]) do v.Visible = false end
                 end
                 continue
             end
             
             local d = getOrCreateESP(model)
             
-            -- Bounding box
             local mx, my, Mx, My = math.huge, math.huge, -math.huge, -math.huge
             local mz = math.huge
             local step = math.max(1, math.floor(#parts / 8))
@@ -283,6 +295,7 @@ local function updateESP()
             for i = 1, #parts, step do
                 local part = parts[i]
                 local corners = getCorners(part.CFrame, part.Size)
+                
                 for j = 1, 8 do
                     local sp, on = Camera:WorldToViewportPoint(corners[j])
                     if on then
@@ -296,43 +309,48 @@ local function updateESP()
             end
             
             if mx == math.huge then
-                d.box.Visible = false
-                d.tracer.Visible = false
+                if d.box then d.box.Visible = false end
+                if d.tracer then d.tracer.Visible = false end
                 continue
             end
             
             local cs = Camera:WorldToViewportPoint(centerPos)
-            local show = mz > 0 and inRange
+            local show = mz > 0 and dist < settings.MaxDistance
             
-            -- Box
-            d.box.Visible = show and settings.Boxes
-            if show and settings.Boxes then
-                d.box.Color = settings.EnemyColor
-                d.box.Thickness = settings.BoxThickness
-                d.box.Position = Vector2.new(mx, my)
-                d.box.Size = Vector2.new(Mx - mx, My - my)
+            if d.box then
+                d.box.Visible = show
+                if show then
+                    d.box.Color = settings.EnemyColor
+                    d.box.Thickness = settings.BoxThickness
+                    d.box.Position = Vector2.new(mx, my)
+                    d.box.Size = Vector2.new(Mx - mx, My - my)
+                end
             end
             
-            -- Tracer
-            d.tracer.Visible = show and settings.Tracers
-            if show and settings.Tracers then
-                d.tracer.Color = settings.EnemyColor
-                d.tracer.Thickness = settings.TracerThickness
-                d.tracer.From = Vector2.new(screenCX, screenBY)
-                d.tracer.To = Vector2.new(cs.X, cs.Y)
+            if d.tracer then
+                d.tracer.Visible = show
+                if show then
+                    d.tracer.Color = settings.EnemyColor
+                    d.tracer.Thickness = settings.TracerThickness
+                    d.tracer.From = Vector2.new(screenCX, screenBY)
+                    d.tracer.To = Vector2.new(cs.X, cs.Y)
+                end
             end
         end
     end
     
     -- Cleanup
     for model, _ in pairs(espCache) do
-        if not activeModels[model] then removeESP(model) end
+        if not activeModels[model] then
+            removeESP(model)
+            modelCache[model] = nil
+        end
+    end
+    for model, _ in pairs(modelCache) do
+        if not activeModels[model] then modelCache[model] = nil end
     end
     for model, _ in pairs(chamCache) do
-        if not activeModels[model] then
-            pcall(function() chamCache[model]:Destroy() end)
-            chamCache[model] = nil
-        end
+        if not activeModels[model] then removeCham(model) end
     end
 end
 
