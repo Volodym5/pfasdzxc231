@@ -1,6 +1,4 @@
 -- Phantom Forces ESP - Rendering Engine
--- Settings controlled via _G.PF_ESP_Settings
--- Functions exposed via _G.PF_ESP_Functions
 
 local Workspace = workspace
 local Players = game:GetService("Players")
@@ -8,7 +6,6 @@ local LocalPlayer = Players.LocalPlayer
 local Camera = Workspace.CurrentCamera
 local RunService = game:GetService("RunService")
 
--- Settings table (modified by external UI)
 _G.PF_ESP_Settings = _G.PF_ESP_Settings or {
     Enabled = true,
     Boxes = true,
@@ -19,15 +16,12 @@ _G.PF_ESP_Settings = _G.PF_ESP_Settings or {
     EnemyColor = Color3.fromRGB(255, 50, 50),
     BoxThickness = 1,
     TracerThickness = 1,
-    ChamOutlineColor = Color3.fromRGB(255, 50, 50),
-    ChamFillColor = Color3.fromRGB(255, 50, 50),
-    ChamOutlineTransparency = 0.5,
+    ChamColor = Color3.fromRGB(255, 50, 50),
     ChamFillTransparency = 0.75
 }
 
 local settings = _G.PF_ESP_Settings
 
--- Internal state
 local espCache = {}
 local modelCache = {}
 local chamCache = {}
@@ -35,7 +29,6 @@ local teamFolders = { friendly = nil, enemy = nil }
 local myPosCache = { pos = nil, time = 0 }
 local running = true
 
--- Functions exposed to main script
 _G.PF_ESP_Functions = {}
 
 function _G.PF_ESP_Functions.GetTeamInfo()
@@ -53,9 +46,7 @@ function _G.PF_ESP_Functions.Stop()
     for _, d in pairs(espCache) do
         for _, v in pairs(d) do pcall(function() v:Remove() end) end
     end
-    for _, c in pairs(chamCache) do
-        pcall(function() c:Destroy() end)
-    end
+    for _, c in pairs(chamCache) do pcall(function() c:Destroy() end) end
     espCache = {}
     modelCache = {}
     chamCache = {}
@@ -65,7 +56,6 @@ function _G.PF_ESP_Functions.Start()
     running = true
 end
 
--- Corner calculation
 local function getCorners(cf, size)
     local sx, sy, sz = size.X * 0.5, size.Y * 0.5, size.Z * 0.5
     return {
@@ -80,7 +70,6 @@ local function getCorners(cf, size)
     }
 end
 
--- Detect which team folder is friendly
 function _G.PF_ESP_Functions.DetectTeams()
     local myTeamColor = LocalPlayer.TeamColor
     if not myTeamColor then return false end
@@ -88,6 +77,9 @@ function _G.PF_ESP_Functions.DetectTeams()
     local myColorNumber = myTeamColor.Number
     local playersFolder = Workspace:FindFirstChild("Players")
     if not playersFolder then return false end
+    
+    teamFolders.friendly = nil
+    teamFolders.enemy = nil
     
     for _, teamFolder in ipairs(playersFolder:GetChildren()) do
         if teamFolder:IsA("Folder") then
@@ -106,9 +98,9 @@ function _G.PF_ESP_Functions.DetectTeams()
                                 for _, other in ipairs(playersFolder:GetChildren()) do
                                     if other:IsA("Folder") and other.Name ~= teamFolders.friendly then
                                         teamFolders.enemy = other.Name
-                                        return true
                                     end
                                 end
+                                return true
                             end
                         end
                     end
@@ -119,7 +111,6 @@ function _G.PF_ESP_Functions.DetectTeams()
     return false
 end
 
--- Create ESP drawings
 local function getOrCreateESP(model)
     if espCache[model] then return espCache[model] end
     
@@ -142,49 +133,36 @@ local function getOrCreateESP(model)
     return d
 end
 
--- Create cham highlight for a model
-local function getOrCreateChams(model)
+local function getOrCreateCham(model)
     if chamCache[model] then return chamCache[model] end
     
-    local outline = Instance.new("Highlight")
-    outline.Name = "PF_ChamOutline"
-    outline.FillTransparency = 1
-    outline.OutlineTransparency = settings.ChamOutlineTransparency
-    outline.OutlineColor = settings.ChamOutlineColor
-    outline.Adornee = model
-    outline.Parent = model
+    local cham = Instance.new("Highlight")
+    cham.Name = "PF_Cham"
+    cham.FillTransparency = settings.ChamFillTransparency
+    cham.OutlineTransparency = math.min(1, settings.ChamFillTransparency - 0.25)
+    cham.FillColor = settings.ChamColor
+    cham.OutlineColor = settings.ChamColor
+    cham.Adornee = model
+    cham.Parent = model
     
-    local fill = Instance.new("Highlight")
-    fill.Name = "PF_ChamFill"
-    fill.FillTransparency = settings.ChamFillTransparency
-    fill.OutlineTransparency = 1
-    fill.FillColor = settings.ChamFillColor
-    fill.Adornee = model
-    fill.Parent = model
-    
-    local cham = { outline = outline, fill = fill }
     chamCache[model] = cham
     return cham
 end
 
--- Remove cham
-local function removeChams(model)
+local function removeCham(model)
     if chamCache[model] then
-        pcall(function() chamCache[model].outline:Destroy() end)
-        pcall(function() chamCache[model].fill:Destroy() end)
+        pcall(function() chamCache[model]:Destroy() end)
         chamCache[model] = nil
     end
 end
 
--- Update cham properties
-local function updateChamProperties(cham)
-    cham.outline.OutlineColor = settings.ChamOutlineColor
-    cham.outline.OutlineTransparency = settings.ChamOutlineTransparency
-    cham.fill.FillColor = settings.ChamFillColor
-    cham.fill.FillTransparency = settings.ChamFillTransparency
+local function updateCham(cham)
+    cham.FillColor = settings.ChamColor
+    cham.OutlineColor = settings.ChamColor
+    cham.FillTransparency = settings.ChamFillTransparency
+    cham.OutlineTransparency = math.min(1, settings.ChamFillTransparency - 0.25)
 end
 
--- Remove ESP
 local function removeESP(model)
     if espCache[model] then
         for _, drawing in pairs(espCache[model]) do
@@ -192,10 +170,9 @@ local function removeESP(model)
         end
         espCache[model] = nil
     end
-    removeChams(model)
+    removeCham(model)
 end
 
--- Get our position
 local function getMyPosition()
     if tick() - myPosCache.time < 0.1 and myPosCache.pos then
         return myPosCache.pos
@@ -227,7 +204,6 @@ local function getMyPosition()
     return nil
 end
 
--- Main update
 local function updateESP()
     if not running then return end
     
@@ -238,9 +214,7 @@ local function updateESP()
         for _, d in pairs(espCache) do
             for _, v in pairs(d) do v.Visible = false end
         end
-        for model, _ in pairs(chamCache) do
-            removeChams(model)
-        end
+        for model, _ in pairs(chamCache) do removeCham(model) end
         return
     end
     
@@ -259,7 +233,6 @@ local function updateESP()
             if not model:IsA("Model") then continue end
             activeModels[model] = true
             
-            -- Get/cache parts
             local md = modelCache[model]
             if not md or md.t + 0.5 < tick() then
                 local parts = {}
@@ -288,7 +261,7 @@ local function updateESP()
                 if espCache[model] then
                     for _, v in pairs(espCache[model]) do v.Visible = false end
                 end
-                removeChams(model)
+                removeCham(model)
                 continue
             end
             
@@ -296,30 +269,25 @@ local function updateESP()
             local dist = myPos and (myPos - centerPos).Magnitude or 0
             
             -- Chams
-            if settings.Chams and not isFriendly then
-                local cham = getOrCreateChams(model)
-                cham.outline.Enabled = dist < settings.MaxDistance
-                cham.fill.Enabled = dist < settings.MaxDistance
-                updateChamProperties(cham)
+            local showChams = settings.Chams and (not settings.TeamCheck or not isFriendly)
+            if showChams then
+                local cham = getOrCreateCham(model)
+                cham.Enabled = dist < settings.MaxDistance
+                updateCham(cham)
             else
-                removeChams(model)
+                removeCham(model)
             end
             
-            -- Skip ESP drawings for friendlies
+            -- Skip friendly for ESP
             if isFriendly then
                 if espCache[model] then
                     for _, v in pairs(espCache[model]) do v.Visible = false end
                 end
-                if not settings.Chams then
-                    removeChams(model)
-                end
                 continue
             end
             
-            -- ESP Drawings
             local d = getOrCreateESP(model)
             
-            -- Bounding box
             local mx, my, Mx, My = math.huge, math.huge, -math.huge, -math.huge
             local mz = math.huge
             local step = math.max(1, math.floor(#parts / 8))
@@ -349,7 +317,6 @@ local function updateESP()
             local cs = Camera:WorldToViewportPoint(centerPos)
             local show = mz > 0 and dist < settings.MaxDistance
             
-            -- Box
             if d.box then
                 d.box.Visible = show
                 if show then
@@ -360,7 +327,6 @@ local function updateESP()
                 end
             end
             
-            -- Tracer
             if d.tracer then
                 d.tracer.Visible = show
                 if show then
@@ -381,18 +347,13 @@ local function updateESP()
         end
     end
     for model, _ in pairs(modelCache) do
-        if not activeModels[model] then
-            modelCache[model] = nil
-        end
+        if not activeModels[model] then modelCache[model] = nil end
     end
     for model, _ in pairs(chamCache) do
-        if not activeModels[model] then
-            removeChams(model)
-        end
+        if not activeModels[model] then removeCham(model) end
     end
 end
 
--- Team detection loop
 task.spawn(function()
     while task.wait(2) do
         if not teamFolders.friendly then
@@ -401,7 +362,4 @@ task.spawn(function()
     end
 end)
 
--- Start rendering
 RunService.RenderStepped:Connect(updateESP)
-
-print("PF ESP Engine loaded")
