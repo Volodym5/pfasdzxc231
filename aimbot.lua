@@ -1,4 +1,4 @@
--- Phantom Forces Aimbot - Mouse movement based aiming with cluster head detection
+-- Phantom Forces Aimbot - Simple head detection + viewport coordinates
 
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
@@ -157,41 +157,19 @@ local function updateTeamMap()
     teamCheckTime = tick()
 end
 
--- New head detection: volume-filtered top cluster centroid
 local function getHeadPosition(model)
-    local parts = {}
+    local highest = nil
+    local highestY = -math.huge
     for _, part in ipairs(model:GetDescendants()) do
-        if part:IsA("BasePart") and part.Transparency < 0.5 then
-            local size = part.Size
-            local volume = size.X * size.Y * size.Z
-            if volume > 0.5 and volume < 20 then
-                parts[#parts + 1] = part
-            end
+        if part:IsA("BasePart") and part.Transparency < 0.7 and part.Position.Y > highestY then
+            highestY = part.Position.Y
+            highest = part
         end
     end
-    if #parts == 0 then return nil end
-
-    local maxY = -math.huge
-    for _, p in ipairs(parts) do
-        if p.Position.Y > maxY then maxY = p.Position.Y end
+    if highest then
+        return highest.Position + Vector3.new(0, highest.Size.Y / 2, 0)
     end
-
-    local BAND = 3.0
-    local sumPos = Vector3.new(0, 0, 0)
-    local count = 0
-    for _, p in ipairs(parts) do
-        if p.Position.Y >= maxY - BAND then
-            sumPos = sumPos + p.Position
-            count = count + 1
-        end
-    end
-
-    if count > 0 then
-        return sumPos / count
-    end
-
-    table.sort(parts, function(a, b) return a.Position.Y > b.Position.Y end)
-    return parts[1].Position
+    return nil
 end
 
 local function isVisible(targetPos, model)
@@ -228,7 +206,7 @@ local function findNewTarget(mousePos)
 
             if settings.VisibilityCheck and not isVisible(headPos, model) then continue end
             
-            local screenPos, _ = cam:WorldToScreenPoint(headPos)
+            local screenPos, _ = cam:WorldToViewportPoint(headPos)
             if screenPos.Z < 0 then continue end
             
             local dx = screenPos.X - mousePos.X
@@ -259,7 +237,7 @@ local function isTargetValid(model)
     if settings.VisibilityCheck and not isVisible(headPos, model) then return false end
     
     local cam = workspace.CurrentCamera
-    local screenPos, _ = cam:WorldToScreenPoint(headPos)
+    local screenPos, _ = cam:WorldToViewportPoint(headPos)
     if screenPos.Z < 0 then return false end
     
     local mousePos = Vector2.new(Mouse.X, Mouse.Y)
@@ -310,7 +288,7 @@ RunService:BindToRenderStep("PFAimbot", Enum.RenderPriority.Camera.Value + 1, fu
     end
 
     local cam = workspace.CurrentCamera
-    local targetScreenPos = cam:WorldToScreenPoint(targetPos)
+    local targetScreenPos = cam:WorldToViewportPoint(targetPos)
     local screenCenter = Vector2.new(cam.ViewportSize.X / 2, cam.ViewportSize.Y / 2)
     
     local dx = targetScreenPos.X - screenCenter.X
@@ -340,4 +318,4 @@ task.spawn(function()
     end
 end)
 
-print("PF Aimbot loaded - cluster head detection")
+print("PF Aimbot loaded - viewport coordinates")
