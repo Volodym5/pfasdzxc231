@@ -93,15 +93,13 @@ local function getPlayerNameFromModel(model)
 end
 
 -- Update team mapping using PlayerTag text
+-- Incremental team mapping — doesn't clear existing data
 local function updateTeamMap()
     local playersList = Players:GetPlayers()
     if #playersList == 0 then return end
     
     local playersFolder = Workspace:FindFirstChild("Players")
     if not playersFolder then return end
-
-    nameMap = {}
-    teamMap = {}
 
     local playerLookup = {}
     for _, p in ipairs(playersList) do
@@ -111,31 +109,46 @@ local function updateTeamMap()
         end
     end
 
+    -- Track which models exist now
+    local currentModels = {}
+
     for _, teamFolder in ipairs(playersFolder:GetChildren()) do
         if teamFolder:IsA("Folder") then
             for _, model in ipairs(teamFolder:GetChildren()) do
                 if model:IsA("Model") then
-                    local tagName = getPlayerNameFromModel(model)
-                    if tagName and playerLookup[tagName] then
-                        local player = playerLookup[tagName]
-                        nameMap[model] = player.DisplayName or player.Name
-                        
-                        local isFriendly = false
-                        if LocalPlayer.Team and player.Team then
-                            isFriendly = (player.Team == LocalPlayer.Team)
-                        elseif LocalPlayer.TeamColor and player.TeamColor then
-                            isFriendly = (player.TeamColor.Number == LocalPlayer.TeamColor.Number)
+                    currentModels[model] = true
+                    
+                    -- Only check if not already mapped
+                    if not nameMap[model] then
+                        local tagName = getPlayerNameFromModel(model)
+                        if tagName and playerLookup[tagName] then
+                            local player = playerLookup[tagName]
+                            nameMap[model] = player.DisplayName or player.Name
+                            
+                            local isFriendly = false
+                            if LocalPlayer.Team and player.Team then
+                                isFriendly = (player.Team == LocalPlayer.Team)
+                            elseif LocalPlayer.TeamColor and player.TeamColor then
+                                isFriendly = (player.TeamColor.Number == LocalPlayer.TeamColor.Number)
+                            end
+                            teamMap[model] = isFriendly
                         end
-                        teamMap[model] = isFriendly
                     end
                 end
             end
         end
     end
     
+    -- Clean up models that no longer exist
+    for model, _ in pairs(nameMap) do
+        if not currentModels[model] then
+            nameMap[model] = nil
+            teamMap[model] = nil
+        end
+    end
+    
     teamCheckTime = tick()
 end
-
 local function getOrCreateESP(model)
     if espCache[model] then return espCache[model] end
     local d = {}
