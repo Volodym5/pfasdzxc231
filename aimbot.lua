@@ -1,4 +1,4 @@
--- Phantom Forces Aimbot - Mouse movement based aiming
+-- Phantom Forces Aimbot - Mouse movement based aiming with cluster head detection
 
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
@@ -157,19 +157,41 @@ local function updateTeamMap()
     teamCheckTime = tick()
 end
 
+-- New head detection: volume-filtered top cluster centroid
 local function getHeadPosition(model)
-    local highest = nil
-    local highestY = -math.huge
+    local parts = {}
     for _, part in ipairs(model:GetDescendants()) do
-        if part:IsA("BasePart") and part.Transparency < 0.7 and part.Position.Y > highestY then
-            highestY = part.Position.Y
-            highest = part
+        if part:IsA("BasePart") and part.Transparency < 0.5 then
+            local size = part.Size
+            local volume = size.X * size.Y * size.Z
+            if volume > 0.5 and volume < 20 then
+                parts[#parts + 1] = part
+            end
         end
     end
-    if highest then
-        return highest.Position
+    if #parts == 0 then return nil end
+
+    local maxY = -math.huge
+    for _, p in ipairs(parts) do
+        if p.Position.Y > maxY then maxY = p.Position.Y end
     end
-    return nil
+
+    local BAND = 3.0
+    local sumPos = Vector3.new(0, 0, 0)
+    local count = 0
+    for _, p in ipairs(parts) do
+        if p.Position.Y >= maxY - BAND then
+            sumPos = sumPos + p.Position
+            count = count + 1
+        end
+    end
+
+    if count > 0 then
+        return sumPos / count
+    end
+
+    table.sort(parts, function(a, b) return a.Position.Y > b.Position.Y end)
+    return parts[1].Position
 end
 
 local function isVisible(targetPos, model)
@@ -318,4 +340,4 @@ task.spawn(function()
     end
 end)
 
-print("PF Aimbot loaded - mouse movement aiming")
+print("PF Aimbot loaded - cluster head detection")
