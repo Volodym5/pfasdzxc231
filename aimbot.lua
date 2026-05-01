@@ -1,4 +1,4 @@
--- Phantom Forces Aimbot - Visibility check + mouse mode default + mousemoverel guards
+-- Phantom Forces Aimbot - Fixed team detection
 
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
@@ -28,8 +28,7 @@ local settings = _G.PF_Aimbot_Settings
 local locked = false
 local currentTargetModel = nil
 local currentTargetPart = nil
-local myTeamFolder = nil
-local enemyTeamFolder = nil
+local enemyFolder = nil
 
 local fovCircle = Drawing.new("Circle")
 fovCircle.Visible = false
@@ -40,28 +39,33 @@ fovCircle.Color = Color3.fromRGB(255, 50, 50)
 fovCircle.Filled = false
 fovCircle.Transparency = 0.7
 
-local function detectTeams()
-    local myTeamColor = LocalPlayer.TeamColor
-    if not myTeamColor then return false end
-    local myColorNumber = myTeamColor.Number
+-- Find which folder contains models near our character
+local function detectEnemyFolder()
     local playersFolder = workspace:FindFirstChild("Players")
-    if not playersFolder then return false end
-
+    if not playersFolder then return nil end
+    if not LocalPlayer.Character then return nil end
+    
+    local myRoot = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not myRoot then return nil end
+    local myPos = myRoot.Position
+    
+    -- Check each team folder for models near us
     for _, teamFolder in ipairs(playersFolder:GetChildren()) do
-        if teamFolder:IsA("Folder") then
-            for _, model in ipairs(teamFolder:GetChildren()) do
-                if model:IsA("Model") then
-                    for _, part in ipairs(model:GetDescendants()) do
-                        if part:IsA("BasePart") and part.Transparency < 0.5 then
-                            local bc = part.BrickColor
-                            if bc.Number == myColorNumber or bc.Name == "Earth blue" or bc.Name == "Royal blue" then
-                                myTeamFolder = teamFolder
-                                for _, other in ipairs(playersFolder:GetChildren()) do
-                                    if other:IsA("Folder") and other ~= myTeamFolder then
-                                        enemyTeamFolder = other
-                                    end
-                                end
-                                return true
+        if not teamFolder:IsA("Folder") then continue end
+        
+        for _, model in ipairs(teamFolder:GetChildren()) do
+            if not model:IsA("Model") then continue end
+            
+            -- Check if any part of this model is close to us
+            for _, part in ipairs(model:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    local dist = (part.Position - myPos).Magnitude
+                    if dist < 5 then
+                        -- This folder has a model near us = this is OUR team
+                        -- The other folder is enemies
+                        for _, other in ipairs(playersFolder:GetChildren()) do
+                            if other:IsA("Folder") and other ~= teamFolder then
+                                return other -- return enemy folder
                             end
                         end
                     end
@@ -69,7 +73,19 @@ local function detectTeams()
             end
         end
     end
-    return false
+    
+    -- Fallback: if we can't find ourselves, just use the second folder
+    local folders = {}
+    for _, f in ipairs(playersFolder:GetChildren()) do
+        if f:IsA("Folder") then
+            folders[#folders + 1] = f
+        end
+    end
+    if #folders >= 2 then
+        return folders[2] -- guess
+    end
+    
+    return nil
 end
 
 local function getHeadPart(model)
@@ -116,7 +132,11 @@ local function findNewTarget(mousePos)
 
     for _, teamFolder in ipairs(playersFolder:GetChildren()) do
         if not teamFolder:IsA("Folder") then continue end
-        if settings.TeamCheck and myTeamFolder and teamFolder == myTeamFolder then continue end
+        if settings.TeamCheck and enemyFolder and teamFolder == enemyFolder then
+            -- This is the enemy folder, scan it
+        elseif settings.TeamCheck and enemyFolder and teamFolder ~= enemyFolder then
+            continue -- skip friendly folder
+        end
 
         for _, model in ipairs(teamFolder:GetChildren()) do
             if not model:IsA("Model") then continue end
@@ -186,7 +206,9 @@ RunService.RenderStepped:Connect(function()
     if not settings.Enabled then return end
     if not locked then return end
 
-    if not myTeamFolder then detectTeams() end
+    if not enemyFolder then
+        enemyFolder = detectEnemyFolder()
+    end
 
     if not isTargetValid(currentTargetModel) then
         currentTargetModel = nil
@@ -241,10 +263,11 @@ task.spawn(function()
     end
 end)
 
+-- Re-detect teams every 5 seconds
 task.spawn(function()
-    while task.wait(3) do
-        detectTeams()
+    while task.wait(5) do
+        enemyFolder = detectEnemyFolder()
     end
 end)
 
-print("PF Aimbot loaded")
+print("PF Aimbot loaded - position-based team detection")
