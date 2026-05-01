@@ -1,5 +1,5 @@
 -- Phantom Forces ESP - Rendering Engine
--- Fixed team detection via player-to-model correlation + Player.Team
+-- Debug version - prints team info
 
 local Workspace = workspace
 local Players = game:GetService("Players")
@@ -39,6 +39,7 @@ local running = true
 local nameMap = {}
 local teamMap = {}
 local teamCheckTime = 0
+local debugPrinted = false
 
 local chamContainer = Instance.new("Folder")
 chamContainer.Name = "RBX_" .. tostring(math.random(100000, 999999))
@@ -53,6 +54,7 @@ function _G.PF_ESP_Functions.RefreshCache()
     nameMap = {}
     teamMap = {}
     teamCheckTime = 0
+    debugPrinted = false
 end
 
 function _G.PF_ESP_Functions.Stop()
@@ -73,7 +75,6 @@ function _G.PF_ESP_Functions.Start()
 end
 
 function _G.PF_ESP_Functions.DetectTeams()
-    -- Handled by updateTeamMap() now
 end
 
 local function isPlayerActive()
@@ -88,6 +89,17 @@ local function updateTeamMap()
     if not playersFolder then return end
 
     local myTeam = LocalPlayer.Team
+    
+    if not debugPrinted then
+        print("=== TEAM DEBUG ===")
+        print("My Name: " .. LocalPlayer.Name)
+        print("My Team: " .. tostring(myTeam))
+        print("My TeamColor: " .. tostring(LocalPlayer.TeamColor))
+        print("Players in server: " .. #playersList)
+        for _, p in ipairs(playersList) do
+            print("  " .. p.Name .. " | Team: " .. tostring(p.Team) .. " | TeamColor: " .. tostring(p.TeamColor) .. " | HasChar: " .. tostring(p.Character ~= nil))
+        end
+    end
 
     local allModels = {}
     for _, teamFolder in ipairs(playersFolder:GetChildren()) do
@@ -122,7 +134,6 @@ local function updateTeamMap()
         for _, player in ipairs(playersList) do
             if not matched[player] and player.Character then
                 local root = player.Character:FindFirstChild("HumanoidRootPart")
-                    or player.Character:FindFirstChildWhichIsA("BasePart")
                 if root then
                     local dist = (root.Position - data.center).Magnitude
                     if dist < bestDist then
@@ -134,11 +145,27 @@ local function updateTeamMap()
         end
         if bestPlayer then
             nameMap[data.model] = bestPlayer.DisplayName or bestPlayer.Name
+            local isFriendly = false
             if myTeam then
-                teamMap[data.model] = (bestPlayer.Team == myTeam)
+                isFriendly = (bestPlayer.Team == myTeam)
+            else
+                -- Fallback: use TeamColor
+                if LocalPlayer.TeamColor and bestPlayer.TeamColor then
+                    isFriendly = (LocalPlayer.TeamColor.Number == bestPlayer.TeamColor.Number)
+                end
+            end
+            teamMap[data.model] = isFriendly
+            
+            if not debugPrinted then
+                print("Model matched: " .. nameMap[data.model] .. " | Friendly: " .. tostring(isFriendly))
             end
             matched[bestPlayer] = true
         end
+    end
+    
+    if not debugPrinted then
+        print("=== END DEBUG ===")
+        debugPrinted = true
     end
     
     teamCheckTime = tick()
