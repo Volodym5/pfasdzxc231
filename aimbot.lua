@@ -1,4 +1,4 @@
--- Phantom Forces Aimbot - Instant identification + name-based caching
+-- Phantom Forces Aimbot - Camera mode only (mouse locked in FPS games)
 
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
@@ -13,7 +13,7 @@ _G.PF_Aimbot_Settings = _G.PF_Aimbot_Settings or {
     VisibilityCheck = false,
     FOV = 100,
     TargetPart = "Head",
-    Mode = "Mouse",
+    Mode = "Camera",
     Smoothness = false,
     SmoothAmount = 0.5,
     Prediction = false,
@@ -134,7 +134,6 @@ local function updateTeamMap()
     if not playersFolder then return end
 
     local currentModels = {}
-
     for _, teamFolder in ipairs(playersFolder:GetChildren()) do
         if teamFolder:IsA("Folder") then
             for _, model in ipairs(teamFolder:GetChildren()) do
@@ -149,14 +148,10 @@ local function updateTeamMap()
     end
 
     for model, _ in pairs(modelToName) do
-        if not currentModels[model] then
-            modelToName[model] = nil
-        end
+        if not currentModels[model] then modelToName[model] = nil end
     end
     for model, _ in pairs(teamMap) do
-        if not currentModels[model] then
-            teamMap[model] = nil
-        end
+        if not currentModels[model] then teamMap[model] = nil end
     end
 
     teamCheckTime = tick()
@@ -189,12 +184,6 @@ local function isVisible(targetPos, model)
     rayParams.IgnoreWater = true
     local result = workspace:Raycast(camPos, dir.Unit * dist, rayParams)
     return result == nil
-end
-
-local function canMoveMouse()
-    return not GuiService.MenuIsOpen
-        and UIS:GetFocusedTextBox() == nil
-        and UIS.MouseBehavior ~= Enum.MouseBehavior.LockCenter
 end
 
 local function findNewTarget(mousePos)
@@ -296,20 +285,12 @@ RunService.RenderStepped:Connect(function()
         return
     end
 
-    if settings.Mode == "Camera" then
-        local cam = workspace.CurrentCamera
-        local lookAt = CFrame.new(cam.CFrame.Position, targetPos)
-        if settings.Smoothness then
-            cam.CFrame = cam.CFrame:Lerp(lookAt, settings.SmoothAmount)
-        else
-            cam.CFrame = lookAt
-        end
-    elseif settings.Mode == "Mouse" then
-        if canMoveMouse() then
-            local cam = workspace.CurrentCamera
-            local screenPos = cam:WorldToScreenPoint(targetPos)
-            mousemoverel(screenPos.X - Mouse.X, screenPos.Y - Mouse.Y)
-        end
+    local cam = workspace.CurrentCamera
+    local lookAt = CFrame.new(cam.CFrame.Position, targetPos)
+    if settings.Smoothness then
+        cam.CFrame = cam.CFrame:Lerp(lookAt, settings.SmoothAmount)
+    else
+        cam.CFrame = lookAt
     end
 end)
 
@@ -327,4 +308,4 @@ task.spawn(function()
     end
 end)
 
-print("PF Aimbot loaded - instant identification")
+print("PF Aimbot loaded - Camera mode")
