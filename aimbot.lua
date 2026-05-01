@@ -1,4 +1,4 @@
--- Phantom Forces Aimbot - Camera mode only (mouse locked in FPS games)
+-- Phantom Forces Aimbot - Camera mode with BindToRenderStep
 
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
@@ -264,7 +264,8 @@ UIS.InputEnded:Connect(function(input)
     end
 end)
 
-RunService.RenderStepped:Connect(function()
+-- Use BindToRenderStep with Camera priority + 1 to override game camera
+RunService:BindToRenderStep("PFAimbot", Enum.RenderPriority.Camera.Value + 1, function()
     if not settings.Enabled then return end
     if not locked then return end
 
@@ -308,4 +309,4 @@ task.spawn(function()
     end
 end)
 
-print("PF Aimbot loaded - Camera mode")
+print("PF Aimbot loaded - BindToRenderStep camera mode")
