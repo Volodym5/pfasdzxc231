@@ -1,5 +1,5 @@
 -- Phantom Forces ESP - Rendering Engine
--- Working version + text shadows + window throttle
+-- Text shadows + window throttle + chams visibility color
 
 local Workspace = workspace
 local Players = game:GetService("Players")
@@ -25,6 +25,7 @@ _G.PF_ESP_Settings = _G.PF_ESP_Settings or {
     TracerThickness = 1,
     NameSize = 13,
     ChamColor = Color3.fromRGB(255, 50, 50),
+    ChamOccludedColor = Color3.fromRGB(255, 150, 50),
     ChamFillTransparency = 0.75
 }
 
@@ -157,9 +158,10 @@ local function removeCham(model)
     end
 end
 
-local function updateCham(cham)
-    cham.FillColor = settings.ChamColor
-    cham.OutlineColor = settings.ChamColor
+local function updateCham(cham, visible)
+    local color = visible and settings.ChamColor or settings.ChamOccludedColor
+    cham.FillColor = color
+    cham.OutlineColor = color
     cham.FillTransparency = settings.ChamFillTransparency
     cham.OutlineTransparency = math.min(0.99, settings.ChamFillTransparency - 0.25)
 end
@@ -298,7 +300,7 @@ local function updateESP()
                 local cham = getOrCreateCham(model)
                 if cham then
                     cham.Enabled = true
-                    updateCham(cham)
+                    updateCham(cham, visible)
                 end
             else
                 if chamCache[model] then chamCache[model].Enabled = false end
