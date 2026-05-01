@@ -1,11 +1,13 @@
 -- Phantom Forces ESP - Rendering Engine
--- Standalone version with inline team detection
+-- Working version + text shadows + window throttle
 
 local Workspace = workspace
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 local Camera = Workspace.CurrentCamera
 local RunService = game:GetService("RunService")
+local GuiService = game:GetService("GuiService")
+local UIS = game:GetService("UserInputService")
 
 _G.PF_ESP_Settings = _G.PF_ESP_Settings or {
     Enabled = true,
@@ -101,6 +103,10 @@ function _G.PF_ESP_Functions.DetectTeams()
     return false
 end
 
+local function isPlayerActive()
+    return UIS.WindowFocused and not GuiService.MenuIsOpen
+end
+
 local function getOrCreateESP(model)
     if espCache[model] then return espCache[model] end
     local d = {}
@@ -116,6 +122,12 @@ local function getOrCreateESP(model)
         d.tracer.Transparency = 1
     end
     if settings.Names then
+        d.nameShadow = Drawing.new("Text")
+        d.nameShadow.Visible = false
+        d.nameShadow.Center = true
+        d.nameShadow.Font = Drawing.Fonts.Monospace
+        d.nameShadow.Color = Color3.new(0, 0, 0)
+        d.nameShadow.Transparency = 0.5
         d.name = Drawing.new("Text")
         d.name.Visible = false
         d.name.Center = true
@@ -215,6 +227,7 @@ end
 
 local function updateESP()
     if not running then return end
+    if not isPlayerActive() then return end
     
     local playersFolder = Workspace:FindFirstChild("Players")
     if not playersFolder then return end
@@ -274,14 +287,12 @@ local function updateESP()
             local dist = myPos and (myPos - centerPos).Magnitude or 0
             local inRange = dist < settings.MaxDistance
 
-            -- Visibility check
             local visible = true
             if settings.VisibilityCheck and inRange and not isFriendly then
                 visible = isVisible(centerPos, model)
             end
             local currentColor = visible and settings.EnemyColor or settings.OccludedColor
 
-            -- Chams
             local showChams = settings.Chams and inRange and (not settings.TeamCheck or not isFriendly)
             if showChams then
                 local cham = getOrCreateCham(model)
@@ -293,7 +304,6 @@ local function updateESP()
                 if chamCache[model] then chamCache[model].Enabled = false end
             end
 
-            -- Skip friendly
             if isFriendly then
                 if espCache[model] then
                     for _, v in pairs(espCache[model]) do v.Visible = false end
@@ -303,7 +313,6 @@ local function updateESP()
 
             local d = getOrCreateESP(model)
 
-            -- Bounding box
             local mx, my, Mx, My = math.huge, math.huge, -math.huge, -math.huge
             local mz = math.huge
             local step = math.max(1, math.floor(#parts / 8))
@@ -327,6 +336,7 @@ local function updateESP()
                 if d.box then d.box.Visible = false end
                 if d.tracer then d.tracer.Visible = false end
                 if d.name then d.name.Visible = false end
+                if d.nameShadow then d.nameShadow.Visible = false end
                 continue
             end
 
@@ -355,11 +365,19 @@ local function updateESP()
 
             if d.name then
                 d.name.Visible = show
+                d.nameShadow.Visible = show
                 if show then
+                    local nameText = "Enemy"
+                    d.nameShadow.Color = Color3.new(0, 0, 0)
+                    d.nameShadow.Transparency = 0.5
+                    d.nameShadow.Size = settings.NameSize
+                    d.nameShadow.Position = Vector2.new(cs.X + 1, my - settings.NameSize - 3)
+                    d.nameShadow.Text = nameText
+                    
                     d.name.Color = Color3.fromRGB(255, 255, 255)
                     d.name.Size = settings.NameSize
                     d.name.Position = Vector2.new(cs.X, my - settings.NameSize - 4)
-                    d.name.Text = "Enemy"
+                    d.name.Text = nameText
                 end
             end
         end
