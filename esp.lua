@@ -1,5 +1,5 @@
 -- Phantom Forces ESP - Rendering Engine
--- Debug version - prints team info
+-- Team detection via PlayerTag BillboardGui
 
 local Workspace = workspace
 local Players = game:GetService("Players")
@@ -36,10 +36,9 @@ local modelCache = {}
 local chamCache = {}
 local myPosCache = { pos = nil, time = 0 }
 local running = true
-local nameMap = {}
-local teamMap = {}
+local nameMap = {} -- model -> player name
+local teamMap = {} -- model -> isFriendly
 local teamCheckTime = 0
-local debugPrinted = false
 
 local chamContainer = Instance.new("Folder")
 chamContainer.Name = "RBX_" .. tostring(math.random(100000, 999999))
@@ -54,7 +53,6 @@ function _G.PF_ESP_Functions.RefreshCache()
     nameMap = {}
     teamMap = {}
     teamCheckTime = 0
-    debugPrinted = false
 end
 
 function _G.PF_ESP_Functions.Stop()
@@ -81,6 +79,20 @@ local function isPlayerActive()
     return UIS.WindowFocused and not GuiService.MenuIsOpen
 end
 
+-- Read player name from BillboardGui PlayerTag
+local function getPlayerNameFromModel(model)
+    for _, desc in ipairs(model:GetDescendants()) do
+        if desc.Name == "PlayerTag" and desc:IsA("TextLabel") then
+            local text = desc.Text
+            if text and #text > 0 then
+                return text
+            end
+        end
+    end
+    return nil
+end
+
+-- Update team mapping using PlayerTag text
 local function updateTeamMap()
     local playersList = Players:GetPlayers()
     if #playersList == 0 then return end
@@ -88,84 +100,37 @@ local function updateTeamMap()
     local playersFolder = Workspace:FindFirstChild("Players")
     if not playersFolder then return end
 
-    local myTeam = LocalPlayer.Team
-    
-    if not debugPrinted then
-        print("=== TEAM DEBUG ===")
-        print("My Name: " .. LocalPlayer.Name)
-        print("My Team: " .. tostring(myTeam))
-        print("My TeamColor: " .. tostring(LocalPlayer.TeamColor))
-        print("Players in server: " .. #playersList)
-        for _, p in ipairs(playersList) do
-            print("  " .. p.Name .. " | Team: " .. tostring(p.Team) .. " | TeamColor: " .. tostring(p.TeamColor) .. " | HasChar: " .. tostring(p.Character ~= nil))
+    nameMap = {}
+    teamMap = {}
+
+    local playerLookup = {}
+    for _, p in ipairs(playersList) do
+        playerLookup[p.Name] = p
+        if p.DisplayName ~= p.Name then
+            playerLookup[p.DisplayName] = p
         end
     end
 
-    local allModels = {}
     for _, teamFolder in ipairs(playersFolder:GetChildren()) do
         if teamFolder:IsA("Folder") then
             for _, model in ipairs(teamFolder:GetChildren()) do
                 if model:IsA("Model") then
-                    local center = Vector3.zero
-                    local count = 0
-                    for _, part in ipairs(model:GetDescendants()) do
-                        if part:IsA("BasePart") then
-                            center = center + part.Position
-                            count = count + 1
+                    local tagName = getPlayerNameFromModel(model)
+                    if tagName and playerLookup[tagName] then
+                        local player = playerLookup[tagName]
+                        nameMap[model] = player.DisplayName or player.Name
+                        
+                        local isFriendly = false
+                        if LocalPlayer.Team and player.Team then
+                            isFriendly = (player.Team == LocalPlayer.Team)
+                        elseif LocalPlayer.TeamColor and player.TeamColor then
+                            isFriendly = (player.TeamColor.Number == LocalPlayer.TeamColor.Number)
                         end
-                    end
-                    if count > 0 then
-                        allModels[#allModels + 1] = {
-                            model = model,
-                            center = center / count
-                        }
+                        teamMap[model] = isFriendly
                     end
                 end
             end
         end
-    end
-
-    local matched = {}
-    nameMap = {}
-    teamMap = {}
-    
-    for _, data in ipairs(allModels) do
-        local bestPlayer, bestDist = nil, 15
-        for _, player in ipairs(playersList) do
-            if not matched[player] and player.Character then
-                local root = player.Character:FindFirstChild("HumanoidRootPart")
-                if root then
-                    local dist = (root.Position - data.center).Magnitude
-                    if dist < bestDist then
-                        bestDist = dist
-                        bestPlayer = player
-                    end
-                end
-            end
-        end
-        if bestPlayer then
-            nameMap[data.model] = bestPlayer.DisplayName or bestPlayer.Name
-            local isFriendly = false
-            if myTeam then
-                isFriendly = (bestPlayer.Team == myTeam)
-            else
-                -- Fallback: use TeamColor
-                if LocalPlayer.TeamColor and bestPlayer.TeamColor then
-                    isFriendly = (LocalPlayer.TeamColor.Number == bestPlayer.TeamColor.Number)
-                end
-            end
-            teamMap[data.model] = isFriendly
-            
-            if not debugPrinted then
-                print("Model matched: " .. nameMap[data.model] .. " | Friendly: " .. tostring(isFriendly))
-            end
-            matched[bestPlayer] = true
-        end
-    end
-    
-    if not debugPrinted then
-        print("=== END DEBUG ===")
-        debugPrinted = true
     end
     
     teamCheckTime = tick()
