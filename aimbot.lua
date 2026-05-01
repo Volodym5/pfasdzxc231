@@ -1,4 +1,4 @@
--- Phantom Forces Aimbot - Real cursor position + death/menu safety
+-- Phantom Forces Aimbot - Camera CFrame manipulation at Camera priority
 
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
@@ -28,7 +28,6 @@ local teamMap = {}
 local playerTeamCache = {}
 local modelToName = {}
 local teamCheckTime = 0
-local wasMouseLocked = true
 
 local fovCircle = Drawing.new("Circle")
 fovCircle.Visible = false
@@ -156,7 +155,6 @@ local function updateTeamMap()
     teamCheckTime = tick()
 end
 
--- Different positions for Head vs Torso
 local function getHeadPosition(model)
     local highest = nil
     local highestY = -math.huge
@@ -182,7 +180,6 @@ local function getTorsoPosition(model)
     if #parts == 0 then return nil end
     
     table.sort(parts, function(a, b) return a.Position.Y > b.Position.Y end)
-    -- Find part at roughly 40-50% height
     local index = math.floor(#parts * 0.45)
     if index < 1 then index = 1 end
     return parts[index].Position
@@ -210,13 +207,6 @@ local function isVisible(targetPos, model)
     return result == nil
 end
 
--- Get actual cursor position from viewport center
-local function getCursorScreenPos()
-    local cam = workspace.CurrentCamera
-    local vs = cam.ViewportSize
-    return Vector2.new(vs.X / 2, vs.Y / 2)
-end
-
 local function findNewTarget()
     local cam = workspace.CurrentCamera
     local bestModel = nil
@@ -224,7 +214,7 @@ local function findNewTarget()
     local playersFolder = workspace:FindFirstChild("Players")
     if not playersFolder then return nil end
 
-    local cursorPos = getCursorScreenPos()
+    local center = Vector2.new(cam.ViewportSize.X / 2, cam.ViewportSize.Y / 2)
 
     for _, teamFolder in ipairs(playersFolder:GetChildren()) do
         if not teamFolder:IsA("Folder") then continue end
@@ -242,8 +232,8 @@ local function findNewTarget()
             local screenPos, _ = cam:WorldToViewportPoint(targetPos)
             if screenPos.Z < 0 then continue end
             
-            local dx = screenPos.X - cursorPos.X
-            local dy = screenPos.Y - cursorPos.Y
+            local dx = screenPos.X - center.X
+            local dy = screenPos.Y - center.Y
             local dist = math.sqrt(dx*dx + dy*dy)
             
             if dist < bestDist then
@@ -273,9 +263,9 @@ local function isTargetValid(model)
     local screenPos, _ = cam:WorldToViewportPoint(targetPos)
     if screenPos.Z < 0 then return false end
     
-    local cursorPos = getCursorScreenPos()
-    local dx = screenPos.X - cursorPos.X
-    local dy = screenPos.Y - cursorPos.Y
+    local center = Vector2.new(cam.ViewportSize.X / 2, cam.ViewportSize.Y / 2)
+    local dx = screenPos.X - center.X
+    local dy = screenPos.Y - center.Y
     local dist = math.sqrt(dx*dx + dy*dy)
     return dist < settings.FOV * 1.3
 end
@@ -284,22 +274,16 @@ local function safeUnlock()
     if locked then
         locked = false
         currentTargetModel = nil
-        UIS.MouseBehavior = Enum.MouseBehavior.LockCenter
     end
 end
 
--- Safety: unlock on death, menu, or leaving
 LocalPlayer.CharacterAdded:Connect(function() safeUnlock() end)
-GuiService.MenuOpened:Connect(function() safeUnlock() end)
-Players.PlayerRemoving:Connect(function() safeUnlock() end)
 
 UIS.InputBegan:Connect(function(input, gameProcessed)
     if gameProcessed then return end
     if input.UserInputType == Enum.UserInputType.MouseButton2 then
         if not LocalPlayer.Character then return end
         locked = true
-        wasMouseLocked = (UIS.MouseBehavior == Enum.MouseBehavior.LockCenter)
-        UIS.MouseBehavior = Enum.MouseBehavior.Default
         currentTargetModel = findNewTarget()
     end
 end)
@@ -310,7 +294,7 @@ UIS.InputEnded:Connect(function(input)
     end
 end)
 
-RunService:BindToRenderStep("PFAimbot", Enum.RenderPriority.Camera.Value + 1, function()
+RunService:BindToRenderStep("PFAimbot", Enum.RenderPriority.Camera.Value, function()
     if not settings.Enabled then return end
     if not locked then return end
     if not LocalPlayer.Character then safeUnlock() return end
@@ -333,34 +317,26 @@ RunService:BindToRenderStep("PFAimbot", Enum.RenderPriority.Camera.Value + 1, fu
     end
 
     local cam = workspace.CurrentCamera
-    local targetScreenPos = cam:WorldToViewportPoint(targetPos)
-    local cursorPos = getCursorScreenPos()
-    
-    local dx = targetScreenPos.X - cursorPos.X
-    local dy = targetScreenPos.Y - cursorPos.Y
-    
+    local lookAt = CFrame.new(cam.CFrame.Position, targetPos)
     if settings.Smoothness then
-        dx = dx * settings.SmoothAmount
-        dy = dy * settings.SmoothAmount
-    end
-    
-    if math.abs(dx) > 0.5 or math.abs(dy) > 0.5 then
-        mousemoverel(dx, dy)
+        cam.CFrame = cam.CFrame:Lerp(lookAt, settings.SmoothAmount)
+    else
+        cam.CFrame = lookAt
     end
 end)
 
 task.spawn(function()
     while task.wait() do
         if settings.ShowFOV then
+            local cam = workspace.CurrentCamera
             fovCircle.Visible = true
             fovCircle.Radius = settings.FOV
             fovCircle.Color = settings.FOVColor
-            local guiInset = game:GetService("GuiService"):GetGuiInset()
-            fovCircle.Position = Vector2.new(getCursorScreenPos().X, getCursorScreenPos().Y + guiInset.Y)
+            fovCircle.Position = Vector2.new(cam.ViewportSize.X / 2, cam.ViewportSize.Y / 2)
         else
             fovCircle.Visible = false
         end
     end
 end)
 
-print("PF Aimbot loaded - real cursor + death safety")
+print("PF Aimbot loaded - Camera CFrame mode")
