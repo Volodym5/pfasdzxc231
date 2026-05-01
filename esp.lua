@@ -1,5 +1,5 @@
 -- Phantom Forces ESP - Rendering Engine
--- Text shadows + window throttle + chams visibility color
+-- Fixed team detection via player-to-model correlation + Player.Team
 
 local Workspace = workspace
 local Players = game:GetService("Players")
@@ -34,9 +34,11 @@ local settings = _G.PF_ESP_Settings
 local espCache = {}
 local modelCache = {}
 local chamCache = {}
-local teamFolders = { friendly = nil, enemy = nil }
 local myPosCache = { pos = nil, time = 0 }
 local running = true
+local nameMap = {} -- model -> player name
+local teamMap = {} -- model -> isFriendly (bool)
+local teamCheckTime = 0
 
 local chamContainer = Instance.new("Folder")
 chamContainer.Name = "RBX_" .. tostring(math.random(100000, 999999))
@@ -44,14 +46,13 @@ chamContainer.Parent = game:GetService("CoreGui")
 
 _G.PF_ESP_Functions = {}
 
-function _G.PF_ESP_Functions.GetTeamInfo()
-    return teamFolders
-end
-
 function _G.PF_ESP_Functions.RefreshCache()
     modelCache = {}
     for _, c in pairs(chamCache) do pcall(function() c:Destroy() end) end
     chamCache = {}
+    nameMap = {}
+    teamMap = {}
+    teamCheckTime = 0
 end
 
 function _G.PF_ESP_Functions.Stop()
@@ -63,6 +64,8 @@ function _G.PF_ESP_Functions.Stop()
     espCache = {}
     modelCache = {}
     chamCache = {}
+    nameMap = {}
+    teamMap = {}
 end
 
 function _G.PF_ESP_Functions.Start()
@@ -70,42 +73,78 @@ function _G.PF_ESP_Functions.Start()
 end
 
 function _G.PF_ESP_Functions.DetectTeams()
-    local myTeamColor = LocalPlayer.TeamColor
-    if not myTeamColor then return false end
-    local myColorNumber = myTeamColor.Number
+    -- Handled by updateTeamMap() now
+end
+
+local function isPlayerActive()
+    return UIS.WindowFocused and not GuiService.MenuIsOpen
+end
+
+-- Match models to players by position, then check Player.Team for friend/enemy
+local function updateTeamMap()
+    local playersList = Players:GetPlayers()
+    if #playersList == 0 then return
+    
     local playersFolder = Workspace:FindFirstChild("Players")
-    if not playersFolder then return false end
+    if not playersFolder then return end
 
-    teamFolders.friendly = nil
-    teamFolders.enemy = nil
+    local myTeam = LocalPlayer.Team
 
+    -- Collect all models with their center positions
+    local allModels = {}
     for _, teamFolder in ipairs(playersFolder:GetChildren()) do
         if teamFolder:IsA("Folder") then
             for _, model in ipairs(teamFolder:GetChildren()) do
                 if model:IsA("Model") then
+                    local center = Vector3.zero
+                    local count = 0
                     for _, part in ipairs(model:GetDescendants()) do
-                        if part:IsA("BasePart") and part.Transparency < 0.5 then
-                            local bc = part.BrickColor
-                            if bc.Number == myColorNumber or bc.Name == "Earth blue" or bc.Name == "Royal blue" then
-                                teamFolders.friendly = teamFolder.Name
-                                for _, other in ipairs(playersFolder:GetChildren()) do
-                                    if other:IsA("Folder") and other.Name ~= teamFolders.friendly then
-                                        teamFolders.enemy = other.Name
-                                    end
-                                end
-                                return true
-                            end
+                        if part:IsA("BasePart") then
+                            center = center + part.Position
+                            count = count + 1
                         end
+                    end
+                    if count > 0 then
+                        allModels[#allModels + 1] = {
+                            model = model,
+                            center = center / count
+                        }
                     end
                 end
             end
         end
     end
-    return false
-end
 
-local function isPlayerActive()
-    return UIS.WindowFocused and not GuiService.MenuIsOpen
+    -- Match each model to closest player
+    local matched = {}
+    nameMap = {}
+    teamMap = {}
+    
+    for _, data in ipairs(allModels) do
+        local bestPlayer, bestDist = nil, 15
+        for _, player in ipairs(playersList) do
+            if not matched[player] and player.Character then
+                local root = player.Character:FindFirstChild("HumanoidRootPart")
+                    or player.Character:FindFirstChildWhichIsA("BasePart")
+                if root then
+                    local dist = (root.Position - data.center).Magnitude
+                    if dist < bestDist then
+                        bestDist = dist
+                        bestPlayer = player
+                    end
+                end
+            end
+        end
+        if bestPlayer then
+            nameMap[data.model] = bestPlayer.DisplayName or bestPlayer.Name
+            if myTeam then
+                teamMap[data.model] = (bestPlayer.Team == myTeam)
+            end
+            matched[bestPlayer] = true
+        end
+    end
+    
+    teamCheckTime = tick()
 end
 
 local function getOrCreateESP(model)
@@ -242,6 +281,11 @@ local function updateESP()
         return
     end
 
+    -- Refresh team mapping every 2 seconds
+    if tick() - teamCheckTime > 2 then
+        updateTeamMap()
+    end
+
     local myPos = getMyPosition()
     local activeModels = {}
     local vs = Camera.ViewportSize
@@ -251,7 +295,6 @@ local function updateESP()
 
     for _, teamFolder in ipairs(playersFolder:GetChildren()) do
         if not teamFolder:IsA("Folder") then continue end
-        local isFriendly = settings.TeamCheck and teamFolders.friendly and teamFolder.Name == teamFolders.friendly
 
         for _, model in ipairs(teamFolder:GetChildren()) do
             if not model:IsA("Model") then continue end
@@ -288,6 +331,12 @@ local function updateESP()
             local centerPos = head and head.Position or parts[1].Position
             local dist = myPos and (myPos - centerPos).Magnitude or 0
             local inRange = dist < settings.MaxDistance
+
+            -- Team check using Player.Team correlation
+            local isFriendly = false
+            if settings.TeamCheck then
+                isFriendly = teamMap[model] == true
+            end
 
             local visible = true
             if settings.VisibilityCheck and inRange and not isFriendly then
@@ -344,6 +393,7 @@ local function updateESP()
 
             local cs = Camera:WorldToViewportPoint(centerPos)
             local show = mz > 0 and inRange
+            local playerName = nameMap[model]
 
             if d.box then
                 d.box.Visible = show
@@ -369,17 +419,17 @@ local function updateESP()
                 d.name.Visible = show
                 d.nameShadow.Visible = show
                 if show then
-                    local nameText = "Enemy"
+                    local displayName = playerName or "Enemy"
                     d.nameShadow.Color = Color3.new(0, 0, 0)
                     d.nameShadow.Transparency = 0.5
                     d.nameShadow.Size = settings.NameSize
                     d.nameShadow.Position = Vector2.new(cs.X + 1, my - settings.NameSize - 3)
-                    d.nameShadow.Text = nameText
+                    d.nameShadow.Text = displayName
                     
                     d.name.Color = Color3.fromRGB(255, 255, 255)
                     d.name.Size = settings.NameSize
                     d.name.Position = Vector2.new(cs.X, my - settings.NameSize - 4)
-                    d.name.Text = nameText
+                    d.name.Text = displayName
                 end
             end
         end
@@ -389,6 +439,8 @@ local function updateESP()
         if not activeModels[model] then
             removeESP(model)
             modelCache[model] = nil
+            nameMap[model] = nil
+            teamMap[model] = nil
         end
     end
     for model, _ in pairs(modelCache) do
@@ -398,13 +450,5 @@ local function updateESP()
         if not activeModels[model] then removeCham(model) end
     end
 end
-
-task.spawn(function()
-    while task.wait(2) do
-        if not teamFolders.friendly then
-            _G.PF_ESP_Functions.DetectTeams()
-        end
-    end
-end)
 
 RunService.RenderStepped:Connect(updateESP)
