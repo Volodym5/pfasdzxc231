@@ -167,7 +167,7 @@ local function getHeadPosition(model)
         end
     end
     if highest then
-        return highest.Position + Vector3.new(0, highest.Size.Y / 2, 0)
+        return highest.Position
     end
     return nil
 end
