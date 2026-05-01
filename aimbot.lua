@@ -1,8 +1,7 @@
--- Phantom Forces Aimbot - Fixed team detection
+-- Phantom Forces Aimbot - Fixed target acquisition + bounding box head detection
 
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
-local Camera = workspace.CurrentCamera
 local RunService = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
 local GuiService = game:GetService("GuiService")
@@ -49,23 +48,19 @@ local function detectEnemyFolder()
     if not myRoot then return nil end
     local myPos = myRoot.Position
     
-    -- Check each team folder for models near us
     for _, teamFolder in ipairs(playersFolder:GetChildren()) do
         if not teamFolder:IsA("Folder") then continue end
         
         for _, model in ipairs(teamFolder:GetChildren()) do
             if not model:IsA("Model") then continue end
             
-            -- Check if any part of this model is close to us
             for _, part in ipairs(model:GetDescendants()) do
                 if part:IsA("BasePart") then
                     local dist = (part.Position - myPos).Magnitude
                     if dist < 5 then
-                        -- This folder has a model near us = this is OUR team
-                        -- The other folder is enemies
                         for _, other in ipairs(playersFolder:GetChildren()) do
                             if other:IsA("Folder") and other ~= teamFolder then
-                                return other -- return enemy folder
+                                return other
                             end
                         end
                     end
@@ -74,7 +69,6 @@ local function detectEnemyFolder()
         end
     end
     
-    -- Fallback: if we can't find ourselves, just use the second folder
     local folders = {}
     for _, f in ipairs(playersFolder:GetChildren()) do
         if f:IsA("Folder") then
@@ -82,30 +76,23 @@ local function detectEnemyFolder()
         end
     end
     if #folders >= 2 then
-        return folders[2] -- guess
+        return folders[2]
     end
     
     return nil
 end
 
-local function getHeadPart(model)
-    local highest = nil
-    local highestY = -math.huge
-    for _, part in ipairs(model:GetDescendants()) do
-        if part:IsA("BasePart") and part.Transparency < 0.7 and part.Position.Y > highestY then
-            highestY = part.Position.Y
-            highest = part
-        end
-    end
-    return highest
-end
-
-local function getTargetPart(model)
-    return getHeadPart(model)
+-- Head detection using bounding box (reliable, no part name dependency)
+local function getHeadPosition(model)
+    local cf, size = model:GetBoundingBox()
+    if not cf then return nil end
+    -- 80% of the way up the model = roughly head height
+    return cf.Position + Vector3.new(0, size.Y * 0.4, 0)
 end
 
 local function isVisible(targetPos, model)
-    local camPos = Camera.CFrame.Position
+    local cam = workspace.CurrentCamera
+    local camPos = cam.CFrame.Position
     local dir = targetPos - camPos
     local dist = dir.Magnitude
     if dist < 0.1 then return false end
@@ -113,7 +100,7 @@ local function isVisible(targetPos, model)
     rayParams.FilterType = Enum.RaycastFilterType.Blacklist
     rayParams.FilterDescendantsInstances = {LocalPlayer.Character or nil, model}
     rayParams.IgnoreWater = true
-    local result = Workspace:Raycast(camPos, dir.Unit * dist, rayParams)
+    local result = workspace:Raycast(camPos, dir.Unit * dist, rayParams)
     return result == nil
 end
 
@@ -124,41 +111,45 @@ local function canMoveMouse()
 end
 
 local function findNewTarget(mousePos)
+    local cam = workspace.CurrentCamera
     local bestModel = nil
-    local bestPart = nil
+    local bestPos = nil
     local bestDist = settings.FOV
     local playersFolder = workspace:FindFirstChild("Players")
     if not playersFolder then return nil, nil end
 
     for _, teamFolder in ipairs(playersFolder:GetChildren()) do
         if not teamFolder:IsA("Folder") then continue end
-        if settings.TeamCheck and enemyFolder and teamFolder == enemyFolder then
-            -- This is the enemy folder, scan it
-        elseif settings.TeamCheck and enemyFolder and teamFolder ~= enemyFolder then
-            continue -- skip friendly folder
-        end
+        if settings.TeamCheck and enemyFolder and teamFolder ~= enemyFolder then continue end
 
         for _, model in ipairs(teamFolder:GetChildren()) do
             if not model:IsA("Model") then continue end
             
-            local part = getTargetPart(model)
-            if not part then continue end
+            local headPos = getHeadPosition(model)
+            if not headPos then continue end
 
-            if settings.VisibilityCheck and not isVisible(part.Position, model) then continue end
+            if settings.VisibilityCheck and not isVisible(headPos, model) then continue end
             
-            local screenPos, onScreen = Camera:WorldToViewportPoint(part.Position)
+            -- Use WorldToScreenPoint to match Mouse.X/Y coordinate space
+            local screenPos, onScreen = cam:WorldToScreenPoint(headPos)
+            
+            -- Guard: behind camera
+            if screenPos.Z < 0 then continue end
             if not onScreen then continue end
             
-            local dist = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude
+            local dx = screenPos.X - mousePos.X
+            local dy = screenPos.Y - mousePos.Y
+            local dist = math.sqrt(dx*dx + dy*dy)
+            
             if dist < bestDist then
                 bestDist = dist
                 bestModel = model
-                bestPart = part
+                bestPos = headPos
             end
         end
     end
 
-    return bestModel, bestPart
+    return bestModel, bestPos
 end
 
 local function isTargetValid(model)
@@ -167,16 +158,20 @@ local function isTargetValid(model)
     if not playersFolder then return false end
     if not model:IsDescendantOf(playersFolder) then return false end
 
-    local part = getTargetPart(model)
-    if not part then return false end
+    local headPos = getHeadPosition(model)
+    if not headPos then return false end
 
-    if settings.VisibilityCheck and not isVisible(part.Position, model) then return false end
+    if settings.VisibilityCheck and not isVisible(headPos, model) then return false end
     
-    local screenPos, onScreen = Camera:WorldToViewportPoint(part.Position)
+    local cam = workspace.CurrentCamera
+    local screenPos, onScreen = cam:WorldToScreenPoint(headPos)
+    if screenPos.Z < 0 then return false end
     if not onScreen then return false end
     
     local mousePos = Vector2.new(Mouse.X, Mouse.Y)
-    local dist = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude
+    local dx = screenPos.X - mousePos.X
+    local dy = screenPos.Y - mousePos.Y
+    local dist = math.sqrt(dx*dx + dy*dy)
     return dist < settings.FOV * 1.3
 end
 
@@ -188,7 +183,7 @@ UIS.InputBegan:Connect(function(input, gameProcessed)
             local m, p = findNewTarget(Vector2.new(Mouse.X, Mouse.Y))
             if m and p then
                 currentTargetModel = m
-                currentTargetPart = p
+                currentTargetPart = nil -- we use position now, not a part reference
             end
         end
     end
@@ -216,34 +211,33 @@ RunService.RenderStepped:Connect(function()
         local m, p = findNewTarget(Vector2.new(Mouse.X, Mouse.Y))
         if m and p then
             currentTargetModel = m
-            currentTargetPart = p
         end
     end
 
-    if not currentTargetModel or not currentTargetPart then return end
+    if not currentTargetModel then return end
 
-    local part = getTargetPart(currentTargetModel)
-    if not part then
+    local targetPos = getHeadPosition(currentTargetModel)
+    if not targetPos then
         currentTargetModel = nil
         return
     end
-    currentTargetPart = part
 
-    local targetPos = part.Position
-    if settings.Prediction and part.Velocity then
-        targetPos = targetPos + part.Velocity * settings.PredAmount / 100
-    end
+    -- Prediction (apply to the world position)
+    -- Since we don't have a specific part, skip velocity-based prediction
+    -- or use the model's PrimaryPart if it has one
 
     if settings.Mode == "Camera" then
-        local lookAt = CFrame.new(Camera.CFrame.Position, targetPos)
+        local cam = workspace.CurrentCamera
+        local lookAt = CFrame.new(cam.CFrame.Position, targetPos)
         if settings.Smoothness then
-            Camera.CFrame = Camera.CFrame:Lerp(lookAt, settings.SmoothAmount)
+            cam.CFrame = cam.CFrame:Lerp(lookAt, settings.SmoothAmount)
         else
-            Camera.CFrame = lookAt
+            cam.CFrame = lookAt
         end
     elseif settings.Mode == "Mouse" then
         if canMoveMouse() then
-            local screenPos = Camera:WorldToScreenPoint(targetPos)
+            local cam = workspace.CurrentCamera
+            local screenPos = cam:WorldToScreenPoint(targetPos)
             mousemoverel(screenPos.X - Mouse.X, screenPos.Y - Mouse.Y)
         end
     end
@@ -263,11 +257,10 @@ task.spawn(function()
     end
 end)
 
--- Re-detect teams every 5 seconds
 task.spawn(function()
     while task.wait(5) do
         enemyFolder = detectEnemyFolder()
     end
 end)
 
-print("PF Aimbot loaded - position-based team detection")
+print("PF Aimbot loaded - bounding box head detection + fixed screen projection")
