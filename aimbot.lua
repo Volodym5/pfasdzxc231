@@ -1,4 +1,4 @@
--- Phantom Forces Aimbot - Fixed target acquisition + bounding box head detection
+-- Phantom Forces Aimbot - Fixed bounding box head position + Player.Team correlation
 
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
@@ -26,8 +26,8 @@ _G.PF_Aimbot_Settings = _G.PF_Aimbot_Settings or {
 local settings = _G.PF_Aimbot_Settings
 local locked = false
 local currentTargetModel = nil
-local currentTargetPart = nil
-local enemyFolder = nil
+local teamCheckTime = 0
+local teamMap = {} -- model -> isFriendly
 
 local fovCircle = Drawing.new("Circle")
 fovCircle.Visible = false
@@ -38,56 +38,72 @@ fovCircle.Color = Color3.fromRGB(255, 50, 50)
 fovCircle.Filled = false
 fovCircle.Transparency = 0.7
 
--- Find which folder contains models near our character
-local function detectEnemyFolder()
+-- Match models to players and check Player.Team
+local function updateTeamMap()
+    local playersList = Players:GetPlayers()
+    if #playersList == 0 then return end
+    
     local playersFolder = workspace:FindFirstChild("Players")
-    if not playersFolder then return nil end
-    if not LocalPlayer.Character then return nil end
-    
-    local myRoot = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-    if not myRoot then return nil end
-    local myPos = myRoot.Position
-    
+    if not playersFolder then return end
+
+    local myTeam = LocalPlayer.Team
+    teamMap = {}
+
+    local allModels = {}
     for _, teamFolder in ipairs(playersFolder:GetChildren()) do
-        if not teamFolder:IsA("Folder") then continue end
-        
-        for _, model in ipairs(teamFolder:GetChildren()) do
-            if not model:IsA("Model") then continue end
-            
-            for _, part in ipairs(model:GetDescendants()) do
-                if part:IsA("BasePart") then
-                    local dist = (part.Position - myPos).Magnitude
-                    if dist < 5 then
-                        for _, other in ipairs(playersFolder:GetChildren()) do
-                            if other:IsA("Folder") and other ~= teamFolder then
-                                return other
-                            end
+        if teamFolder:IsA("Folder") then
+            for _, model in ipairs(teamFolder:GetChildren()) do
+                if model:IsA("Model") then
+                    local center = Vector3.zero
+                    local count = 0
+                    for _, part in ipairs(model:GetDescendants()) do
+                        if part:IsA("BasePart") then
+                            center = center + part.Position
+                            count = count + 1
                         end
+                    end
+                    if count > 0 then
+                        allModels[#allModels + 1] = {
+                            model = model,
+                            center = center / count
+                        }
                     end
                 end
             end
         end
     end
-    
-    local folders = {}
-    for _, f in ipairs(playersFolder:GetChildren()) do
-        if f:IsA("Folder") then
-            folders[#folders + 1] = f
+
+    local matched = {}
+    for _, data in ipairs(allModels) do
+        local bestPlayer, bestDist = nil, 15
+        for _, player in ipairs(playersList) do
+            if not matched[player] and player.Character then
+                local root = player.Character:FindFirstChild("HumanoidRootPart")
+                    or player.Character:FindFirstChildWhichIsA("BasePart")
+                if root then
+                    local dist = (root.Position - data.center).Magnitude
+                    if dist < bestDist then
+                        bestDist = dist
+                        bestPlayer = player
+                    end
+                end
+            end
+        end
+        if bestPlayer and myTeam then
+            teamMap[data.model] = (bestPlayer.Team == myTeam)
+            matched[bestPlayer] = true
         end
     end
-    if #folders >= 2 then
-        return folders[2]
-    end
-    
-    return nil
 end
 
--- Head detection using bounding box (reliable, no part name dependency)
+-- Head position anchored from bottom of bounding box (fixed formula)
 local function getHeadPosition(model)
     local cf, size = model:GetBoundingBox()
-    if not cf then return nil end
-    -- 80% of the way up the model = roughly head height
-    return cf.Position + Vector3.new(0, size.Y * 0.4, 0)
+    if not cf or size.Magnitude < 1 then return nil end
+    
+    -- Anchor from bottom, go up 85%
+    local bottomY = cf.Position.Y - size.Y / 2
+    return Vector3.new(cf.Position.X, bottomY + size.Y * 0.85, cf.Position.Z)
 end
 
 local function isVisible(targetPos, model)
@@ -113,29 +129,28 @@ end
 local function findNewTarget(mousePos)
     local cam = workspace.CurrentCamera
     local bestModel = nil
-    local bestPos = nil
     local bestDist = settings.FOV
     local playersFolder = workspace:FindFirstChild("Players")
-    if not playersFolder then return nil, nil end
+    if not playersFolder then return nil end
 
     for _, teamFolder in ipairs(playersFolder:GetChildren()) do
         if not teamFolder:IsA("Folder") then continue end
-        if settings.TeamCheck and enemyFolder and teamFolder ~= enemyFolder then continue end
 
         for _, model in ipairs(teamFolder:GetChildren()) do
             if not model:IsA("Model") then continue end
+            
+            -- Skip friendly models
+            if settings.TeamCheck and teamMap[model] == true then continue end
             
             local headPos = getHeadPosition(model)
             if not headPos then continue end
 
             if settings.VisibilityCheck and not isVisible(headPos, model) then continue end
             
-            -- Use WorldToScreenPoint to match Mouse.X/Y coordinate space
-            local screenPos, onScreen = cam:WorldToScreenPoint(headPos)
+            local screenPos, _ = cam:WorldToScreenPoint(headPos)
             
-            -- Guard: behind camera
+            -- Only hard reject if behind camera
             if screenPos.Z < 0 then continue end
-            if not onScreen then continue end
             
             local dx = screenPos.X - mousePos.X
             local dy = screenPos.Y - mousePos.Y
@@ -144,12 +159,11 @@ local function findNewTarget(mousePos)
             if dist < bestDist then
                 bestDist = dist
                 bestModel = model
-                bestPos = headPos
             end
         end
     end
 
-    return bestModel, bestPos
+    return bestModel
 end
 
 local function isTargetValid(model)
@@ -158,15 +172,16 @@ local function isTargetValid(model)
     if not playersFolder then return false end
     if not model:IsDescendantOf(playersFolder) then return false end
 
+    if settings.TeamCheck and teamMap[model] == true then return false end
+
     local headPos = getHeadPosition(model)
     if not headPos then return false end
 
     if settings.VisibilityCheck and not isVisible(headPos, model) then return false end
     
     local cam = workspace.CurrentCamera
-    local screenPos, onScreen = cam:WorldToScreenPoint(headPos)
+    local screenPos, _ = cam:WorldToScreenPoint(headPos)
     if screenPos.Z < 0 then return false end
-    if not onScreen then return false end
     
     local mousePos = Vector2.new(Mouse.X, Mouse.Y)
     local dx = screenPos.X - mousePos.X
@@ -180,11 +195,7 @@ UIS.InputBegan:Connect(function(input, gameProcessed)
     if input.UserInputType == Enum.UserInputType.MouseButton2 then
         locked = true
         if not currentTargetModel or not isTargetValid(currentTargetModel) then
-            local m, p = findNewTarget(Vector2.new(Mouse.X, Mouse.Y))
-            if m and p then
-                currentTargetModel = m
-                currentTargetPart = nil -- we use position now, not a part reference
-            end
+            currentTargetModel = findNewTarget(Vector2.new(Mouse.X, Mouse.Y))
         end
     end
 end)
@@ -193,7 +204,6 @@ UIS.InputEnded:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton2 then
         locked = false
         currentTargetModel = nil
-        currentTargetPart = nil
     end
 end)
 
@@ -201,17 +211,14 @@ RunService.RenderStepped:Connect(function()
     if not settings.Enabled then return end
     if not locked then return end
 
-    if not enemyFolder then
-        enemyFolder = detectEnemyFolder()
+    -- Refresh team map every 2 seconds
+    if tick() - teamCheckTime > 2 then
+        updateTeamMap()
+        teamCheckTime = tick()
     end
 
     if not isTargetValid(currentTargetModel) then
-        currentTargetModel = nil
-        currentTargetPart = nil
-        local m, p = findNewTarget(Vector2.new(Mouse.X, Mouse.Y))
-        if m and p then
-            currentTargetModel = m
-        end
+        currentTargetModel = findNewTarget(Vector2.new(Mouse.X, Mouse.Y))
     end
 
     if not currentTargetModel then return end
@@ -221,10 +228,6 @@ RunService.RenderStepped:Connect(function()
         currentTargetModel = nil
         return
     end
-
-    -- Prediction (apply to the world position)
-    -- Since we don't have a specific part, skip velocity-based prediction
-    -- or use the model's PrimaryPart if it has one
 
     if settings.Mode == "Camera" then
         local cam = workspace.CurrentCamera
@@ -257,10 +260,4 @@ task.spawn(function()
     end
 end)
 
-task.spawn(function()
-    while task.wait(5) do
-        enemyFolder = detectEnemyFolder()
-    end
-end)
-
-print("PF Aimbot loaded - bounding box head detection + fixed screen projection")
+print("PF Aimbot loaded - fixed head position + Player.Team correlation")
