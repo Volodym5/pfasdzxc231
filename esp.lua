@@ -1,5 +1,5 @@
 -- Phantom Forces ESP - Rendering Engine
--- Name-based team caching survives model streaming
+-- Instant identification via DescendantAdded + name-based caching
 
 local Workspace = workspace
 local Players = game:GetService("Players")
@@ -97,20 +97,87 @@ local function getPlayerNameFromModel(model)
     return nil
 end
 
-local function updateTeamMap()
+local function cacheTeamForName(tagName)
+    if playerTeamCache[tagName] ~= nil then return end
     local playersList = Players:GetPlayers()
-    if #playersList == 0 then return end
-    
-    local playersFolder = Workspace:FindFirstChild("Players")
-    if not playersFolder then return end
-
-    local playerLookup = {}
     for _, p in ipairs(playersList) do
-        playerLookup[p.Name] = p
-        if p.DisplayName ~= p.Name then
-            playerLookup[p.DisplayName] = p
+        if p.Name == tagName or p.DisplayName == tagName then
+            local isFriendly = false
+            if LocalPlayer.Team and p.Team then
+                isFriendly = (p.Team == LocalPlayer.Team)
+            elseif LocalPlayer.TeamColor and p.TeamColor then
+                isFriendly = (p.TeamColor.Number == LocalPlayer.TeamColor.Number)
+            end
+            playerTeamCache[tagName] = isFriendly
+            return
         end
     end
+end
+
+local function applyModelIdentification(model, tagName)
+    modelToName[model] = tagName
+    cacheTeamForName(tagName)
+    nameMap[model] = tagName
+    if playerTeamCache[tagName] ~= nil then
+        teamMap[model] = playerTeamCache[tagName]
+    end
+end
+
+local function identifyModel(model)
+    if not model:IsA("Model") then return end
+    if modelToName[model] then return end
+
+    local tagName = getPlayerNameFromModel(model)
+    if tagName then
+        applyModelIdentification(model, tagName)
+        return
+    end
+
+    local conn
+    conn = model.DescendantAdded:Connect(function(desc)
+        if desc.Name == "PlayerTag" and desc:IsA("TextLabel") and desc.Text ~= "" then
+            applyModelIdentification(model, desc.Text)
+            conn:Disconnect()
+        end
+    end)
+end
+
+local function setupInstantIdentification()
+    local playersFolder = Workspace:FindFirstChild("Players")
+    if not playersFolder then
+        Workspace.ChildAdded:Connect(function(child)
+            if child.Name == "Players" then
+                setupInstantIdentification()
+            end
+        end)
+        return
+    end
+
+    for _, teamFolder in ipairs(playersFolder:GetChildren()) do
+        if teamFolder:IsA("Folder") then
+            teamFolder.ChildAdded:Connect(function(model)
+                identifyModel(model)
+            end)
+            for _, model in ipairs(teamFolder:GetChildren()) do
+                identifyModel(model)
+            end
+        end
+    end
+
+    playersFolder.ChildAdded:Connect(function(teamFolder)
+        if teamFolder:IsA("Folder") then
+            teamFolder.ChildAdded:Connect(function(model)
+                identifyModel(model)
+            end)
+        end
+    end)
+end
+
+setupInstantIdentification()
+
+local function updateTeamMap()
+    local playersFolder = Workspace:FindFirstChild("Players")
+    if not playersFolder then return end
 
     local currentModels = {}
 
@@ -119,37 +186,14 @@ local function updateTeamMap()
             for _, model in ipairs(teamFolder:GetChildren()) do
                 if model:IsA("Model") then
                     currentModels[model] = true
-                    
-                    local knownName = modelToName[model]
-                    
-                    if not knownName then
-                        local tagName = getPlayerNameFromModel(model)
-                        if tagName then
-                            modelToName[model] = tagName
-                            knownName = tagName
-                            
-                            if playerTeamCache[tagName] == nil and playerLookup[tagName] then
-                                local player = playerLookup[tagName]
-                                local isFriendly = false
-                                if LocalPlayer.Team and player.Team then
-                                    isFriendly = (player.Team == LocalPlayer.Team)
-                                elseif LocalPlayer.TeamColor and player.TeamColor then
-                                    isFriendly = (player.TeamColor.Number == LocalPlayer.TeamColor.Number)
-                                end
-                                playerTeamCache[tagName] = isFriendly
-                            end
-                        end
-                    end
-                    
-                    if knownName and playerTeamCache[knownName] ~= nil then
-                        nameMap[model] = knownName
-                        teamMap[model] = playerTeamCache[knownName]
+                    if not modelToName[model] then
+                        identifyModel(model)
                     end
                 end
             end
         end
     end
-    
+
     for model, _ in pairs(modelToName) do
         if not currentModels[model] then
             modelToName[model] = nil
@@ -161,7 +205,7 @@ local function updateTeamMap()
             teamMap[model] = nil
         end
     end
-    
+
     teamCheckTime = tick()
 end
 
@@ -299,7 +343,7 @@ local function updateESP()
         return
     end
 
-    if tick() - teamCheckTime > 1 then
+    if tick() - teamCheckTime > 3 then
         updateTeamMap()
     end
 
