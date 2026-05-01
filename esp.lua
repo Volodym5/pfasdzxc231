@@ -1,5 +1,5 @@
 -- Phantom Forces ESP - Rendering Engine
--- Team detection via PlayerTag BillboardGui
+-- Name-based team caching survives model streaming
 
 local Workspace = workspace
 local Players = game:GetService("Players")
@@ -36,8 +36,10 @@ local modelCache = {}
 local chamCache = {}
 local myPosCache = { pos = nil, time = 0 }
 local running = true
-local nameMap = {} -- model -> player name
-local teamMap = {} -- model -> isFriendly
+local nameMap = {}
+local teamMap = {}
+local playerTeamCache = {}
+local modelToName = {}
 local teamCheckTime = 0
 
 local chamContainer = Instance.new("Folder")
@@ -52,6 +54,8 @@ function _G.PF_ESP_Functions.RefreshCache()
     chamCache = {}
     nameMap = {}
     teamMap = {}
+    playerTeamCache = {}
+    modelToName = {}
     teamCheckTime = 0
 end
 
@@ -66,6 +70,8 @@ function _G.PF_ESP_Functions.Stop()
     chamCache = {}
     nameMap = {}
     teamMap = {}
+    playerTeamCache = {}
+    modelToName = {}
 end
 
 function _G.PF_ESP_Functions.Start()
@@ -79,7 +85,6 @@ local function isPlayerActive()
     return UIS.WindowFocused and not GuiService.MenuIsOpen
 end
 
--- Read player name from BillboardGui PlayerTag
 local function getPlayerNameFromModel(model)
     for _, desc in ipairs(model:GetDescendants()) do
         if desc.Name == "PlayerTag" and desc:IsA("TextLabel") then
@@ -92,8 +97,6 @@ local function getPlayerNameFromModel(model)
     return nil
 end
 
--- Update team mapping using PlayerTag text
--- Incremental team mapping — doesn't clear existing data
 local function updateTeamMap()
     local playersList = Players:GetPlayers()
     if #playersList == 0 then return end
@@ -109,7 +112,6 @@ local function updateTeamMap()
         end
     end
 
-    -- Track which models exist now
     local currentModels = {}
 
     for _, teamFolder in ipairs(playersFolder:GetChildren()) do
@@ -118,28 +120,41 @@ local function updateTeamMap()
                 if model:IsA("Model") then
                     currentModels[model] = true
                     
-                    -- Only check if not already mapped
-                    if not nameMap[model] then
+                    local knownName = modelToName[model]
+                    
+                    if not knownName then
                         local tagName = getPlayerNameFromModel(model)
-                        if tagName and playerLookup[tagName] then
-                            local player = playerLookup[tagName]
-                            nameMap[model] = player.DisplayName or player.Name
+                        if tagName then
+                            modelToName[model] = tagName
+                            knownName = tagName
                             
-                            local isFriendly = false
-                            if LocalPlayer.Team and player.Team then
-                                isFriendly = (player.Team == LocalPlayer.Team)
-                            elseif LocalPlayer.TeamColor and player.TeamColor then
-                                isFriendly = (player.TeamColor.Number == LocalPlayer.TeamColor.Number)
+                            if playerTeamCache[tagName] == nil and playerLookup[tagName] then
+                                local player = playerLookup[tagName]
+                                local isFriendly = false
+                                if LocalPlayer.Team and player.Team then
+                                    isFriendly = (player.Team == LocalPlayer.Team)
+                                elseif LocalPlayer.TeamColor and player.TeamColor then
+                                    isFriendly = (player.TeamColor.Number == LocalPlayer.TeamColor.Number)
+                                end
+                                playerTeamCache[tagName] = isFriendly
                             end
-                            teamMap[model] = isFriendly
                         end
+                    end
+                    
+                    if knownName and playerTeamCache[knownName] ~= nil then
+                        nameMap[model] = knownName
+                        teamMap[model] = playerTeamCache[knownName]
                     end
                 end
             end
         end
     end
     
-    -- Clean up models that no longer exist
+    for model, _ in pairs(modelToName) do
+        if not currentModels[model] then
+            modelToName[model] = nil
+        end
+    end
     for model, _ in pairs(nameMap) do
         if not currentModels[model] then
             nameMap[model] = nil
@@ -149,6 +164,7 @@ local function updateTeamMap()
     
     teamCheckTime = tick()
 end
+
 local function getOrCreateESP(model)
     if espCache[model] then return espCache[model] end
     local d = {}
