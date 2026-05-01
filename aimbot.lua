@@ -1,10 +1,11 @@
--- Phantom Forces Aimbot - Visibility check + mouse mode default
+-- Phantom Forces Aimbot - Visibility check + mouse mode default + mousemoverel guards
 
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
 local RunService = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
+local GuiService = game:GetService("GuiService")
 local Mouse = LocalPlayer:GetMouse()
 
 _G.PF_Aimbot_Settings = _G.PF_Aimbot_Settings or {
@@ -100,6 +101,12 @@ local function isVisible(targetPos, model)
     return result == nil
 end
 
+local function canMoveMouse()
+    return not GuiService.MenuIsOpen
+        and UIS:GetFocusedTextBox() == nil
+        and UIS.MouseBehavior ~= Enum.MouseBehavior.LockCenter
+end
+
 local function findNewTarget(mousePos)
     local bestModel = nil
     local bestPart = nil
@@ -117,7 +124,6 @@ local function findNewTarget(mousePos)
             local part = getTargetPart(model)
             if not part then continue end
 
-            -- Visibility check
             if settings.VisibilityCheck and not isVisible(part.Position, model) then continue end
             
             local screenPos, onScreen = Camera:WorldToViewportPoint(part.Position)
@@ -144,7 +150,6 @@ local function isTargetValid(model)
     local part = getTargetPart(model)
     if not part then return false end
 
-    -- Re-check visibility if enabled
     if settings.VisibilityCheck and not isVisible(part.Position, model) then return false end
     
     local screenPos, onScreen = Camera:WorldToViewportPoint(part.Position)
@@ -215,8 +220,10 @@ RunService.RenderStepped:Connect(function()
             Camera.CFrame = lookAt
         end
     elseif settings.Mode == "Mouse" then
-        local screenPos = Camera:WorldToScreenPoint(targetPos)
-        mousemoverel(screenPos.X - Mouse.X, screenPos.Y - Mouse.Y)
+        if canMoveMouse() then
+            local screenPos = Camera:WorldToScreenPoint(targetPos)
+            mousemoverel(screenPos.X - Mouse.X, screenPos.Y - Mouse.Y)
+        end
     end
 end)
 
