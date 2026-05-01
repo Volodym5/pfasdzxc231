@@ -1,4 +1,4 @@
--- Phantom Forces Aimbot - Camera mode with BindToRenderStep
+-- Phantom Forces Aimbot - Mouse movement based aiming
 
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
@@ -251,6 +251,7 @@ UIS.InputBegan:Connect(function(input, gameProcessed)
     if gameProcessed then return end
     if input.UserInputType == Enum.UserInputType.MouseButton2 then
         locked = true
+        UIS.MouseBehavior = Enum.MouseBehavior.Default
         if not currentTargetModel or not isTargetValid(currentTargetModel) then
             currentTargetModel = findNewTarget(Vector2.new(Mouse.X, Mouse.Y))
         end
@@ -261,10 +262,10 @@ UIS.InputEnded:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton2 then
         locked = false
         currentTargetModel = nil
+        UIS.MouseBehavior = Enum.MouseBehavior.LockCenter
     end
 end)
 
--- Use BindToRenderStep with Camera priority + 1 to override game camera
 RunService:BindToRenderStep("PFAimbot", Enum.RenderPriority.Camera.Value + 1, function()
     if not settings.Enabled then return end
     if not locked then return end
@@ -287,11 +288,19 @@ RunService:BindToRenderStep("PFAimbot", Enum.RenderPriority.Camera.Value + 1, fu
     end
 
     local cam = workspace.CurrentCamera
-    local lookAt = CFrame.new(cam.CFrame.Position, targetPos)
+    local targetScreenPos = cam:WorldToScreenPoint(targetPos)
+    local screenCenter = Vector2.new(cam.ViewportSize.X / 2, cam.ViewportSize.Y / 2)
+    
+    local dx = targetScreenPos.X - screenCenter.X
+    local dy = targetScreenPos.Y - screenCenter.Y
+    
     if settings.Smoothness then
-        cam.CFrame = cam.CFrame:Lerp(lookAt, settings.SmoothAmount)
-    else
-        cam.CFrame = lookAt
+        dx = dx * settings.SmoothAmount
+        dy = dy * settings.SmoothAmount
+    end
+    
+    if math.abs(dx) > 0.5 or math.abs(dy) > 0.5 then
+        mousemoverel(dx, dy)
     end
 end)
 
@@ -309,4 +318,4 @@ task.spawn(function()
     end
 end)
 
-print("PF Aimbot loaded - BindToRenderStep camera mode")
+print("PF Aimbot loaded - mouse movement aiming")
