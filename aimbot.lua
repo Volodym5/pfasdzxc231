@@ -1,11 +1,10 @@
--- Phantom Forces Aimbot - Simple head detection + viewport coordinates
+-- Phantom Forces Aimbot - Real cursor position + death/menu safety
 
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 local RunService = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
 local GuiService = game:GetService("GuiService")
-local Mouse = LocalPlayer:GetMouse()
 
 _G.PF_Aimbot_Settings = _G.PF_Aimbot_Settings or {
     Enabled = false,
@@ -13,7 +12,6 @@ _G.PF_Aimbot_Settings = _G.PF_Aimbot_Settings or {
     VisibilityCheck = false,
     FOV = 100,
     TargetPart = "Head",
-    Mode = "Camera",
     Smoothness = false,
     SmoothAmount = 0.5,
     Prediction = false,
@@ -30,6 +28,7 @@ local teamMap = {}
 local playerTeamCache = {}
 local modelToName = {}
 local teamCheckTime = 0
+local wasMouseLocked = true
 
 local fovCircle = Drawing.new("Circle")
 fovCircle.Visible = false
@@ -157,6 +156,7 @@ local function updateTeamMap()
     teamCheckTime = tick()
 end
 
+-- Different positions for Head vs Torso
 local function getHeadPosition(model)
     local highest = nil
     local highestY = -math.huge
@@ -170,6 +170,30 @@ local function getHeadPosition(model)
         return highest.Position + Vector3.new(0, highest.Size.Y / 2, 0)
     end
     return nil
+end
+
+local function getTorsoPosition(model)
+    local parts = {}
+    for _, part in ipairs(model:GetDescendants()) do
+        if part:IsA("BasePart") and part.Transparency < 0.7 then
+            parts[#parts + 1] = part
+        end
+    end
+    if #parts == 0 then return nil end
+    
+    table.sort(parts, function(a, b) return a.Position.Y > b.Position.Y end)
+    -- Find part at roughly 40-50% height
+    local index = math.floor(#parts * 0.45)
+    if index < 1 then index = 1 end
+    return parts[index].Position
+end
+
+local function getTargetPosition(model)
+    if settings.TargetPart == "Head" then
+        return getHeadPosition(model)
+    else
+        return getTorsoPosition(model)
+    end
 end
 
 local function isVisible(targetPos, model)
@@ -186,12 +210,21 @@ local function isVisible(targetPos, model)
     return result == nil
 end
 
-local function findNewTarget(mousePos)
+-- Get actual cursor position from viewport center
+local function getCursorScreenPos()
+    local cam = workspace.CurrentCamera
+    local vs = cam.ViewportSize
+    return Vector2.new(vs.X / 2, vs.Y / 2)
+end
+
+local function findNewTarget()
     local cam = workspace.CurrentCamera
     local bestModel = nil
     local bestDist = settings.FOV
     local playersFolder = workspace:FindFirstChild("Players")
     if not playersFolder then return nil end
+
+    local cursorPos = getCursorScreenPos()
 
     for _, teamFolder in ipairs(playersFolder:GetChildren()) do
         if not teamFolder:IsA("Folder") then continue end
@@ -201,16 +234,16 @@ local function findNewTarget(mousePos)
             
             if settings.TeamCheck and teamMap[model] == true then continue end
             
-            local headPos = getHeadPosition(model)
-            if not headPos then continue end
+            local targetPos = getTargetPosition(model)
+            if not targetPos then continue end
 
-            if settings.VisibilityCheck and not isVisible(headPos, model) then continue end
+            if settings.VisibilityCheck and not isVisible(targetPos, model) then continue end
             
-            local screenPos, _ = cam:WorldToViewportPoint(headPos)
+            local screenPos, _ = cam:WorldToViewportPoint(targetPos)
             if screenPos.Z < 0 then continue end
             
-            local dx = screenPos.X - mousePos.X
-            local dy = screenPos.Y - mousePos.Y
+            local dx = screenPos.X - cursorPos.X
+            local dy = screenPos.Y - cursorPos.Y
             local dist = math.sqrt(dx*dx + dy*dy)
             
             if dist < bestDist then
@@ -231,44 +264,56 @@ local function isTargetValid(model)
 
     if settings.TeamCheck and teamMap[model] == true then return false end
 
-    local headPos = getHeadPosition(model)
-    if not headPos then return false end
+    local targetPos = getTargetPosition(model)
+    if not targetPos then return false end
 
-    if settings.VisibilityCheck and not isVisible(headPos, model) then return false end
+    if settings.VisibilityCheck and not isVisible(targetPos, model) then return false end
     
     local cam = workspace.CurrentCamera
-    local screenPos, _ = cam:WorldToViewportPoint(headPos)
+    local screenPos, _ = cam:WorldToViewportPoint(targetPos)
     if screenPos.Z < 0 then return false end
     
-    local mousePos = Vector2.new(Mouse.X, Mouse.Y)
-    local dx = screenPos.X - mousePos.X
-    local dy = screenPos.Y - mousePos.Y
+    local cursorPos = getCursorScreenPos()
+    local dx = screenPos.X - cursorPos.X
+    local dy = screenPos.Y - cursorPos.Y
     local dist = math.sqrt(dx*dx + dy*dy)
     return dist < settings.FOV * 1.3
 end
 
+local function safeUnlock()
+    if locked then
+        locked = false
+        currentTargetModel = nil
+        UIS.MouseBehavior = Enum.MouseBehavior.LockCenter
+    end
+end
+
+-- Safety: unlock on death, menu, or leaving
+LocalPlayer.CharacterAdded:Connect(function() safeUnlock() end)
+GuiService.MenuOpened:Connect(function() safeUnlock() end)
+Players.PlayerRemoving:Connect(function() safeUnlock() end)
+
 UIS.InputBegan:Connect(function(input, gameProcessed)
     if gameProcessed then return end
     if input.UserInputType == Enum.UserInputType.MouseButton2 then
+        if not LocalPlayer.Character then return end
         locked = true
+        wasMouseLocked = (UIS.MouseBehavior == Enum.MouseBehavior.LockCenter)
         UIS.MouseBehavior = Enum.MouseBehavior.Default
-        if not currentTargetModel or not isTargetValid(currentTargetModel) then
-            currentTargetModel = findNewTarget(Vector2.new(Mouse.X, Mouse.Y))
-        end
+        currentTargetModel = findNewTarget()
     end
 end)
 
 UIS.InputEnded:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton2 then
-        locked = false
-        currentTargetModel = nil
-        UIS.MouseBehavior = Enum.MouseBehavior.LockCenter
+        safeUnlock()
     end
 end)
 
 RunService:BindToRenderStep("PFAimbot", Enum.RenderPriority.Camera.Value + 1, function()
     if not settings.Enabled then return end
     if not locked then return end
+    if not LocalPlayer.Character then safeUnlock() return end
 
     if tick() - teamCheckTime > 3 then
         updateTeamMap()
@@ -276,12 +321,12 @@ RunService:BindToRenderStep("PFAimbot", Enum.RenderPriority.Camera.Value + 1, fu
     end
 
     if not isTargetValid(currentTargetModel) then
-        currentTargetModel = findNewTarget(Vector2.new(Mouse.X, Mouse.Y))
+        currentTargetModel = findNewTarget()
     end
 
     if not currentTargetModel then return end
 
-    local targetPos = getHeadPosition(currentTargetModel)
+    local targetPos = getTargetPosition(currentTargetModel)
     if not targetPos then
         currentTargetModel = nil
         return
@@ -289,10 +334,10 @@ RunService:BindToRenderStep("PFAimbot", Enum.RenderPriority.Camera.Value + 1, fu
 
     local cam = workspace.CurrentCamera
     local targetScreenPos = cam:WorldToViewportPoint(targetPos)
-    local screenCenter = Vector2.new(cam.ViewportSize.X / 2, cam.ViewportSize.Y / 2)
+    local cursorPos = getCursorScreenPos()
     
-    local dx = targetScreenPos.X - screenCenter.X
-    local dy = targetScreenPos.Y - screenCenter.Y
+    local dx = targetScreenPos.X - cursorPos.X
+    local dy = targetScreenPos.Y - cursorPos.Y
     
     if settings.Smoothness then
         dx = dx * settings.SmoothAmount
@@ -311,11 +356,11 @@ task.spawn(function()
             fovCircle.Radius = settings.FOV
             fovCircle.Color = settings.FOVColor
             local guiInset = game:GetService("GuiService"):GetGuiInset()
-            fovCircle.Position = Vector2.new(Mouse.X, Mouse.Y + guiInset.Y)
+            fovCircle.Position = Vector2.new(getCursorScreenPos().X, getCursorScreenPos().Y + guiInset.Y)
         else
             fovCircle.Visible = false
         end
     end
 end)
 
-print("PF Aimbot loaded - viewport coordinates")
+print("PF Aimbot loaded - real cursor + death safety")
