@@ -1,4 +1,4 @@
--- Phantom Forces Aimbot - Team detection via PlayerTag BillboardGui
+-- Phantom Forces Aimbot - Name-based team caching
 
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
@@ -26,8 +26,10 @@ _G.PF_Aimbot_Settings = _G.PF_Aimbot_Settings or {
 local settings = _G.PF_Aimbot_Settings
 local locked = false
 local currentTargetModel = nil
-local teamCheckTime = 0
 local teamMap = {}
+local playerTeamCache = {}
+local modelToName = {}
+local teamCheckTime = 0
 
 local fovCircle = Drawing.new("Circle")
 fovCircle.Visible = false
@@ -38,7 +40,6 @@ fovCircle.Color = Color3.fromRGB(255, 50, 50)
 fovCircle.Filled = false
 fovCircle.Transparency = 0.7
 
--- Read player name from BillboardGui PlayerTag
 local function getPlayerNameFromModel(model)
     for _, desc in ipairs(model:GetDescendants()) do
         if desc.Name == "PlayerTag" and desc:IsA("TextLabel") then
@@ -58,7 +59,6 @@ local function updateTeamMap()
     local playersFolder = workspace:FindFirstChild("Players")
     if not playersFolder then return end
 
-    teamMap = {}
     local playerLookup = {}
     for _, p in ipairs(playersList) do
         playerLookup[p.Name] = p
@@ -67,25 +67,55 @@ local function updateTeamMap()
         end
     end
 
+    local currentModels = {}
+
     for _, teamFolder in ipairs(playersFolder:GetChildren()) do
         if teamFolder:IsA("Folder") then
             for _, model in ipairs(teamFolder:GetChildren()) do
                 if model:IsA("Model") then
-                    local tagName = getPlayerNameFromModel(model)
-                    if tagName and playerLookup[tagName] then
-                        local player = playerLookup[tagName]
-                        local isFriendly = false
-                        if LocalPlayer.Team and player.Team then
-                            isFriendly = (player.Team == LocalPlayer.Team)
-                        elseif LocalPlayer.TeamColor and player.TeamColor then
-                            isFriendly = (player.TeamColor.Number == LocalPlayer.TeamColor.Number)
+                    currentModels[model] = true
+                    
+                    local knownName = modelToName[model]
+                    
+                    if not knownName then
+                        local tagName = getPlayerNameFromModel(model)
+                        if tagName then
+                            modelToName[model] = tagName
+                            knownName = tagName
+                            
+                            if playerTeamCache[tagName] == nil and playerLookup[tagName] then
+                                local player = playerLookup[tagName]
+                                local isFriendly = false
+                                if LocalPlayer.Team and player.Team then
+                                    isFriendly = (player.Team == LocalPlayer.Team)
+                                elseif LocalPlayer.TeamColor and player.TeamColor then
+                                    isFriendly = (player.TeamColor.Number == LocalPlayer.TeamColor.Number)
+                                end
+                                playerTeamCache[tagName] = isFriendly
+                            end
                         end
-                        teamMap[model] = isFriendly
+                    end
+                    
+                    if knownName and playerTeamCache[knownName] ~= nil then
+                        teamMap[model] = playerTeamCache[knownName]
                     end
                 end
             end
         end
     end
+    
+    for model, _ in pairs(modelToName) do
+        if not currentModels[model] then
+            modelToName[model] = nil
+        end
+    end
+    for model, _ in pairs(teamMap) do
+        if not currentModels[model] then
+            teamMap[model] = nil
+        end
+    end
+    
+    teamCheckTime = tick()
 end
 
 local function getHeadPosition(model)
@@ -205,7 +235,7 @@ RunService.RenderStepped:Connect(function()
     if not settings.Enabled then return end
     if not locked then return end
 
-    if tick() - teamCheckTime > 2 then
+    if tick() - teamCheckTime > 1 then
         updateTeamMap()
         teamCheckTime = tick()
     end
@@ -253,4 +283,4 @@ task.spawn(function()
     end
 end)
 
-print("PF Aimbot loaded - PlayerTag team detection")
+print("PF Aimbot loaded - name-based team caching")
