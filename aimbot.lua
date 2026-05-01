@@ -1,4 +1,4 @@
--- Phantom Forces Aimbot - Fixed with debug
+-- Phantom Forces Aimbot - Team detection via PlayerTag BillboardGui
 
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
@@ -28,7 +28,6 @@ local locked = false
 local currentTargetModel = nil
 local teamCheckTime = 0
 local teamMap = {}
-local debugPrinted = false
 
 local fovCircle = Drawing.new("Circle")
 fovCircle.Visible = false
@@ -39,15 +38,18 @@ fovCircle.Color = Color3.fromRGB(255, 50, 50)
 fovCircle.Filled = false
 fovCircle.Transparency = 0.7
 
--- Debug text
-local debugText = Drawing.new("Text")
-debugText.Visible = false
-debugText.Size = 14
-debugText.Color = Color3.fromRGB(255, 255, 255)
-debugText.Center = true
-debugText.Outline = true
-debugText.Font = Drawing.Fonts.Monospace
-debugText.Position = Vector2.new(200, 400)
+-- Read player name from BillboardGui PlayerTag
+local function getPlayerNameFromModel(model)
+    for _, desc in ipairs(model:GetDescendants()) do
+        if desc.Name == "PlayerTag" and desc:IsA("TextLabel") then
+            local text = desc.Text
+            if text and #text > 0 then
+                return text
+            end
+        end
+    end
+    return nil
+end
 
 local function updateTeamMap()
     local playersList = Players:GetPlayers()
@@ -56,59 +58,36 @@ local function updateTeamMap()
     local playersFolder = workspace:FindFirstChild("Players")
     if not playersFolder then return end
 
-    local myTeam = LocalPlayer.Team
     teamMap = {}
+    local playerLookup = {}
+    for _, p in ipairs(playersList) do
+        playerLookup[p.Name] = p
+        if p.DisplayName ~= p.Name then
+            playerLookup[p.DisplayName] = p
+        end
+    end
 
-    local allModels = {}
     for _, teamFolder in ipairs(playersFolder:GetChildren()) do
         if teamFolder:IsA("Folder") then
             for _, model in ipairs(teamFolder:GetChildren()) do
                 if model:IsA("Model") then
-                    local center = Vector3.zero
-                    local count = 0
-                    for _, part in ipairs(model:GetDescendants()) do
-                        if part:IsA("BasePart") then
-                            center = center + part.Position
-                            count = count + 1
+                    local tagName = getPlayerNameFromModel(model)
+                    if tagName and playerLookup[tagName] then
+                        local player = playerLookup[tagName]
+                        local isFriendly = false
+                        if LocalPlayer.Team and player.Team then
+                            isFriendly = (player.Team == LocalPlayer.Team)
+                        elseif LocalPlayer.TeamColor and player.TeamColor then
+                            isFriendly = (player.TeamColor.Number == LocalPlayer.TeamColor.Number)
                         end
-                    end
-                    if count > 0 then
-                        allModels[#allModels + 1] = { model = model, center = center / count }
+                        teamMap[model] = isFriendly
                     end
                 end
             end
-        end
-    end
-
-    local matched = {}
-    for _, data in ipairs(allModels) do
-        local bestPlayer, bestDist = nil, 15
-        for _, player in ipairs(playersList) do
-            if not matched[player] and player.Character then
-                local root = player.Character:FindFirstChild("HumanoidRootPart")
-                if root then
-                    local dist = (root.Position - data.center).Magnitude
-                    if dist < bestDist then
-                        bestDist = dist
-                        bestPlayer = player
-                    end
-                end
-            end
-        end
-        if bestPlayer then
-            local isFriendly = false
-            if myTeam then
-                isFriendly = (bestPlayer.Team == myTeam)
-            elseif LocalPlayer.TeamColor and bestPlayer.TeamColor then
-                isFriendly = (LocalPlayer.TeamColor.Number == bestPlayer.TeamColor.Number)
-            end
-            teamMap[data.model] = isFriendly
-            matched[bestPlayer] = true
         end
     end
 end
 
--- Simple highest-Y head detection (reliable, tested)
 local function getHeadPosition(model)
     local highest = nil
     local highestY = -math.huge
@@ -151,20 +130,13 @@ local function findNewTarget(mousePos)
     local playersFolder = workspace:FindFirstChild("Players")
     if not playersFolder then return nil end
 
-    local modelsChecked = 0
-    local modelsSkippedTeam = 0
-    local modelsSkippedOffScreen = 0
-
     for _, teamFolder in ipairs(playersFolder:GetChildren()) do
         if not teamFolder:IsA("Folder") then continue end
 
         for _, model in ipairs(teamFolder:GetChildren()) do
             if not model:IsA("Model") then continue end
-            modelsChecked = modelsChecked + 1
             
-            if settings.TeamCheck and teamMap[model] == true then
-                modelsSkippedTeam = modelsSkippedTeam + 1
-                continue end
+            if settings.TeamCheck and teamMap[model] == true then continue end
             
             local headPos = getHeadPosition(model)
             if not headPos then continue end
@@ -172,9 +144,7 @@ local function findNewTarget(mousePos)
             if settings.VisibilityCheck and not isVisible(headPos, model) then continue end
             
             local screenPos, _ = cam:WorldToScreenPoint(headPos)
-            if screenPos.Z < 0 then
-                modelsSkippedOffScreen = modelsSkippedOffScreen + 1
-                continue end
+            if screenPos.Z < 0 then continue end
             
             local dx = screenPos.X - mousePos.X
             local dy = screenPos.Y - mousePos.Y
@@ -185,13 +155,6 @@ local function findNewTarget(mousePos)
                 bestModel = model
             end
         end
-    end
-
-    if settings.ShowDebug then
-        debugText.Visible = true
-        debugText.Text = string.format("Models: %d | Team skip: %d | Off screen: %d | Best: %s",
-            modelsChecked, modelsSkippedTeam, modelsSkippedOffScreen,
-            bestModel and "Found" or "None")
     end
 
     return bestModel
@@ -239,14 +202,8 @@ UIS.InputEnded:Connect(function(input)
 end)
 
 RunService.RenderStepped:Connect(function()
-    if not settings.Enabled then
-        debugText.Visible = false
-        return
-    end
-    if not locked then
-        debugText.Visible = false
-        return
-    end
+    if not settings.Enabled then return end
+    if not locked then return end
 
     if tick() - teamCheckTime > 2 then
         updateTeamMap()
@@ -296,4 +253,4 @@ task.spawn(function()
     end
 end)
 
-print("PF Aimbot loaded")
+print("PF Aimbot loaded - PlayerTag team detection")
