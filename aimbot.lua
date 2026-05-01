@@ -1,4 +1,4 @@
--- Phantom Forces Aimbot - Fixed bounding box head position + Player.Team correlation
+-- Phantom Forces Aimbot - Fixed with debug
 
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
@@ -27,7 +27,8 @@ local settings = _G.PF_Aimbot_Settings
 local locked = false
 local currentTargetModel = nil
 local teamCheckTime = 0
-local teamMap = {} -- model -> isFriendly
+local teamMap = {}
+local debugPrinted = false
 
 local fovCircle = Drawing.new("Circle")
 fovCircle.Visible = false
@@ -38,7 +39,16 @@ fovCircle.Color = Color3.fromRGB(255, 50, 50)
 fovCircle.Filled = false
 fovCircle.Transparency = 0.7
 
--- Match models to players and check Player.Team
+-- Debug text
+local debugText = Drawing.new("Text")
+debugText.Visible = false
+debugText.Size = 14
+debugText.Color = Color3.fromRGB(255, 255, 255)
+debugText.Center = true
+debugText.Outline = true
+debugText.Font = Drawing.Fonts.Monospace
+debugText.Position = Vector2.new(200, 400)
+
 local function updateTeamMap()
     local playersList = Players:GetPlayers()
     if #playersList == 0 then return end
@@ -63,10 +73,7 @@ local function updateTeamMap()
                         end
                     end
                     if count > 0 then
-                        allModels[#allModels + 1] = {
-                            model = model,
-                            center = center / count
-                        }
+                        allModels[#allModels + 1] = { model = model, center = center / count }
                     end
                 end
             end
@@ -79,7 +86,6 @@ local function updateTeamMap()
         for _, player in ipairs(playersList) do
             if not matched[player] and player.Character then
                 local root = player.Character:FindFirstChild("HumanoidRootPart")
-                    or player.Character:FindFirstChildWhichIsA("BasePart")
                 if root then
                     local dist = (root.Position - data.center).Magnitude
                     if dist < bestDist then
@@ -89,21 +95,33 @@ local function updateTeamMap()
                 end
             end
         end
-        if bestPlayer and myTeam then
-            teamMap[data.model] = (bestPlayer.Team == myTeam)
+        if bestPlayer then
+            local isFriendly = false
+            if myTeam then
+                isFriendly = (bestPlayer.Team == myTeam)
+            elseif LocalPlayer.TeamColor and bestPlayer.TeamColor then
+                isFriendly = (LocalPlayer.TeamColor.Number == bestPlayer.TeamColor.Number)
+            end
+            teamMap[data.model] = isFriendly
             matched[bestPlayer] = true
         end
     end
 end
 
--- Head position anchored from bottom of bounding box (fixed formula)
+-- Simple highest-Y head detection (reliable, tested)
 local function getHeadPosition(model)
-    local cf, size = model:GetBoundingBox()
-    if not cf or size.Magnitude < 1 then return nil end
-    
-    -- Anchor from bottom, go up 85%
-    local bottomY = cf.Position.Y - size.Y / 2
-    return Vector3.new(cf.Position.X, bottomY + size.Y * 0.85, cf.Position.Z)
+    local highest = nil
+    local highestY = -math.huge
+    for _, part in ipairs(model:GetDescendants()) do
+        if part:IsA("BasePart") and part.Transparency < 0.7 and part.Position.Y > highestY then
+            highestY = part.Position.Y
+            highest = part
+        end
+    end
+    if highest then
+        return highest.Position + Vector3.new(0, highest.Size.Y / 2, 0)
+    end
+    return nil
 end
 
 local function isVisible(targetPos, model)
@@ -133,14 +151,20 @@ local function findNewTarget(mousePos)
     local playersFolder = workspace:FindFirstChild("Players")
     if not playersFolder then return nil end
 
+    local modelsChecked = 0
+    local modelsSkippedTeam = 0
+    local modelsSkippedOffScreen = 0
+
     for _, teamFolder in ipairs(playersFolder:GetChildren()) do
         if not teamFolder:IsA("Folder") then continue end
 
         for _, model in ipairs(teamFolder:GetChildren()) do
             if not model:IsA("Model") then continue end
+            modelsChecked = modelsChecked + 1
             
-            -- Skip friendly models
-            if settings.TeamCheck and teamMap[model] == true then continue end
+            if settings.TeamCheck and teamMap[model] == true then
+                modelsSkippedTeam = modelsSkippedTeam + 1
+                continue end
             
             local headPos = getHeadPosition(model)
             if not headPos then continue end
@@ -148,9 +172,9 @@ local function findNewTarget(mousePos)
             if settings.VisibilityCheck and not isVisible(headPos, model) then continue end
             
             local screenPos, _ = cam:WorldToScreenPoint(headPos)
-            
-            -- Only hard reject if behind camera
-            if screenPos.Z < 0 then continue end
+            if screenPos.Z < 0 then
+                modelsSkippedOffScreen = modelsSkippedOffScreen + 1
+                continue end
             
             local dx = screenPos.X - mousePos.X
             local dy = screenPos.Y - mousePos.Y
@@ -161,6 +185,13 @@ local function findNewTarget(mousePos)
                 bestModel = model
             end
         end
+    end
+
+    if settings.ShowDebug then
+        debugText.Visible = true
+        debugText.Text = string.format("Models: %d | Team skip: %d | Off screen: %d | Best: %s",
+            modelsChecked, modelsSkippedTeam, modelsSkippedOffScreen,
+            bestModel and "Found" or "None")
     end
 
     return bestModel
@@ -208,10 +239,15 @@ UIS.InputEnded:Connect(function(input)
 end)
 
 RunService.RenderStepped:Connect(function()
-    if not settings.Enabled then return end
-    if not locked then return end
+    if not settings.Enabled then
+        debugText.Visible = false
+        return
+    end
+    if not locked then
+        debugText.Visible = false
+        return
+    end
 
-    -- Refresh team map every 2 seconds
     if tick() - teamCheckTime > 2 then
         updateTeamMap()
         teamCheckTime = tick()
@@ -260,4 +296,4 @@ task.spawn(function()
     end
 end)
 
-print("PF Aimbot loaded - fixed head position + Player.Team correlation")
+print("PF Aimbot loaded")
