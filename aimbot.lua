@@ -1,4 +1,4 @@
--- Phantom Forces Aimbot - Standalone working version
+-- Phantom Forces Aimbot - Visibility check + mouse mode default
 
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
@@ -10,9 +10,10 @@ local Mouse = LocalPlayer:GetMouse()
 _G.PF_Aimbot_Settings = _G.PF_Aimbot_Settings or {
     Enabled = false,
     TeamCheck = true,
+    VisibilityCheck = false,
     FOV = 100,
     TargetPart = "Head",
-    Mode = "Camera",
+    Mode = "Mouse",
     Smoothness = false,
     SmoothAmount = 0.5,
     Prediction = false,
@@ -86,6 +87,19 @@ local function getTargetPart(model)
     return getHeadPart(model)
 end
 
+local function isVisible(targetPos, model)
+    local camPos = Camera.CFrame.Position
+    local dir = targetPos - camPos
+    local dist = dir.Magnitude
+    if dist < 0.1 then return false end
+    local rayParams = RaycastParams.new()
+    rayParams.FilterType = Enum.RaycastFilterType.Blacklist
+    rayParams.FilterDescendantsInstances = {LocalPlayer.Character or nil, model}
+    rayParams.IgnoreWater = true
+    local result = Workspace:Raycast(camPos, dir.Unit * dist, rayParams)
+    return result == nil
+end
+
 local function findNewTarget(mousePos)
     local bestModel = nil
     local bestPart = nil
@@ -102,6 +116,9 @@ local function findNewTarget(mousePos)
             
             local part = getTargetPart(model)
             if not part then continue end
+
+            -- Visibility check
+            if settings.VisibilityCheck and not isVisible(part.Position, model) then continue end
             
             local screenPos, onScreen = Camera:WorldToViewportPoint(part.Position)
             if not onScreen then continue end
@@ -126,6 +143,9 @@ local function isTargetValid(model)
 
     local part = getTargetPart(model)
     if not part then return false end
+
+    -- Re-check visibility if enabled
+    if settings.VisibilityCheck and not isVisible(part.Position, model) then return false end
     
     local screenPos, onScreen = Camera:WorldToViewportPoint(part.Position)
     if not onScreen then return false end
