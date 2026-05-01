@@ -283,7 +283,7 @@ local function updateESP()
         return
     end
 
-    if tick() - teamCheckTime > 2 then
+    if tick() - teamCheckTime > 1 then
         updateTeamMap()
     end
 
