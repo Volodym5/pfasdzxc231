@@ -36,8 +36,8 @@ local modelCache = {}
 local chamCache = {}
 local myPosCache = { pos = nil, time = 0 }
 local running = true
-local nameMap = {} -- model -> player name
-local teamMap = {} -- model -> isFriendly (bool)
+local nameMap = {}
+local teamMap = {}
 local teamCheckTime = 0
 
 local chamContainer = Instance.new("Folder")
@@ -80,17 +80,15 @@ local function isPlayerActive()
     return UIS.WindowFocused and not GuiService.MenuIsOpen
 end
 
--- Match models to players by position, then check Player.Team for friend/enemy
 local function updateTeamMap()
     local playersList = Players:GetPlayers()
-    if #playersList == 0 then return
+    if #playersList == 0 then return end
     
     local playersFolder = Workspace:FindFirstChild("Players")
     if not playersFolder then return end
 
     local myTeam = LocalPlayer.Team
 
-    -- Collect all models with their center positions
     local allModels = {}
     for _, teamFolder in ipairs(playersFolder:GetChildren()) do
         if teamFolder:IsA("Folder") then
@@ -115,7 +113,6 @@ local function updateTeamMap()
         end
     end
 
-    -- Match each model to closest player
     local matched = {}
     nameMap = {}
     teamMap = {}
@@ -281,7 +278,6 @@ local function updateESP()
         return
     end
 
-    -- Refresh team mapping every 2 seconds
     if tick() - teamCheckTime > 2 then
         updateTeamMap()
     end
@@ -332,7 +328,6 @@ local function updateESP()
             local dist = myPos and (myPos - centerPos).Magnitude or 0
             local inRange = dist < settings.MaxDistance
 
-            -- Team check using Player.Team correlation
             local isFriendly = false
             if settings.TeamCheck then
                 isFriendly = teamMap[model] == true
