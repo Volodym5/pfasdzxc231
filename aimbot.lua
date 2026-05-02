@@ -1,4 +1,4 @@
--- Phantom Forces Aimbot - Fixed team check + ESP head positions
+-- Phantom Forces Aimbot - Instant identification, no periodic rebuild
 
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
@@ -31,7 +31,6 @@ local currentTargetModel = nil
 local teamMap = {}
 local playerTeamCache = {}
 local modelToName = {}
-local teamCheckTime = 0
 
 local cachedBarrel = nil
 local cachedBarrelOffset = Vector3.new(0, 0, 0)
@@ -48,7 +47,6 @@ fovCircle.Color = Color3.fromRGB(255, 50, 50)
 fovCircle.Filled = false
 fovCircle.Transparency = 0.7
 
--- ===== GUN POSITION FINDER =====
 local function findBarrelAndSight()
     if tick() - barrelCacheTime < 0.5 and cachedBarrel then
         return cachedBarrel, cachedBarrelOffset, cachedSightOffset, cachedSightToBarrel
@@ -92,7 +90,6 @@ local function findBarrelAndSight()
     return nil, Vector3.new(0,0,0), Vector3.new(0,0,0), Vector3.new(0,0,0)
 end
 
--- ===== TEAM DETECTION =====
 local function getPlayerNameFromModel(model)
     for _, desc in ipairs(model:GetDescendants()) do
         if desc.Name == "PlayerTag" and desc:IsA("TextLabel") then
@@ -105,18 +102,48 @@ local function getPlayerNameFromModel(model)
     return nil
 end
 
+local function cacheTeamForPlayer(player)
+    if playerTeamCache[player.Name] ~= nil then return end
+    local isFriendly = false
+    if LocalPlayer.Team and player.Team then
+        isFriendly = (player.Team == LocalPlayer.Team)
+    elseif LocalPlayer.TeamColor and player.TeamColor then
+        isFriendly = (player.TeamColor.Number == LocalPlayer.TeamColor.Number)
+    end
+    playerTeamCache[player.Name] = isFriendly
+    if player.DisplayName ~= player.Name then
+        playerTeamCache[player.DisplayName] = isFriendly
+    end
+end
+
+local function applyModelIdentification(model, tagName)
+    modelToName[model] = tagName
+    
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p.Name == tagName or p.DisplayName == tagName then
+            cacheTeamForPlayer(p)
+            if playerTeamCache[tagName] ~= nil then
+                teamMap[model] = playerTeamCache[tagName]
+            end
+            break
+        end
+    end
+end
+
 local function identifyModel(model)
     if not model:IsA("Model") then return end
     if modelToName[model] then return end
+
     local tagName = getPlayerNameFromModel(model)
     if tagName then
-        modelToName[model] = tagName
+        applyModelIdentification(model, tagName)
         return
     end
+
     local conn
     conn = model.DescendantAdded:Connect(function(desc)
         if desc.Name == "PlayerTag" and desc:IsA("TextLabel") and desc.Text ~= "" then
-            modelToName[model] = desc.Text
+            applyModelIdentification(model, desc.Text)
             conn:Disconnect()
         end
     end)
@@ -130,12 +157,14 @@ local function setupInstantIdentification()
         end)
         return
     end
+
     for _, teamFolder in ipairs(playersFolder:GetChildren()) do
         if teamFolder:IsA("Folder") then
             teamFolder.ChildAdded:Connect(function(model) identifyModel(model) end)
             for _, model in ipairs(teamFolder:GetChildren()) do identifyModel(model) end
         end
     end
+
     playersFolder.ChildAdded:Connect(function(teamFolder)
         if teamFolder:IsA("Folder") then
             teamFolder.ChildAdded:Connect(function(model) identifyModel(model) end)
@@ -144,64 +173,6 @@ local function setupInstantIdentification()
 end
 setupInstantIdentification()
 
-local function updateTeamMap()
-    local playersList = Players:GetPlayers()
-    if #playersList == 0 then return end
-    
-    local playersFolder = workspace:FindFirstChild("Players")
-    if not playersFolder then return end
-
-    local playerLookup = {}
-    for _, p in ipairs(playersList) do
-        playerLookup[p.Name] = p
-        if p.DisplayName ~= p.Name then
-            playerLookup[p.DisplayName] = p
-        end
-    end
-
-    local currentModels = {}
-    for _, teamFolder in ipairs(playersFolder:GetChildren()) do
-        if teamFolder:IsA("Folder") then
-            for _, model in ipairs(teamFolder:GetChildren()) do
-                if model:IsA("Model") then
-                    currentModels[model] = true
-                    
-                    if not modelToName[model] then
-                        local tagName = getPlayerNameFromModel(model)
-                        if tagName then
-                            modelToName[model] = tagName
-                        end
-                    end
-                    
-                    local knownName = modelToName[model]
-                    
-                    if knownName and playerLookup[knownName] then
-                        local player = playerLookup[knownName]
-                        local isFriendly = false
-                        if LocalPlayer.Team and player.Team then
-                            isFriendly = (player.Team == LocalPlayer.Team)
-                        elseif LocalPlayer.TeamColor and player.TeamColor then
-                            isFriendly = (player.TeamColor.Number == LocalPlayer.TeamColor.Number)
-                        end
-                        playerTeamCache[knownName] = isFriendly
-                        teamMap[model] = isFriendly
-                    end
-                end
-            end
-        end
-    end
-    
-    for model, _ in pairs(modelToName) do
-        if not currentModels[model] then modelToName[model] = nil end
-    end
-    for model, _ in pairs(teamMap) do
-        if not currentModels[model] then teamMap[model] = nil end
-    end
-    
-    teamCheckTime = tick()
-end
-
--- ===== HEAD DETECTION =====
 local function getHeadPosition(model)
     if _G.PF_HeadPositions and _G.PF_HeadPositions[model] then
         return _G.PF_HeadPositions[model]
@@ -274,7 +245,6 @@ local function isTargetValid(model)
     return dist < settings.FOV * 1.3
 end
 
--- ===== INPUT =====
 UIS.InputBegan:Connect(function(input, gameProcessed)
     if gameProcessed then return end
     if input.UserInputType == Enum.UserInputType.MouseButton2 then
@@ -292,14 +262,9 @@ UIS.InputEnded:Connect(function(input)
     end
 end)
 
--- ===== AIM LOGIC =====
 RunService.RenderStepped:Connect(function()
     if not settings.Enabled then return end
     if not locked then return end
-
-    if tick() - teamCheckTime > 10 then
-        updateTeamMap()
-    end
 
     if not isTargetValid(currentTargetModel) then
         currentTargetModel = findNewTarget(Vector2.new(Mouse.X, Mouse.Y))
@@ -341,7 +306,6 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
--- ===== FOV CIRCLE =====
 task.spawn(function()
     while task.wait() do
         if settings.ShowFOV then
@@ -356,4 +320,4 @@ task.spawn(function()
     end
 end)
 
-print("PF Aimbot loaded - using ESP head positions")
+print("PF Aimbot loaded - instant ID only")
