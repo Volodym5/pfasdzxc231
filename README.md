@@ -1,1 +1,1 @@
-# pfasdzxc231
+loadstring(game:HttpGet("LINK"))()
