@@ -1,5 +1,5 @@
 -- Phantom Forces ESP - Rendering Engine
--- Fixed team check: refreshes without clearing
+-- Instant identification only, no periodic full rebuild
 
 local Workspace = workspace
 local Players = game:GetService("Players")
@@ -42,7 +42,6 @@ local nameMap = {}
 local teamMap = {}
 local playerTeamCache = {}
 local modelToName = {}
-local teamCheckTime = 0
 
 local chamContainer = Instance.new("Folder")
 chamContainer.Name = "RBX_" .. tostring(math.random(100000, 999999))
@@ -58,7 +57,6 @@ function _G.PF_ESP_Functions.RefreshCache()
     teamMap = {}
     playerTeamCache = {}
     modelToName = {}
-    teamCheckTime = 0
     _G.PF_HeadPositions = {}
 end
 
@@ -101,18 +99,51 @@ local function getPlayerNameFromModel(model)
     return nil
 end
 
+-- Cache team info when a new name is discovered
+local function cacheTeamForPlayer(player)
+    if playerTeamCache[player.Name] ~= nil then return end
+    local isFriendly = false
+    if LocalPlayer.Team and player.Team then
+        isFriendly = (player.Team == LocalPlayer.Team)
+    elseif LocalPlayer.TeamColor and player.TeamColor then
+        isFriendly = (player.TeamColor.Number == LocalPlayer.TeamColor.Number)
+    end
+    playerTeamCache[player.Name] = isFriendly
+    if player.DisplayName ~= player.Name then
+        playerTeamCache[player.DisplayName] = isFriendly
+    end
+end
+
+local function applyModelIdentification(model, tagName)
+    modelToName[model] = tagName
+    
+    -- Find the player to cache team
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p.Name == tagName or p.DisplayName == tagName then
+            cacheTeamForPlayer(p)
+            if playerTeamCache[tagName] ~= nil then
+                teamMap[model] = playerTeamCache[tagName]
+                nameMap[model] = tagName
+            end
+            break
+        end
+    end
+end
+
 local function identifyModel(model)
     if not model:IsA("Model") then return end
     if modelToName[model] then return end
+
     local tagName = getPlayerNameFromModel(model)
     if tagName then
-        modelToName[model] = tagName
+        applyModelIdentification(model, tagName)
         return
     end
+
     local conn
     conn = model.DescendantAdded:Connect(function(desc)
         if desc.Name == "PlayerTag" and desc:IsA("TextLabel") and desc.Text ~= "" then
-            modelToName[model] = desc.Text
+            applyModelIdentification(model, desc.Text)
             conn:Disconnect()
         end
     end)
@@ -126,12 +157,14 @@ local function setupInstantIdentification()
         end)
         return
     end
+
     for _, teamFolder in ipairs(playersFolder:GetChildren()) do
         if teamFolder:IsA("Folder") then
             teamFolder.ChildAdded:Connect(function(model) identifyModel(model) end)
             for _, model in ipairs(teamFolder:GetChildren()) do identifyModel(model) end
         end
     end
+
     playersFolder.ChildAdded:Connect(function(teamFolder)
         if teamFolder:IsA("Folder") then
             teamFolder.ChildAdded:Connect(function(model) identifyModel(model) end)
@@ -139,68 +172,6 @@ local function setupInstantIdentification()
     end)
 end
 setupInstantIdentification()
-
-local function updateTeamMap()
-    local playersList = Players:GetPlayers()
-    if #playersList == 0 then return end
-    
-    local playersFolder = Workspace:FindFirstChild("Players")
-    if not playersFolder then return end
-
-    local playerLookup = {}
-    for _, p in ipairs(playersList) do
-        playerLookup[p.Name] = p
-        if p.DisplayName ~= p.Name then
-            playerLookup[p.DisplayName] = p
-        end
-    end
-
-    local currentModels = {}
-
-    for _, teamFolder in ipairs(playersFolder:GetChildren()) do
-        if teamFolder:IsA("Folder") then
-            for _, model in ipairs(teamFolder:GetChildren()) do
-                if model:IsA("Model") then
-                    currentModels[model] = true
-                    
-                    if not modelToName[model] then
-                        local tagName = getPlayerNameFromModel(model)
-                        if tagName then
-                            modelToName[model] = tagName
-                        end
-                    end
-                    
-                    local knownName = modelToName[model]
-                    
-                    if knownName and playerLookup[knownName] then
-                        local player = playerLookup[knownName]
-                        local isFriendly = false
-                        if LocalPlayer.Team and player.Team then
-                            isFriendly = (player.Team == LocalPlayer.Team)
-                        elseif LocalPlayer.TeamColor and player.TeamColor then
-                            isFriendly = (player.TeamColor.Number == LocalPlayer.TeamColor.Number)
-                        end
-                        playerTeamCache[knownName] = isFriendly
-                        teamMap[model] = isFriendly
-                        nameMap[model] = knownName
-                    end
-                end
-            end
-        end
-    end
-    
-    for model, _ in pairs(modelToName) do
-        if not currentModels[model] then modelToName[model] = nil end
-    end
-    for model, _ in pairs(teamMap) do
-        if not currentModels[model] then teamMap[model] = nil end
-    end
-    for model, _ in pairs(nameMap) do
-        if not currentModels[model] then nameMap[model] = nil end
-    end
-    
-    teamCheckTime = tick()
-end
 
 local function getOrCreateESP(model)
     if espCache[model] then return espCache[model] end
@@ -335,10 +306,6 @@ local function updateESP()
         end
         for _, c in pairs(chamCache) do c.Enabled = false end
         return
-    end
-
-    if tick() - teamCheckTime > 10 then
-        updateTeamMap()
     end
 
     local myPos = getMyPosition()
