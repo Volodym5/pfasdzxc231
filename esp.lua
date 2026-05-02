@@ -1,5 +1,5 @@
 -- Phantom Forces ESP - Rendering Engine
--- Instant identification only, no periodic full rebuild
+-- Flicker-free team cache with streaming memory
 
 local Workspace = workspace
 local Players = game:GetService("Players")
@@ -38,10 +38,22 @@ local modelCache = {}
 local chamCache = {}
 local myPosCache = { pos = nil, time = 0 }
 local running = true
-local nameMap = {}
-local teamMap = {}
-local playerTeamCache = {}
-local modelToName = {}
+
+-- Display (confirmed) state
+local nameMap = {}       -- model -> player name
+local teamMap = {}       -- model -> isFriendly
+
+-- Pending verification layer
+local pendingTeam = {}   -- model -> { team, confidence }
+local CONFIDENCE_THRESHOLD = 2
+
+-- Streaming memory (survives model destruction/recreation)
+local streamingMemory = {}  -- playerName -> isFriendly
+local streamingTimestamps = {}  -- playerName -> tick()
+
+local modelToName = {}   -- model -> playerName (for fast lookup)
+local roundSpawnBurst = 0
+local roundActive = true
 
 local chamContainer = Instance.new("Folder")
 chamContainer.Name = "RBX_" .. tostring(math.random(100000, 999999))
@@ -55,7 +67,9 @@ function _G.PF_ESP_Functions.RefreshCache()
     chamCache = {}
     nameMap = {}
     teamMap = {}
-    playerTeamCache = {}
+    pendingTeam = {}
+    streamingMemory = {}
+    streamingTimestamps = {}
     modelToName = {}
     _G.PF_HeadPositions = {}
 end
@@ -71,7 +85,9 @@ function _G.PF_ESP_Functions.Stop()
     chamCache = {}
     nameMap = {}
     teamMap = {}
-    playerTeamCache = {}
+    pendingTeam = {}
+    streamingMemory = {}
+    streamingTimestamps = {}
     modelToName = {}
     _G.PF_HeadPositions = {}
 end
@@ -99,54 +115,51 @@ local function getPlayerNameFromModel(model)
     return nil
 end
 
--- Cache team info when a new name is discovered
-local function cacheTeamForPlayer(player)
-    if playerTeamCache[player.Name] ~= nil then return end
-    local isFriendly = false
-    if LocalPlayer.Team and player.Team then
-        isFriendly = (player.Team == LocalPlayer.Team)
-    elseif LocalPlayer.TeamColor and player.TeamColor then
-        isFriendly = (player.TeamColor.Number == LocalPlayer.TeamColor.Number)
-    end
-    playerTeamCache[player.Name] = isFriendly
-    if player.DisplayName ~= player.Name then
-        playerTeamCache[player.DisplayName] = isFriendly
-    end
-end
-
-local function applyModelIdentification(model, tagName)
-    modelToName[model] = tagName
-    
-    -- Find the player to cache team
+-- Resolve team from a player name (caches in playerTeamCache for speed)
+local function resolveTeamFromName(playerName)
     for _, p in ipairs(Players:GetPlayers()) do
-        if p.Name == tagName or p.DisplayName == tagName then
-            cacheTeamForPlayer(p)
-            if playerTeamCache[tagName] ~= nil then
-                teamMap[model] = playerTeamCache[tagName]
-                nameMap[model] = tagName
+        if p.Name == playerName or p.DisplayName == playerName then
+            local isFriendly = false
+            if LocalPlayer.Team and p.Team then
+                isFriendly = (p.Team == LocalPlayer.Team)
+            elseif LocalPlayer.TeamColor and p.TeamColor then
+                isFriendly = (p.TeamColor.Number == LocalPlayer.TeamColor.Number)
             end
-            break
+            return isFriendly
         end
     end
+    return nil
 end
 
+-- Immediate identification when a model appears
 local function identifyModel(model)
     if not model:IsA("Model") then return end
     if modelToName[model] then return end
 
     local tagName = getPlayerNameFromModel(model)
-    if tagName then
-        applyModelIdentification(model, tagName)
+    if not tagName then return end
+
+    modelToName[model] = tagName
+
+    -- Check streaming memory first (avoid flicker on stream-back-in)
+    if streamingMemory[tagName] ~= nil then
+        teamMap[model] = streamingMemory[tagName]
+        nameMap[model] = tagName
+        pendingTeam[model] = { team = streamingMemory[tagName], confidence = CONFIDENCE_THRESHOLD }
         return
     end
 
-    local conn
-    conn = model.DescendantAdded:Connect(function(desc)
-        if desc.Name == "PlayerTag" and desc:IsA("TextLabel") and desc.Text ~= "" then
-            applyModelIdentification(model, desc.Text)
-            conn:Disconnect()
-        end
-    end)
+    -- Fresh identification
+    local isFriendly = resolveTeamFromName(tagName)
+    if isFriendly ~= nil then
+        teamMap[model] = isFriendly
+        nameMap[model] = tagName
+        pendingTeam[model] = { team = isFriendly, confidence = 1 }
+        
+        -- Also store in streaming memory for future stream cycles
+        streamingMemory[tagName] = isFriendly
+        streamingTimestamps[tagName] = tick()
+    end
 end
 
 local function setupInstantIdentification()
@@ -172,6 +185,131 @@ local function setupInstantIdentification()
     end)
 end
 setupInstantIdentification()
+
+-- Periodic re-scan (no flicker — uses confidence gating)
+local lastScanTime = 0
+local SCAN_INTERVAL = 5
+
+local function periodicRescan()
+    local playerLookup = {}
+    for _, p in ipairs(Players:GetPlayers()) do
+        playerLookup[p.Name] = p
+        if p.DisplayName ~= p.Name then
+            playerLookup[p.DisplayName] = p
+        end
+    end
+
+    local currentModels = {}
+    local playersFolder = Workspace:FindFirstChild("Players")
+    if not playersFolder then return end
+
+    for _, teamFolder in ipairs(playersFolder:GetChildren()) do
+        if teamFolder:IsA("Folder") then
+            for _, model in ipairs(teamFolder:GetChildren()) do
+                if model:IsA("Model") then
+                    currentModels[model] = true
+
+                    local knownName = modelToName[model]
+                    if not knownName then
+                        local tagName = getPlayerNameFromModel(model)
+                        if tagName then
+                            modelToName[model] = tagName
+                            knownName = tagName
+                        end
+                    end
+
+                    if knownName and playerLookup[knownName] then
+                        local newTeam = resolveTeamFromName(knownName)
+                        if newTeam == nil then continue end
+
+                        local p = pendingTeam[model]
+                        if p and p.team == newTeam then
+                            p.confidence = p.confidence + 1
+                            if p.confidence >= CONFIDENCE_THRESHOLD then
+                                -- Promote to confirmed
+                                teamMap[model] = newTeam
+                                nameMap[model] = knownName
+                                streamingMemory[knownName] = newTeam
+                                streamingTimestamps[knownName] = tick()
+                            end
+                        else
+                            -- Disagreement or first scan — reset pending, don't touch confirmed
+                            pendingTeam[model] = { team = newTeam, confidence = 1 }
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    -- Cleanup dead models
+    for model, _ in pairs(modelToName) do
+        if not currentModels[model] then
+            -- Save to streaming memory before removing
+            local name = modelToName[model]
+            if name and teamMap[model] ~= nil then
+                streamingMemory[name] = teamMap[model]
+                streamingTimestamps[name] = tick()
+            end
+            modelToName[model] = nil
+            nameMap[model] = nil
+            teamMap[model] = nil
+            pendingTeam[model] = nil
+        end
+    end
+    for model, _ in pairs(teamMap) do
+        if not currentModels[model] then teamMap[model] = nil end
+    end
+    for model, _ in pairs(nameMap) do
+        if not currentModels[model] then nameMap[model] = nil end
+    end
+    for model, _ in pairs(pendingTeam) do
+        if not currentModels[model] then pendingTeam[model] = nil end
+    end
+
+    lastScanTime = tick()
+end
+
+-- Round detection: flush streaming memory on new round
+local function setupRoundDetection()
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            player.CharacterAdded:Connect(function()
+                roundSpawnBurst = roundSpawnBurst + 1
+                task.delay(2, function()
+                    roundSpawnBurst = math.max(0, roundSpawnBurst - 1)
+                end)
+                if roundSpawnBurst >= 3 and not roundActive then
+                    roundActive = true
+                    -- Flush streaming memory on new round (teams may have changed)
+                    streamingMemory = {}
+                    streamingTimestamps = {}
+                    pendingTeam = {}
+                    _G.PF_ESP_Functions.RefreshCache()
+                end
+            end)
+        end
+    end
+
+    task.spawn(function()
+        while task.wait(1) do
+            local playersFolder = Workspace:FindFirstChild("Players")
+            if playersFolder then
+                local allEmpty = true
+                for _, f in ipairs(playersFolder:GetChildren()) do
+                    if f:IsA("Folder") and #f:GetChildren() > 0 then
+                        allEmpty = false
+                        break
+                    end
+                end
+                if allEmpty and roundActive then
+                    roundActive = false
+                end
+            end
+        end
+    end)
+end
+setupRoundDetection()
 
 local function getOrCreateESP(model)
     if espCache[model] then return espCache[model] end
@@ -306,6 +444,10 @@ local function updateESP()
         end
         for _, c in pairs(chamCache) do c.Enabled = false end
         return
+    end
+
+    if tick() - lastScanTime > SCAN_INTERVAL then
+        periodicRescan()
     end
 
     local myPos = getMyPosition()
