@@ -1,4 +1,4 @@
--- Phantom Forces Aimbot – Tight‑bounds head detection + flicker‑free teams
+-- Phantom Forces Aimbot – Weighted head detection + flicker‑free teams + sight compensation
 
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
@@ -29,22 +29,28 @@ local settings = _G.PF_Aimbot_Settings
 local locked = false
 local currentTargetModel = nil
 
--- Team tracking
+-- Team tracking (flicker‑free)
 local teamMap = {}
 local pendingTeam = {}
-local CONFIDENCE_THRESHOLD = 2
 local streamingMemory = {}
+local streamingTimestamps = {}
 local modelToName = {}
 local lastScanTime = 0
 local SCAN_INTERVAL = 5
+local CONFIDENCE_THRESHOLD = 2
 
--- Gun position
+-- Round detection
+local roundSpawnBurst = 0
+local roundActive = true
+
+-- Gun position cache
 local cachedBarrel = nil
 local cachedBarrelOffset = Vector3.new(0, 0, 0)
 local cachedSightOffset = Vector3.new(0, 0, 0)
 local cachedSightToBarrel = Vector3.new(0, 0, 0)
 local barrelCacheTime = 0
 
+-- FOV circle
 local fovCircle = Drawing.new("Circle")
 fovCircle.Visible = false
 fovCircle.Thickness = 1
@@ -67,15 +73,9 @@ local function findBarrelAndSight()
             for _, part in ipairs(child:GetDescendants()) do
                 if part:IsA("MeshPart") and part.Transparency < 0.5 then
                     local relPos = part.Position - cam.CFrame.Position
-                    local forwardDist = relPos:Dot(cam.CFrame.LookVector)
-                    if forwardDist > barrelDist then
-                        barrelDist = forwardDist
-                        barrel = part
-                    end
-                    if part.Position.Y > sightY then
-                        sightY = part.Position.Y
-                        sight = part
-                    end
+                    local fwd = relPos:Dot(cam.CFrame.LookVector)
+                    if fwd > barrelDist then barrelDist = fwd; barrel = part end
+                    if part.Position.Y > sightY then sightY = part.Position.Y; sight = part end
                 end
             end
         end
@@ -88,14 +88,15 @@ local function findBarrelAndSight()
         barrelCacheTime = tick()
         return barrel, cachedBarrelOffset, cachedSightOffset, cachedSightToBarrel
     end
-    return nil, Vector3.new(0,0,0), Vector3.new(0,0,0), Vector3.new(0,0,0)
+    return nil, Vector3.zero, Vector3.zero, Vector3.zero
 end
 
 -- ===== TEAM DETECTION =====
 local function getPlayerNameFromModel(model)
     for _, desc in ipairs(model:GetDescendants()) do
         if desc.Name == "PlayerTag" and desc:IsA("TextLabel") then
-            return desc.Text
+            local text = desc.Text
+            if text and #text > 0 then return text end
         end
     end
     return nil
@@ -104,8 +105,8 @@ end
 local function resolveTeamFromName(playerName)
     for _, p in ipairs(Players:GetPlayers()) do
         if p.Name == playerName or p.DisplayName == playerName then
-            if LocalPlayer.Team and p.Team then return (p.Team == LocalPlayer.Team) end
-            if LocalPlayer.TeamColor and p.TeamColor then return (p.TeamColor.Number == LocalPlayer.TeamColor.Number) end
+            if LocalPlayer.Team and p.Team then return p.Team == LocalPlayer.Team end
+            if LocalPlayer.TeamColor and p.TeamColor then return p.TeamColor.Number == LocalPlayer.TeamColor.Number end
         end
     end
     return nil
@@ -126,6 +127,7 @@ local function identifyModel(model)
         teamMap[model] = isFriendly
         pendingTeam[model] = { team = isFriendly, confidence = 1 }
         streamingMemory[tagName] = isFriendly
+        streamingTimestamps[tagName] = tick()
     end
 end
 
@@ -135,10 +137,10 @@ local function setupInstantIdentification()
         workspace.ChildAdded:Connect(function(c) if c.Name == "Players" then setupInstantIdentification() end end)
         return
     end
-    for _, teamFolder in ipairs(playersFolder:GetChildren()) do
-        if teamFolder:IsA("Folder") then
-            teamFolder.ChildAdded:Connect(identifyModel)
-            for _, model in ipairs(teamFolder:GetChildren()) do identifyModel(model) end
+    for _, tf in ipairs(playersFolder:GetChildren()) do
+        if tf:IsA("Folder") then
+            tf.ChildAdded:Connect(identifyModel)
+            for _, m in ipairs(tf:GetChildren()) do identifyModel(m) end
         end
     end
     playersFolder.ChildAdded:Connect(function(tf) if tf:IsA("Folder") then tf.ChildAdded:Connect(identifyModel) end end)
@@ -154,66 +156,170 @@ local function periodicRescan()
     local currentModels = {}
     local playersFolder = workspace:FindFirstChild("Players")
     if not playersFolder then return end
-    for _, teamFolder in ipairs(playersFolder:GetChildren()) do
-        if teamFolder:IsA("Folder") then
-            for _, model in ipairs(teamFolder:GetChildren()) do
-                if model:IsA("Model") then
-                    currentModels[model] = true
-                    local knownName = modelToName[model]
+    for _, tf in ipairs(playersFolder:GetChildren()) do
+        if tf:IsA("Folder") then
+            for _, m in ipairs(tf:GetChildren()) do
+                if m:IsA("Model") then
+                    currentModels[m] = true
+                    local knownName = modelToName[m]
                     if not knownName then
-                        local tagName = getPlayerNameFromModel(model)
-                        if tagName then modelToName[model] = tagName; knownName = tagName end
+                        local tag = getPlayerNameFromModel(m)
+                        if tag then modelToName[m] = tag; knownName = tag end
                     end
                     if knownName and playerLookup[knownName] then
                         local newTeam = resolveTeamFromName(knownName)
                         if newTeam == nil then continue end
-                        local p = pendingTeam[model]
+                        local p = pendingTeam[m]
                         if p and p.team == newTeam then
-                            p.confidence = p.confidence + 1
+                            p.confidence += 1
                             if p.confidence >= CONFIDENCE_THRESHOLD then
-                                teamMap[model] = newTeam
+                                teamMap[m] = newTeam
                                 streamingMemory[knownName] = newTeam
+                                streamingTimestamps[knownName] = tick()
                             end
                         else
-                            pendingTeam[model] = { team = newTeam, confidence = 1 }
+                            pendingTeam[m] = { team = newTeam, confidence = 1 }
                         end
                     end
                 end
             end
         end
     end
-    for model, _ in pairs(modelToName) do
-        if not currentModels[model] then
-            local name = modelToName[model]
-            if name and teamMap[model] ~= nil then streamingMemory[name] = teamMap[model] end
-            modelToName[model] = nil; teamMap[model] = nil; pendingTeam[model] = nil
+    for m, _ in pairs(modelToName) do
+        if not currentModels[m] then
+            local name = modelToName[m]
+            if name and teamMap[m] ~= nil then streamingMemory[name] = teamMap[m]; streamingTimestamps[name] = tick() end
+            modelToName[m] = nil; teamMap[m] = nil; pendingTeam[m] = nil
         end
     end
-    for model, _ in pairs(teamMap) do if not currentModels[model] then teamMap[model] = nil end end
-    for model, _ in pairs(pendingTeam) do if not currentModels[model] then pendingTeam[model] = nil end end
+    for m, _ in pairs(teamMap) do if not currentModels[m] then teamMap[m] = nil end end
+    for m, _ in pairs(pendingTeam) do if not currentModels[m] then pendingTeam[m] = nil end end
     lastScanTime = tick()
 end
 
--- ===== HEAD DETECTION (tight bounds) =====
-local function getTightHeadPosition(model)
-    local minY, maxY = math.huge, -math.huge
-    local sumX, sumZ, count = 0, 0, 0
-    for _, part in ipairs(model:GetDescendants()) do
-        if part:IsA("BasePart") and part.Transparency < 0.7 then
-            local pos = part.Position
-            local half = part.Size.Y / 2
-            minY = math.min(minY, pos.Y - half)
-            maxY = math.max(maxY, pos.Y + half)
-            sumX = sumX + pos.X
-            sumZ = sumZ + pos.Z
-            count = count + 1
+-- Round detection: flush streaming memory on new round
+local function setupRoundDetection()
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            player.CharacterAdded:Connect(function()
+                roundSpawnBurst += 1
+                task.delay(2, function() roundSpawnBurst = math.max(0, roundSpawnBurst - 1) end)
+                if roundSpawnBurst >= 3 and not roundActive then
+                    roundActive = true
+                    streamingMemory = {}
+                    streamingTimestamps = {}
+                    pendingTeam = {}
+                end
+            end)
         end
     end
-    if count == 0 then return nil end
-    local cx = sumX / count
-    local cz = sumZ / count
-    -- Aim just below the very top (at ~93% height) for headshots
+    task.spawn(function()
+        while task.wait(1) do
+            local playersFolder = workspace:FindFirstChild("Players")
+            if playersFolder then
+                local allEmpty = true
+                for _, f in ipairs(playersFolder:GetChildren()) do
+                    if f:IsA("Folder") and #f:GetChildren() > 0 then allEmpty = false; break end
+                end
+                if allEmpty and roundActive then roundActive = false end
+            end
+        end
+    end)
+end
+setupRoundDetection()
+
+-- ===== HEAD DETECTION (weighted + shape filter) =====
+local function isHeadLike(part)
+    local s = part.Size
+    local dims = {s.X, s.Y, s.Z}
+    table.sort(dims)
+    local shortest, longest = dims[1], dims[3]
+    local aspectRatio = shortest / longest
+    local volume = s.X * s.Y * s.Z
+    return aspectRatio > 0.35 and volume > 0.5  -- head is compact and has real volume
+end
+
+local function findHeadPosition(model)
+    -- Fallback: ESP shared position or tight bounds
+    if _G.PF_HeadPositions and _G.PF_HeadPositions[model] then
+        return _G.PF_HeadPositions[model]
+    end
+
+    local parts = {}
+    local minY, maxY = math.huge, -math.huge
+
+    for _, part in ipairs(model:GetDescendants()) do
+        if part:IsA("BasePart") and part.Transparency < 0.7 then
+            local top = part.Position.Y + part.Size.Y / 2
+            local bot = part.Position.Y - part.Size.Y / 2
+            maxY = math.max(maxY, top)
+            minY = math.min(minY, bot)
+            table.insert(parts, part)
+        end
+    end
+
+    if #parts == 0 then return nil end
     local height = maxY - minY
+    if height <= 0 then return nil end
+
+    -- Weighted centroid (cube bias toward top)
+    local sumX, sumZ, sumW = 0, 0, 0
+    for _, part in ipairs(parts) do
+        local normY = (part.Position.Y - minY) / height
+        local weight = normY ^ 3
+        sumX += part.Position.X * weight
+        sumZ += part.Position.Z * weight
+        sumW += weight
+    end
+    local cx = sumX / sumW
+    local cz = sumZ / sumW
+
+    -- Search top 30% for head‑like part
+    local searchFloor = maxY - height * 0.30
+    local bestPart, bestScore = nil, -math.huge
+
+    for _, part in ipairs(parts) do
+        local partTop = part.Position.Y + part.Size.Y / 2
+        if partTop >= searchFloor and isHeadLike(part) then
+            local s = part.Size
+            local volume = s.X * s.Y * s.Z
+            local dims = {s.X, s.Y, s.Z}
+            table.sort(dims)
+            local aspectRatio = dims[1] / dims[3]
+            local verticalBias = (part.Position.Y - minY) / height
+            local score = aspectRatio * 2 + math.log(volume + 0.01) + verticalBias
+
+            -- Penalize large nearby lower parts (held weapons)
+            local hasNearby = false
+            for _, other in ipairs(parts) do
+                if other ~= part then
+                    local dx = math.abs(other.Position.X - part.Position.X)
+                    local dz = math.abs(other.Position.Z - part.Position.Z)
+                    local dy = part.Position.Y - other.Position.Y
+                    local otherVol = other.Size.X * other.Size.Y * other.Size.Z
+                    if dx < 2 and dz < 2 and dy > 1.5 and otherVol > 2 then
+                        hasNearby = true; break
+                    end
+                end
+            end
+            if hasNearby then score = score - 2 end
+
+            if score > bestScore then
+                bestScore = score
+                bestPart = part
+            end
+        end
+    end
+
+    if bestPart then
+        return Vector3.new(
+            bestPart.Position.X,
+            bestPart.Position.Y + bestPart.Size.Y * 0.3,
+            bestPart.Position.Z
+        )
+    end
+
+    -- Fallback: weighted centroid at 93% height
     return Vector3.new(cx, maxY - height * 0.07, cz)
 end
 
@@ -235,12 +341,12 @@ local function findNewTarget(mousePos)
     local bestModel, bestDist = nil, settings.FOV
     local playersFolder = workspace:FindFirstChild("Players")
     if not playersFolder then return nil end
-    for _, teamFolder in ipairs(playersFolder:GetChildren()) do
-        if not teamFolder:IsA("Folder") then continue end
-        for _, model in ipairs(teamFolder:GetChildren()) do
+    for _, tf in ipairs(playersFolder:GetChildren()) do
+        if not tf:IsA("Folder") then continue end
+        for _, model in ipairs(tf:GetChildren()) do
             if not model:IsA("Model") then continue end
             if settings.TeamCheck and teamMap[model] == true then continue end
-            local headPos = getTightHeadPosition(model)
+            local headPos = findHeadPosition(model)
             if not headPos then continue end
             if settings.VisibilityCheck and not isVisible(headPos, model) then continue end
             local screenPos, _ = cam:WorldToViewportPoint(headPos)
@@ -258,7 +364,7 @@ local function isTargetValid(model)
     local playersFolder = workspace:FindFirstChild("Players")
     if not playersFolder or not model:IsDescendantOf(playersFolder) then return false end
     if settings.TeamCheck and teamMap[model] == true then return false end
-    local headPos = getTightHeadPosition(model)
+    local headPos = findHeadPosition(model)
     if not headPos then return false end
     if settings.VisibilityCheck and not isVisible(headPos, model) then return false end
     local cam = workspace.CurrentCamera
@@ -281,31 +387,34 @@ UIS.InputBegan:Connect(function(input, gpe)
 end)
 UIS.InputEnded:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton2 then
-        locked = false; currentTargetModel = nil
+        locked = false
+        currentTargetModel = nil
     end
 end)
 
 -- ===== AIM LOGIC =====
 RunService.RenderStepped:Connect(function()
     if not settings.Enabled or not locked then return end
+
     if tick() - lastScanTime > SCAN_INTERVAL then periodicRescan() end
     if not isTargetValid(currentTargetModel) then currentTargetModel = findNewTarget(Vector2.new(Mouse.X, Mouse.Y)) end
     if not currentTargetModel then return end
-    local targetPos = getTightHeadPosition(currentTargetModel)
+
+    local targetPos = findHeadPosition(currentTargetModel)
     if not targetPos then currentTargetModel = nil; return end
 
     local cam = workspace.CurrentCamera
-    local barrel, barrelOffset, sightOffset, sightToBarrel = findBarrelAndSight()
+    local barrel, _, sightOffset, sightToBarrel = findBarrelAndSight()
     local aimPoint = targetPos
     if barrel then
         aimPoint = targetPos - sightOffset - sightToBarrel * 0.5
     end
-    aimPoint = aimPoint + Vector3.new(settings.HorizontalOffset, settings.VerticalOffset, 0)
+    aimPoint += Vector3.new(settings.HorizontalOffset, settings.VerticalOffset, 0)
 
-    local targetScreenPos = cam:WorldToViewportPoint(aimPoint)
-    local screenCenter = Vector2.new(cam.ViewportSize.X / 2, cam.ViewportSize.Y / 2)
-    local dx = (targetScreenPos.X - screenCenter.X) * (settings.Smoothness and settings.SmoothAmount or 1)
-    local dy = (targetScreenPos.Y - screenCenter.Y) * (settings.Smoothness and settings.SmoothAmount or 1)
+    local screenPos = cam:WorldToViewportPoint(aimPoint)
+    local center = Vector2.new(cam.ViewportSize.X / 2, cam.ViewportSize.Y / 2)
+    local dx = (screenPos.X - center.X) * (settings.Smoothness and settings.SmoothAmount or 1)
+    local dy = (screenPos.Y - center.Y) * (settings.Smoothness and settings.SmoothAmount or 1)
     if math.abs(dx) > 0.5 or math.abs(dy) > 0.5 then mousemoverel(dx, dy) end
 end)
 
@@ -322,4 +431,4 @@ task.spawn(function()
     end
 end)
 
-print("PF Aimbot loaded – tight‑bounds head + flicker‑free teams")
+print("PF Aimbot loaded – weighted head + flicker‑free teams")
