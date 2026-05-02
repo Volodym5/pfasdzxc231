@@ -1,4 +1,4 @@
--- Phantom Forces Aimbot - Instant ID + 10s backup + cached barrel
+-- Phantom Forces Aimbot - Uses ESP head positions via _G.PF_HeadPositions
 
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
@@ -33,9 +33,11 @@ local playerTeamCache = {}
 local modelToName = {}
 local teamCheckTime = 0
 
--- Cached barrel (refreshed every 0.5s, not every frame)
+-- Cached gun positions
 local cachedBarrel = nil
 local cachedBarrelOffset = Vector3.new(0, 0, 0)
+local cachedSightOffset = Vector3.new(0, 0, 0)
+local cachedSightToBarrel = Vector3.new(0, 0, 0)
 local barrelCacheTime = 0
 
 local fovCircle = Drawing.new("Circle")
@@ -47,36 +49,48 @@ fovCircle.Color = Color3.fromRGB(255, 50, 50)
 fovCircle.Filled = false
 fovCircle.Transparency = 0.7
 
--- ===== BARREL FINDER (cached) =====
-local function findBarrel()
+-- ===== GUN POSITION FINDER =====
+local function findBarrelAndSight()
     if tick() - barrelCacheTime < 0.5 and cachedBarrel then
-        return cachedBarrel, cachedBarrelOffset
+        return cachedBarrel, cachedBarrelOffset, cachedSightOffset, cachedSightToBarrel
     end
     
     local cam = workspace.CurrentCamera
+    local barrel = nil
+    local barrelDist = -math.huge
+    local sight = nil
+    local sightY = -math.huge
+    
     for _, child in ipairs(cam:GetChildren()) do
         if child:IsA("Model") then
-            local furthest = nil
-            local furthestDist = -math.huge
             for _, part in ipairs(child:GetDescendants()) do
                 if part:IsA("MeshPart") and part.Transparency < 0.5 then
                     local relPos = part.Position - cam.CFrame.Position
-                    local dist = relPos:Dot(cam.CFrame.LookVector)
-                    if dist > furthestDist then
-                        furthestDist = dist
-                        furthest = part
+                    local forwardDist = relPos:Dot(cam.CFrame.LookVector)
+                    
+                    if forwardDist > barrelDist then
+                        barrelDist = forwardDist
+                        barrel = part
+                    end
+                    
+                    if part.Position.Y > sightY then
+                        sightY = part.Position.Y
+                        sight = part
                     end
                 end
             end
-            if furthest then
-                cachedBarrel = furthest
-                cachedBarrelOffset = furthest.Position - cam.CFrame.Position
-                barrelCacheTime = tick()
-                return furthest, cachedBarrelOffset
-            end
         end
     end
-    return nil, Vector3.new(0, 0, 0)
+    
+    if barrel and sight then
+        cachedBarrel = barrel
+        cachedBarrelOffset = barrel.Position - cam.CFrame.Position
+        cachedSightOffset = sight.Position - cam.CFrame.Position
+        cachedSightToBarrel = cachedBarrelOffset - cachedSightOffset
+        barrelCacheTime = tick()
+        return barrel, cachedBarrelOffset, cachedSightOffset, cachedSightToBarrel
+    end
+    return nil, Vector3.new(0,0,0), Vector3.new(0,0,0), Vector3.new(0,0,0)
 end
 
 -- ===== TEAM DETECTION =====
@@ -156,7 +170,6 @@ local function setupInstantIdentification()
 end
 setupInstantIdentification()
 
--- Backup: full team re-check every 10 seconds
 local function updateTeamMap()
     local playersList = Players:GetPlayers()
     if #playersList == 0 then return end
@@ -214,20 +227,18 @@ local function updateTeamMap()
     teamCheckTime = tick()
 end
 
--- ===== HEAD DETECTION =====
+-- ===== HEAD DETECTION (uses ESP data) =====
 local function getHeadPosition(model)
-    local highest = nil
-    local highestY = -math.huge
-    for _, part in ipairs(model:GetDescendants()) do
-        if part:IsA("BasePart") and part.Transparency < 0.7 and part.Position.Y > highestY then
-            highestY = part.Position.Y
-            highest = part
-        end
+    -- Use ESP's head position if available
+    if _G.PF_HeadPositions and _G.PF_HeadPositions[model] then
+        return _G.PF_HeadPositions[model]
     end
-    if highest then
-        return highest.Position + Vector3.new(0, highest.Size.Y / 2, 0)
-    end
-    return nil
+    
+    -- Fallback: bounding box
+    local cf, size = model:GetBoundingBox()
+    if not cf or size.Magnitude < 1 then return nil end
+    local bottomY = cf.Position.Y - size.Y / 2
+    return Vector3.new(cf.Position.X, bottomY + size.Y * 0.85, cf.Position.Z)
 end
 
 local function isVisible(targetPos, model)
@@ -314,7 +325,6 @@ RunService.RenderStepped:Connect(function()
     if not settings.Enabled then return end
     if not locked then return end
 
-    -- Backup team check every 10 seconds
     if tick() - teamCheckTime > 10 then
         updateTeamMap()
     end
@@ -333,12 +343,12 @@ RunService.RenderStepped:Connect(function()
 
     local cam = workspace.CurrentCamera
     
-    -- Use cached barrel (refreshed every 0.5s)
-    local barrel, barrelOffset = findBarrel()
+    local barrel, barrelOffset, sightOffset, sightToBarrel = findBarrelAndSight()
     local aimPoint = targetPos
     
     if barrel then
-        aimPoint = targetPos - barrelOffset
+        aimPoint = targetPos - sightOffset
+        aimPoint = aimPoint - sightToBarrel * 0.5
     end
     
     aimPoint = aimPoint + Vector3.new(settings.HorizontalOffset, settings.VerticalOffset, 0)
@@ -374,4 +384,4 @@ task.spawn(function()
     end
 end)
 
-print("PF Aimbot loaded")
+print("PF Aimbot loaded - using ESP head positions")
