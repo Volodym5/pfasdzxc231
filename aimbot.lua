@@ -1,4 +1,4 @@
--- Phantom Forces Aimbot - Uses ESP head positions via _G.PF_HeadPositions
+-- Phantom Forces Aimbot - Fixed team check + ESP head positions
 
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
@@ -33,7 +33,6 @@ local playerTeamCache = {}
 local modelToName = {}
 local teamCheckTime = 0
 
--- Cached gun positions
 local cachedBarrel = nil
 local cachedBarrelOffset = Vector3.new(0, 0, 0)
 local cachedSightOffset = Vector3.new(0, 0, 0)
@@ -106,43 +105,18 @@ local function getPlayerNameFromModel(model)
     return nil
 end
 
-local function cacheTeamForName(tagName)
-    if playerTeamCache[tagName] ~= nil then return end
-    local playersList = Players:GetPlayers()
-    for _, p in ipairs(playersList) do
-        if p.Name == tagName or p.DisplayName == tagName then
-            local isFriendly = false
-            if LocalPlayer.Team and p.Team then
-                isFriendly = (p.Team == LocalPlayer.Team)
-            elseif LocalPlayer.TeamColor and p.TeamColor then
-                isFriendly = (p.TeamColor.Number == LocalPlayer.TeamColor.Number)
-            end
-            playerTeamCache[tagName] = isFriendly
-            return
-        end
-    end
-end
-
-local function applyModelIdentification(model, tagName)
-    modelToName[model] = tagName
-    cacheTeamForName(tagName)
-    if playerTeamCache[tagName] ~= nil then
-        teamMap[model] = playerTeamCache[tagName]
-    end
-end
-
 local function identifyModel(model)
     if not model:IsA("Model") then return end
     if modelToName[model] then return end
     local tagName = getPlayerNameFromModel(model)
     if tagName then
-        applyModelIdentification(model, tagName)
+        modelToName[model] = tagName
         return
     end
     local conn
     conn = model.DescendantAdded:Connect(function(desc)
         if desc.Name == "PlayerTag" and desc:IsA("TextLabel") and desc.Text ~= "" then
-            applyModelIdentification(model, desc.Text)
+            modelToName[model] = desc.Text
             conn:Disconnect()
         end
     end)
@@ -192,14 +166,14 @@ local function updateTeamMap()
                 if model:IsA("Model") then
                     currentModels[model] = true
                     
-                    local knownName = modelToName[model]
-                    if not knownName then
+                    if not modelToName[model] then
                         local tagName = getPlayerNameFromModel(model)
                         if tagName then
                             modelToName[model] = tagName
-                            knownName = tagName
                         end
                     end
+                    
+                    local knownName = modelToName[model]
                     
                     if knownName and playerLookup[knownName] then
                         local player = playerLookup[knownName]
@@ -227,14 +201,12 @@ local function updateTeamMap()
     teamCheckTime = tick()
 end
 
--- ===== HEAD DETECTION (uses ESP data) =====
+-- ===== HEAD DETECTION =====
 local function getHeadPosition(model)
-    -- Use ESP's head position if available
     if _G.PF_HeadPositions and _G.PF_HeadPositions[model] then
         return _G.PF_HeadPositions[model]
     end
     
-    -- Fallback: bounding box
     local cf, size = model:GetBoundingBox()
     if not cf or size.Magnitude < 1 then return nil end
     local bottomY = cf.Position.Y - size.Y / 2
