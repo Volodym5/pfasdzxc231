@@ -1,4 +1,4 @@
--- Phantom Forces Aimbot - Barrel-compensated aim
+-- Phantom Forces Aimbot - Barrel-compensated + manual offset + periodic team re-check
 
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
@@ -20,7 +20,9 @@ _G.PF_Aimbot_Settings = _G.PF_Aimbot_Settings or {
     PredAmount = 10,
     ShowFOV = false,
     FOVColor = Color3.fromRGB(255, 50, 50),
-    ShowDebug = false
+    ShowDebug = false,
+    VerticalOffset = 0,
+    HorizontalOffset = 0,
 }
 
 local settings = _G.PF_Aimbot_Settings
@@ -76,43 +78,18 @@ local function getPlayerNameFromModel(model)
     return nil
 end
 
-local function cacheTeamForName(tagName)
-    if playerTeamCache[tagName] ~= nil then return end
-    local playersList = Players:GetPlayers()
-    for _, p in ipairs(playersList) do
-        if p.Name == tagName or p.DisplayName == tagName then
-            local isFriendly = false
-            if LocalPlayer.Team and p.Team then
-                isFriendly = (p.Team == LocalPlayer.Team)
-            elseif LocalPlayer.TeamColor and p.TeamColor then
-                isFriendly = (p.TeamColor.Number == LocalPlayer.TeamColor.Number)
-            end
-            playerTeamCache[tagName] = isFriendly
-            return
-        end
-    end
-end
-
-local function applyModelIdentification(model, tagName)
-    modelToName[model] = tagName
-    cacheTeamForName(tagName)
-    if playerTeamCache[tagName] ~= nil then
-        teamMap[model] = playerTeamCache[tagName]
-    end
-end
-
 local function identifyModel(model)
     if not model:IsA("Model") then return end
     if modelToName[model] then return end
     local tagName = getPlayerNameFromModel(model)
     if tagName then
-        applyModelIdentification(model, tagName)
+        modelToName[model] = tagName
         return
     end
     local conn
     conn = model.DescendantAdded:Connect(function(desc)
         if desc.Name == "PlayerTag" and desc:IsA("TextLabel") and desc.Text ~= "" then
-            applyModelIdentification(model, desc.Text)
+            modelToName[model] = desc.Text
             conn:Disconnect()
         end
     end)
@@ -141,21 +118,59 @@ end
 setupInstantIdentification()
 
 local function updateTeamMap()
+    local playersList = Players:GetPlayers()
+    if #playersList == 0 then return end
+    
     local playersFolder = workspace:FindFirstChild("Players")
     if not playersFolder then return end
+
+    local playerLookup = {}
+    for _, p in ipairs(playersList) do
+        playerLookup[p.Name] = p
+        if p.DisplayName ~= p.Name then
+            playerLookup[p.DisplayName] = p
+        end
+    end
+
     local currentModels = {}
     for _, teamFolder in ipairs(playersFolder:GetChildren()) do
         if teamFolder:IsA("Folder") then
             for _, model in ipairs(teamFolder:GetChildren()) do
                 if model:IsA("Model") then
                     currentModels[model] = true
-                    if not modelToName[model] then identifyModel(model) end
+                    
+                    local knownName = modelToName[model]
+                    if not knownName then
+                        local tagName = getPlayerNameFromModel(model)
+                        if tagName then
+                            modelToName[model] = tagName
+                            knownName = tagName
+                        end
+                    end
+                    
+                    if knownName and playerLookup[knownName] then
+                        local player = playerLookup[knownName]
+                        local isFriendly = false
+                        if LocalPlayer.Team and player.Team then
+                            isFriendly = (player.Team == LocalPlayer.Team)
+                        elseif LocalPlayer.TeamColor and player.TeamColor then
+                            isFriendly = (player.TeamColor.Number == LocalPlayer.TeamColor.Number)
+                        end
+                        playerTeamCache[knownName] = isFriendly
+                        teamMap[model] = isFriendly
+                    end
                 end
             end
         end
     end
-    for model, _ in pairs(modelToName) do if not currentModels[model] then modelToName[model] = nil end end
-    for model, _ in pairs(teamMap) do if not currentModels[model] then teamMap[model] = nil end end
+    
+    for model, _ in pairs(modelToName) do
+        if not currentModels[model] then modelToName[model] = nil end
+    end
+    for model, _ in pairs(teamMap) do
+        if not currentModels[model] then teamMap[model] = nil end
+    end
+    
     teamCheckTime = tick()
 end
 
@@ -254,12 +269,12 @@ UIS.InputEnded:Connect(function(input)
     end
 end)
 
--- ===== AIM LOGIC (barrel-compensated) =====
-RunService:BindToRenderStep("PFAimbot", Enum.RenderPriority.Camera.Value + 1, function()
+-- ===== AIM LOGIC =====
+RunService.BindToRenderStep("PFAimbot", Enum.RenderPriority.Camera.Value + 1, function()
     if not settings.Enabled then return end
     if not locked then return end
 
-    if tick() - teamCheckTime > 3 then
+    if tick() - teamCheckTime > 10 then
         updateTeamMap()
         teamCheckTime = tick()
     end
@@ -278,22 +293,16 @@ RunService:BindToRenderStep("PFAimbot", Enum.RenderPriority.Camera.Value + 1, fu
 
     local cam = workspace.CurrentCamera
     
-    -- Find barrel and compensate
     local barrel, barrelDist = findBarrel()
     local aimPoint = targetPos
     
     if barrel then
-        -- Calculate where the barrel currently points
-        local barrelTip = barrel.Position + barrel.CFrame.LookVector * (barrel.Size.X / 2)
-        local barrelToTarget = targetPos - barrelTip
-        
-        -- Adjust target so camera center aims the barrel at the target
-        -- We need to offset the aim point by the barrel's offset from camera center
         local barrelOffset = barrel.Position - cam.CFrame.Position
         aimPoint = targetPos - barrelOffset
     end
     
-    -- Project to screen and move mouse
+    aimPoint = aimPoint + Vector3.new(settings.HorizontalOffset, settings.VerticalOffset, 0)
+    
     local targetScreenPos = cam:WorldToViewportPoint(aimPoint)
     local screenCenter = Vector2.new(cam.ViewportSize.X / 2, cam.ViewportSize.Y / 2)
     
@@ -325,4 +334,4 @@ task.spawn(function()
     end
 end)
 
-print("PF Aimbot loaded - barrel compensated")
+print("PF Aimbot loaded - periodic team re-check")
