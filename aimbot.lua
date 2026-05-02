@@ -270,7 +270,8 @@ UIS.InputEnded:Connect(function(input)
 end)
 
 -- ===== AIM LOGIC =====
-RunService.BindToRenderStep("PFAimbot", Enum.RenderPriority.Camera.Value + 1, function()
+-- ===== AIM LOGIC =====
+RunService.RenderStepped:Connect(function()
     if not settings.Enabled then return end
     if not locked then return end
 
