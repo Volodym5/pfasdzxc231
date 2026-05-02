@@ -1,5 +1,5 @@
 -- Phantom Forces ESP - Rendering Engine
--- Periodic team re-check every 10 seconds
+-- Shares head positions with aimbot via _G.PF_HeadPositions
 
 local Workspace = workspace
 local Players = game:GetService("Players")
@@ -31,6 +31,9 @@ _G.PF_ESP_Settings = _G.PF_ESP_Settings or {
 
 local settings = _G.PF_ESP_Settings
 
+-- Shared head position table for aimbot
+_G.PF_HeadPositions = {}
+
 local espCache = {}
 local modelCache = {}
 local chamCache = {}
@@ -57,6 +60,7 @@ function _G.PF_ESP_Functions.RefreshCache()
     playerTeamCache = {}
     modelToName = {}
     teamCheckTime = 0
+    _G.PF_HeadPositions = {}
 end
 
 function _G.PF_ESP_Functions.Stop()
@@ -72,6 +76,7 @@ function _G.PF_ESP_Functions.Stop()
     teamMap = {}
     playerTeamCache = {}
     modelToName = {}
+    _G.PF_HeadPositions = {}
 end
 
 function _G.PF_ESP_Functions.Start()
@@ -268,6 +273,7 @@ local function removeESP(model)
         espCache[model] = nil
     end
     removeCham(model)
+    _G.PF_HeadPositions[model] = nil
 end
 
 local function getMyPosition()
@@ -381,10 +387,15 @@ local function updateESP()
                     for _, v in pairs(espCache[model]) do v.Visible = false end
                 end
                 if chamCache[model] then chamCache[model].Enabled = false end
+                _G.PF_HeadPositions[model] = nil
                 continue
             end
 
             local centerPos = head and head.Position or parts[1].Position
+            
+            -- Share head position with aimbot
+            _G.PF_HeadPositions[model] = centerPos
+            
             local dist = myPos and (myPos - centerPos).Magnitude or 0
             local inRange = dist < settings.MaxDistance
 
