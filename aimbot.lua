@@ -1,10 +1,11 @@
--- Phantom Forces Aimbot - Camera CFrame manipulation at Camera priority
+-- Phantom Forces Aimbot - Barrel-compensated aim
 
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 local RunService = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
 local GuiService = game:GetService("GuiService")
+local Mouse = LocalPlayer:GetMouse()
 
 _G.PF_Aimbot_Settings = _G.PF_Aimbot_Settings or {
     Enabled = false,
@@ -12,6 +13,7 @@ _G.PF_Aimbot_Settings = _G.PF_Aimbot_Settings or {
     VisibilityCheck = false,
     FOV = 100,
     TargetPart = "Head",
+    Mode = "Camera",
     Smoothness = false,
     SmoothAmount = 0.5,
     Prediction = false,
@@ -38,6 +40,30 @@ fovCircle.Color = Color3.fromRGB(255, 50, 50)
 fovCircle.Filled = false
 fovCircle.Transparency = 0.7
 
+-- ===== BARREL FINDER =====
+local function findBarrel()
+    local cam = workspace.CurrentCamera
+    for _, child in ipairs(cam:GetChildren()) do
+        if child:IsA("Model") then
+            local furthest = nil
+            local furthestDist = -math.huge
+            for _, part in ipairs(child:GetDescendants()) do
+                if part:IsA("MeshPart") and part.Transparency < 0.5 then
+                    local relPos = part.Position - cam.CFrame.Position
+                    local dist = relPos:Dot(cam.CFrame.LookVector)
+                    if dist > furthestDist then
+                        furthestDist = dist
+                        furthest = part
+                    end
+                end
+            end
+            if furthest then return furthest, furthestDist end
+        end
+    end
+    return nil, 0
+end
+
+-- ===== TEAM DETECTION =====
 local function getPlayerNameFromModel(model)
     for _, desc in ipairs(model:GetDescendants()) do
         if desc.Name == "PlayerTag" and desc:IsA("TextLabel") then
@@ -78,13 +104,11 @@ end
 local function identifyModel(model)
     if not model:IsA("Model") then return end
     if modelToName[model] then return end
-
     local tagName = getPlayerNameFromModel(model)
     if tagName then
         applyModelIdentification(model, tagName)
         return
     end
-
     local conn
     conn = model.DescendantAdded:Connect(function(desc)
         if desc.Name == "PlayerTag" and desc:IsA("TextLabel") and desc.Text ~= "" then
@@ -98,63 +122,44 @@ local function setupInstantIdentification()
     local playersFolder = workspace:FindFirstChild("Players")
     if not playersFolder then
         workspace.ChildAdded:Connect(function(child)
-            if child.Name == "Players" then
-                setupInstantIdentification()
-            end
+            if child.Name == "Players" then setupInstantIdentification() end
         end)
         return
     end
-
     for _, teamFolder in ipairs(playersFolder:GetChildren()) do
         if teamFolder:IsA("Folder") then
-            teamFolder.ChildAdded:Connect(function(model)
-                identifyModel(model)
-            end)
-            for _, model in ipairs(teamFolder:GetChildren()) do
-                identifyModel(model)
-            end
+            teamFolder.ChildAdded:Connect(function(model) identifyModel(model) end)
+            for _, model in ipairs(teamFolder:GetChildren()) do identifyModel(model) end
         end
     end
-
     playersFolder.ChildAdded:Connect(function(teamFolder)
         if teamFolder:IsA("Folder") then
-            teamFolder.ChildAdded:Connect(function(model)
-                identifyModel(model)
-            end)
+            teamFolder.ChildAdded:Connect(function(model) identifyModel(model) end)
         end
     end)
 end
-
 setupInstantIdentification()
 
 local function updateTeamMap()
     local playersFolder = workspace:FindFirstChild("Players")
     if not playersFolder then return end
-
     local currentModels = {}
     for _, teamFolder in ipairs(playersFolder:GetChildren()) do
         if teamFolder:IsA("Folder") then
             for _, model in ipairs(teamFolder:GetChildren()) do
                 if model:IsA("Model") then
                     currentModels[model] = true
-                    if not modelToName[model] then
-                        identifyModel(model)
-                    end
+                    if not modelToName[model] then identifyModel(model) end
                 end
             end
         end
     end
-
-    for model, _ in pairs(modelToName) do
-        if not currentModels[model] then modelToName[model] = nil end
-    end
-    for model, _ in pairs(teamMap) do
-        if not currentModels[model] then teamMap[model] = nil end
-    end
-
+    for model, _ in pairs(modelToName) do if not currentModels[model] then modelToName[model] = nil end end
+    for model, _ in pairs(teamMap) do if not currentModels[model] then teamMap[model] = nil end end
     teamCheckTime = tick()
 end
 
+-- ===== HEAD DETECTION =====
 local function getHeadPosition(model)
     local highest = nil
     local highestY = -math.huge
@@ -168,29 +173,6 @@ local function getHeadPosition(model)
         return highest.Position + Vector3.new(0, highest.Size.Y / 2, 0)
     end
     return nil
-end
-
-local function getTorsoPosition(model)
-    local parts = {}
-    for _, part in ipairs(model:GetDescendants()) do
-        if part:IsA("BasePart") and part.Transparency < 0.7 then
-            parts[#parts + 1] = part
-        end
-    end
-    if #parts == 0 then return nil end
-    
-    table.sort(parts, function(a, b) return a.Position.Y > b.Position.Y end)
-    local index = math.floor(#parts * 0.45)
-    if index < 1 then index = 1 end
-    return parts[index].Position
-end
-
-local function getTargetPosition(model)
-    if settings.TargetPart == "Head" then
-        return getHeadPosition(model)
-    else
-        return getTorsoPosition(model)
-    end
 end
 
 local function isVisible(targetPos, model)
@@ -207,42 +189,31 @@ local function isVisible(targetPos, model)
     return result == nil
 end
 
-local function findNewTarget()
+local function findNewTarget(mousePos)
     local cam = workspace.CurrentCamera
     local bestModel = nil
     local bestDist = settings.FOV
     local playersFolder = workspace:FindFirstChild("Players")
     if not playersFolder then return nil end
-
-    local center = Vector2.new(cam.ViewportSize.X / 2, cam.ViewportSize.Y / 2)
-
     for _, teamFolder in ipairs(playersFolder:GetChildren()) do
         if not teamFolder:IsA("Folder") then continue end
-
         for _, model in ipairs(teamFolder:GetChildren()) do
             if not model:IsA("Model") then continue end
-            
             if settings.TeamCheck and teamMap[model] == true then continue end
-            
-            local targetPos = getTargetPosition(model)
-            if not targetPos then continue end
-
-            if settings.VisibilityCheck and not isVisible(targetPos, model) then continue end
-            
-            local screenPos, _ = cam:WorldToViewportPoint(targetPos)
+            local headPos = getHeadPosition(model)
+            if not headPos then continue end
+            if settings.VisibilityCheck and not isVisible(headPos, model) then continue end
+            local screenPos, _ = cam:WorldToViewportPoint(headPos)
             if screenPos.Z < 0 then continue end
-            
-            local dx = screenPos.X - center.X
-            local dy = screenPos.Y - center.Y
+            local dx = screenPos.X - mousePos.X
+            local dy = screenPos.Y - mousePos.Y
             local dist = math.sqrt(dx*dx + dy*dy)
-            
             if dist < bestDist then
                 bestDist = dist
                 bestModel = model
             end
         end
     end
-
     return bestModel
 end
 
@@ -251,53 +222,42 @@ local function isTargetValid(model)
     local playersFolder = workspace:FindFirstChild("Players")
     if not playersFolder then return false end
     if not model:IsDescendantOf(playersFolder) then return false end
-
     if settings.TeamCheck and teamMap[model] == true then return false end
-
-    local targetPos = getTargetPosition(model)
-    if not targetPos then return false end
-
-    if settings.VisibilityCheck and not isVisible(targetPos, model) then return false end
-    
+    local headPos = getHeadPosition(model)
+    if not headPos then return false end
+    if settings.VisibilityCheck and not isVisible(headPos, model) then return false end
     local cam = workspace.CurrentCamera
-    local screenPos, _ = cam:WorldToViewportPoint(targetPos)
+    local screenPos, _ = cam:WorldToViewportPoint(headPos)
     if screenPos.Z < 0 then return false end
-    
-    local center = Vector2.new(cam.ViewportSize.X / 2, cam.ViewportSize.Y / 2)
-    local dx = screenPos.X - center.X
-    local dy = screenPos.Y - center.Y
+    local mousePos = Vector2.new(Mouse.X, Mouse.Y)
+    local dx = screenPos.X - mousePos.X
+    local dy = screenPos.Y - mousePos.Y
     local dist = math.sqrt(dx*dx + dy*dy)
     return dist < settings.FOV * 1.3
 end
 
-local function safeUnlock()
-    if locked then
-        locked = false
-        currentTargetModel = nil
-    end
-end
-
-LocalPlayer.CharacterAdded:Connect(function() safeUnlock() end)
-
+-- ===== INPUT =====
 UIS.InputBegan:Connect(function(input, gameProcessed)
     if gameProcessed then return end
     if input.UserInputType == Enum.UserInputType.MouseButton2 then
-        if not LocalPlayer.Character then return end
         locked = true
-        currentTargetModel = findNewTarget()
+        if not currentTargetModel or not isTargetValid(currentTargetModel) then
+            currentTargetModel = findNewTarget(Vector2.new(Mouse.X, Mouse.Y))
+        end
     end
 end)
 
 UIS.InputEnded:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton2 then
-        safeUnlock()
+        locked = false
+        currentTargetModel = nil
     end
 end)
 
-RunService:BindToRenderStep("PFAimbot", Enum.RenderPriority.Camera.Value, function()
+-- ===== AIM LOGIC (barrel-compensated) =====
+RunService:BindToRenderStep("PFAimbot", Enum.RenderPriority.Camera.Value + 1, function()
     if not settings.Enabled then return end
     if not locked then return end
-    if not LocalPlayer.Character then safeUnlock() return end
 
     if tick() - teamCheckTime > 3 then
         updateTeamMap()
@@ -305,38 +265,64 @@ RunService:BindToRenderStep("PFAimbot", Enum.RenderPriority.Camera.Value, functi
     end
 
     if not isTargetValid(currentTargetModel) then
-        currentTargetModel = findNewTarget()
+        currentTargetModel = findNewTarget(Vector2.new(Mouse.X, Mouse.Y))
     end
 
     if not currentTargetModel then return end
 
-    local targetPos = getTargetPosition(currentTargetModel)
+    local targetPos = getHeadPosition(currentTargetModel)
     if not targetPos then
         currentTargetModel = nil
         return
     end
 
     local cam = workspace.CurrentCamera
-    local lookAt = CFrame.new(cam.CFrame.Position, targetPos)
+    
+    -- Find barrel and compensate
+    local barrel, barrelDist = findBarrel()
+    local aimPoint = targetPos
+    
+    if barrel then
+        -- Calculate where the barrel currently points
+        local barrelTip = barrel.Position + barrel.CFrame.LookVector * (barrel.Size.X / 2)
+        local barrelToTarget = targetPos - barrelTip
+        
+        -- Adjust target so camera center aims the barrel at the target
+        -- We need to offset the aim point by the barrel's offset from camera center
+        local barrelOffset = barrel.Position - cam.CFrame.Position
+        aimPoint = targetPos - barrelOffset
+    end
+    
+    -- Project to screen and move mouse
+    local targetScreenPos = cam:WorldToViewportPoint(aimPoint)
+    local screenCenter = Vector2.new(cam.ViewportSize.X / 2, cam.ViewportSize.Y / 2)
+    
+    local dx = targetScreenPos.X - screenCenter.X
+    local dy = targetScreenPos.Y - screenCenter.Y
+    
     if settings.Smoothness then
-        cam.CFrame = cam.CFrame:Lerp(lookAt, settings.SmoothAmount)
-    else
-        cam.CFrame = lookAt
+        dx = dx * settings.SmoothAmount
+        dy = dy * settings.SmoothAmount
+    end
+    
+    if math.abs(dx) > 0.5 or math.abs(dy) > 0.5 then
+        mousemoverel(dx, dy)
     end
 end)
 
+-- ===== FOV CIRCLE =====
 task.spawn(function()
     while task.wait() do
         if settings.ShowFOV then
-            local cam = workspace.CurrentCamera
             fovCircle.Visible = true
             fovCircle.Radius = settings.FOV
             fovCircle.Color = settings.FOVColor
-            fovCircle.Position = Vector2.new(cam.ViewportSize.X / 2, cam.ViewportSize.Y / 2)
+            local guiInset = game:GetService("GuiService"):GetGuiInset()
+            fovCircle.Position = Vector2.new(Mouse.X, Mouse.Y + guiInset.Y)
         else
             fovCircle.Visible = false
         end
     end
 end)
 
-print("PF Aimbot loaded - Camera CFrame mode")
+print("PF Aimbot loaded - barrel compensated")
