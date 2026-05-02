@@ -1,5 +1,5 @@
 -- Phantom Forces ESP - Rendering Engine
--- Shares head positions with aimbot via _G.PF_HeadPositions
+-- Fixed team check: refreshes without clearing
 
 local Workspace = workspace
 local Players = game:GetService("Players")
@@ -31,7 +31,6 @@ _G.PF_ESP_Settings = _G.PF_ESP_Settings or {
 
 local settings = _G.PF_ESP_Settings
 
--- Shared head position table for aimbot
 _G.PF_HeadPositions = {}
 
 local espCache = {}
@@ -105,13 +104,11 @@ end
 local function identifyModel(model)
     if not model:IsA("Model") then return end
     if modelToName[model] then return end
-
     local tagName = getPlayerNameFromModel(model)
     if tagName then
         modelToName[model] = tagName
         return
     end
-
     local conn
     conn = model.DescendantAdded:Connect(function(desc)
         if desc.Name == "PlayerTag" and desc:IsA("TextLabel") and desc.Text ~= "" then
@@ -129,21 +126,18 @@ local function setupInstantIdentification()
         end)
         return
     end
-
     for _, teamFolder in ipairs(playersFolder:GetChildren()) do
         if teamFolder:IsA("Folder") then
             teamFolder.ChildAdded:Connect(function(model) identifyModel(model) end)
             for _, model in ipairs(teamFolder:GetChildren()) do identifyModel(model) end
         end
     end
-
     playersFolder.ChildAdded:Connect(function(teamFolder)
         if teamFolder:IsA("Folder") then
             teamFolder.ChildAdded:Connect(function(model) identifyModel(model) end)
         end
     end)
 end
-
 setupInstantIdentification()
 
 local function updateTeamMap()
@@ -169,15 +163,14 @@ local function updateTeamMap()
                 if model:IsA("Model") then
                     currentModels[model] = true
                     
-                    local knownName = modelToName[model]
-                    
-                    if not knownName then
+                    if not modelToName[model] then
                         local tagName = getPlayerNameFromModel(model)
                         if tagName then
                             modelToName[model] = tagName
-                            knownName = tagName
                         end
                     end
+                    
+                    local knownName = modelToName[model]
                     
                     if knownName and playerLookup[knownName] then
                         local player = playerLookup[knownName]
@@ -188,8 +181,8 @@ local function updateTeamMap()
                             isFriendly = (player.TeamColor.Number == LocalPlayer.TeamColor.Number)
                         end
                         playerTeamCache[knownName] = isFriendly
-                        nameMap[model] = knownName
                         teamMap[model] = isFriendly
+                        nameMap[model] = knownName
                     end
                 end
             end
@@ -199,11 +192,11 @@ local function updateTeamMap()
     for model, _ in pairs(modelToName) do
         if not currentModels[model] then modelToName[model] = nil end
     end
+    for model, _ in pairs(teamMap) do
+        if not currentModels[model] then teamMap[model] = nil end
+    end
     for model, _ in pairs(nameMap) do
-        if not currentModels[model] then
-            nameMap[model] = nil
-            teamMap[model] = nil
-        end
+        if not currentModels[model] then nameMap[model] = nil end
     end
     
     teamCheckTime = tick()
@@ -392,8 +385,6 @@ local function updateESP()
             end
 
             local centerPos = head and head.Position or parts[1].Position
-            
-            -- Share head position with aimbot
             _G.PF_HeadPositions[model] = centerPos
             
             local dist = myPos and (myPos - centerPos).Magnitude or 0
