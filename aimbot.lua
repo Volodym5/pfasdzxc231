@@ -1,4 +1,4 @@
--- Phantom Forces Aimbot - Barrel-compensated + manual offset + periodic team re-check
+-- Phantom Forces Aimbot - Instant ID + 10s backup + cached barrel
 
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
@@ -33,6 +33,11 @@ local playerTeamCache = {}
 local modelToName = {}
 local teamCheckTime = 0
 
+-- Cached barrel (refreshed every 0.5s, not every frame)
+local cachedBarrel = nil
+local cachedBarrelOffset = Vector3.new(0, 0, 0)
+local barrelCacheTime = 0
+
 local fovCircle = Drawing.new("Circle")
 fovCircle.Visible = false
 fovCircle.Thickness = 1
@@ -42,8 +47,12 @@ fovCircle.Color = Color3.fromRGB(255, 50, 50)
 fovCircle.Filled = false
 fovCircle.Transparency = 0.7
 
--- ===== BARREL FINDER =====
+-- ===== BARREL FINDER (cached) =====
 local function findBarrel()
+    if tick() - barrelCacheTime < 0.5 and cachedBarrel then
+        return cachedBarrel, cachedBarrelOffset
+    end
+    
     local cam = workspace.CurrentCamera
     for _, child in ipairs(cam:GetChildren()) do
         if child:IsA("Model") then
@@ -59,10 +68,15 @@ local function findBarrel()
                     end
                 end
             end
-            if furthest then return furthest, furthestDist end
+            if furthest then
+                cachedBarrel = furthest
+                cachedBarrelOffset = furthest.Position - cam.CFrame.Position
+                barrelCacheTime = tick()
+                return furthest, cachedBarrelOffset
+            end
         end
     end
-    return nil, 0
+    return nil, Vector3.new(0, 0, 0)
 end
 
 -- ===== TEAM DETECTION =====
@@ -78,18 +92,43 @@ local function getPlayerNameFromModel(model)
     return nil
 end
 
+local function cacheTeamForName(tagName)
+    if playerTeamCache[tagName] ~= nil then return end
+    local playersList = Players:GetPlayers()
+    for _, p in ipairs(playersList) do
+        if p.Name == tagName or p.DisplayName == tagName then
+            local isFriendly = false
+            if LocalPlayer.Team and p.Team then
+                isFriendly = (p.Team == LocalPlayer.Team)
+            elseif LocalPlayer.TeamColor and p.TeamColor then
+                isFriendly = (p.TeamColor.Number == LocalPlayer.TeamColor.Number)
+            end
+            playerTeamCache[tagName] = isFriendly
+            return
+        end
+    end
+end
+
+local function applyModelIdentification(model, tagName)
+    modelToName[model] = tagName
+    cacheTeamForName(tagName)
+    if playerTeamCache[tagName] ~= nil then
+        teamMap[model] = playerTeamCache[tagName]
+    end
+end
+
 local function identifyModel(model)
     if not model:IsA("Model") then return end
     if modelToName[model] then return end
     local tagName = getPlayerNameFromModel(model)
     if tagName then
-        modelToName[model] = tagName
+        applyModelIdentification(model, tagName)
         return
     end
     local conn
     conn = model.DescendantAdded:Connect(function(desc)
         if desc.Name == "PlayerTag" and desc:IsA("TextLabel") and desc.Text ~= "" then
-            modelToName[model] = desc.Text
+            applyModelIdentification(model, desc.Text)
             conn:Disconnect()
         end
     end)
@@ -117,6 +156,7 @@ local function setupInstantIdentification()
 end
 setupInstantIdentification()
 
+-- Backup: full team re-check every 10 seconds
 local function updateTeamMap()
     local playersList = Players:GetPlayers()
     if #playersList == 0 then return end
@@ -270,14 +310,13 @@ UIS.InputEnded:Connect(function(input)
 end)
 
 -- ===== AIM LOGIC =====
--- ===== AIM LOGIC =====
 RunService.RenderStepped:Connect(function()
     if not settings.Enabled then return end
     if not locked then return end
 
+    -- Backup team check every 10 seconds
     if tick() - teamCheckTime > 10 then
         updateTeamMap()
-        teamCheckTime = tick()
     end
 
     if not isTargetValid(currentTargetModel) then
@@ -294,11 +333,11 @@ RunService.RenderStepped:Connect(function()
 
     local cam = workspace.CurrentCamera
     
-    local barrel, barrelDist = findBarrel()
+    -- Use cached barrel (refreshed every 0.5s)
+    local barrel, barrelOffset = findBarrel()
     local aimPoint = targetPos
     
     if barrel then
-        local barrelOffset = barrel.Position - cam.CFrame.Position
         aimPoint = targetPos - barrelOffset
     end
     
@@ -335,4 +374,4 @@ task.spawn(function()
     end
 end)
 
-print("PF Aimbot loaded - periodic team re-check")
+print("PF Aimbot loaded")
