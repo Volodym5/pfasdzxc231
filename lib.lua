@@ -601,6 +601,7 @@ function PhantomUI:CreateWindow(config)
     SidebarBrand.TextColor3         = T.TextMuted
     SidebarBrand.Font               = Enum.Font.GothamBold
     SidebarBrand.TextSize           = 9
+    SidebarBrand.TextLetterSpacing  = 4  -- Changed from LetterSpacing to TextLetterSpacing
     SidebarBrand.ZIndex             = Sidebar.ZIndex + 1
     SidebarBrand.Parent             = Sidebar
 
@@ -1497,6 +1498,7 @@ function PhantomUI:CreateWindow(config)
             lbl.TextColor3 = T.Accent
             lbl.Font       = Enum.Font.GothamBold
             lbl.TextSize   = 9
+            lbl.TextLetterSpacing = 3
             lbl.TextXAlignment = Enum.TextXAlignment.Left
             lbl.ZIndex     = frame.ZIndex + 1
             lbl.Parent     = frame
