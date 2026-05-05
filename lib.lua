@@ -591,6 +591,7 @@ function PhantomUI:CreateWindow(config)
     end)
 
     -- Phantom branding at bottom of sidebar
+        -- Phantom branding at bottom of sidebar
     local SidebarBrand = Instance.new("TextLabel")
     SidebarBrand.Name               = "SidebarBrand"
     SidebarBrand.BackgroundTransparency = 1
@@ -600,7 +601,7 @@ function PhantomUI:CreateWindow(config)
     SidebarBrand.TextColor3         = T.TextMuted
     SidebarBrand.Font               = Enum.Font.GothamBold
     SidebarBrand.TextSize           = 9
-    SidebarBrand.LetterSpacing      = 4
+    SidebarBrand.TextLetterSpacing  = 4  -- Changed from LetterSpacing to TextLetterSpacing
     SidebarBrand.ZIndex             = Sidebar.ZIndex + 1
     SidebarBrand.Parent             = Sidebar
 
