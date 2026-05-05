@@ -601,7 +601,7 @@ function PhantomUI:CreateWindow(config)
     SidebarBrand.TextColor3         = T.TextMuted
     SidebarBrand.Font               = Enum.Font.GothamBold
     SidebarBrand.TextSize           = 9
-    SidebarBrand.LetterSpacing      = 4
+
     SidebarBrand.ZIndex             = Sidebar.ZIndex + 1
     SidebarBrand.Parent             = Sidebar
 
@@ -720,7 +720,8 @@ function PhantomUI:CreateWindow(config)
             for _, t in ipairs(Window._tabs) do
                 t.page.Visible = false
                 Utility.Tween(t.btn, { BackgroundTransparency = 1 }, 0.2)
-                Utility.Tween(t.label, { TextColor3 = T.TextSecondary, Font = Enum.Font.Gotham }, 0.2)
+                Utility.Tween(t.label, { TextColor3 = T.TextSecondary }, 0.2)
+                t.label.Font = Enum.Font.Gotham
                 Utility.Tween(t.indicator, { Size = UDim2.new(0, 3, 0, 0) }, 0.25, Enum.EasingStyle.Back)
             end
             -- Activate this
@@ -1418,7 +1419,7 @@ function PhantomUI:CreateWindow(config)
             lblH.TextColor3 = T.TextMuted
             lblH.Font      = Enum.Font.GothamBold
             lblH.TextSize  = 9
-            lblH.LetterSpacing = 2
+
             lblH.TextXAlignment = Enum.TextXAlignment.Left
             lblH.ZIndex    = PickerFrame.ZIndex + 1
             lblH.Parent    = PickerFrame
@@ -1530,7 +1531,7 @@ function PhantomUI:CreateWindow(config)
             lbl.TextColor3 = T.Accent
             lbl.Font       = Enum.Font.GothamBold
             lbl.TextSize   = 9
-            lbl.LetterSpacing = 3
+
             lbl.TextXAlignment = Enum.TextXAlignment.Left
             lbl.ZIndex     = frame.ZIndex + 1
             lbl.Parent     = frame
