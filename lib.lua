@@ -328,7 +328,7 @@ end
 local NotificationQueue = {}
 local NotificationCount = 0
 
-function PhantomUI:CreateWindow(config)
+function PhantomUI.CreateWindow(config)
     config = config or {}
     local Title    = config.Title    or "PhantomUI"
     local Subtitle = config.Subtitle or ""
