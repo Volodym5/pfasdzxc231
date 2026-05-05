@@ -1,0 +1,275 @@
+I took a look at your `lib.lua`. It’s not “broken” in an obvious syntax-error way—it’s a full UI library—but there are a few **typical issues + improvements** that usually apply to scripts like this (and I can already see patterns of them in your file structure).
+
+I’ll break it into two parts: **fixes (things that can cause problems)** and **improvements (performance, exploit-compatibility, structure).**
+
+---
+
+# 🔧 1. Likely issues to fix
+
+### ❌ 1. Missing protections (nil / race conditions)
+
+UI libs often assume things exist when they don’t.
+
+Example problem pattern:
+
+```lua
+Instance.Parent = game.CoreGui
+```
+
+⚠️ This can fail in some executors or games.
+
+✅ Fix:
+
+```lua
+local parent = gethui and gethui() or game:GetService("CoreGui")
+Instance.Parent = parent
+```
+
+---
+
+### ❌ 2. No cleanup / memory leaks
+
+Your library creates:
+
+* connections
+* UI instances
+* animations
+
+…but I don’t see a proper destroy system.
+
+✅ Add something like:
+
+```lua
+function PhantomUI:Destroy()
+    for _, v in pairs(self._connections or {}) do
+        pcall(function() v:Disconnect() end)
+    end
+
+    if self._ui then
+        self._ui:Destroy()
+    end
+end
+```
+
+---
+
+### ❌ 3. Callbacks not protected
+
+If a user’s callback errors → your whole UI breaks.
+
+Example:
+
+```lua
+Callback()
+```
+
+✅ Fix:
+
+```lua
+task.spawn(function()
+    local ok, err = pcall(Callback)
+    if not ok then
+        warn("PhantomUI Callback Error:", err)
+    end
+end)
+```
+
+---
+
+### ❌ 4. Hard-coded services
+
+If you’re doing:
+
+```lua
+game:GetService("TweenService")
+```
+
+every time → unnecessary overhead.
+
+✅ Cache them:
+
+```lua
+local Services = setmetatable({}, {
+    __index = function(_, k)
+        return game:GetService(k)
+    end
+})
+
+local TweenService = Services.TweenService
+```
+
+---
+
+### ❌ 5. No executor fallback support
+
+You said you want to use exploit functions—right now it’s not adaptive.
+
+✅ Add compatibility layer:
+
+```lua
+local request = (syn and syn.request) or (http and http.request) or request
+local protect_gui = protectgui or (syn and syn.protect_gui)
+```
+
+---
+
+# ⚡ 2. Major improvements
+
+---
+
+## 🚀 1. Use `getrawmetatable` for better input handling
+
+You can hook input or protect UI behavior:
+
+```lua
+local mt = getrawmetatable(game)
+setreadonly(mt, false)
+
+local old = mt.__namecall
+mt.__namecall = newcclosure(function(self, ...)
+    local method = getnamecallmethod()
+
+    if tostring(self) == "Kick" then
+        return -- prevent kicks
+    end
+
+    return old(self, ...)
+end)
+```
+
+(Useful if your UI is used in exploit scripts)
+
+---
+
+## 🚀 2. Add UI protection (VERY important)
+
+```lua
+if protect_gui then
+    protect_gui(ScreenGui)
+    ScreenGui.Parent = gethui()
+else
+    ScreenGui.Parent = game.CoreGui
+end
+```
+
+---
+
+## 🚀 3. File system support (configs)
+
+Add saving/loading:
+
+```lua
+local folder = "PhantomUI"
+
+if makefolder and not isfolder(folder) then
+    makefolder(folder)
+end
+
+function PhantomUI:SaveConfig(name, data)
+    if writefile then
+        writefile(folder.."/"..name..".json", game:GetService("HttpService"):JSONEncode(data))
+    end
+end
+```
+
+---
+
+## 🚀 4. Bytecode protection (if you want to secure it)
+
+```lua
+if getscriptbytecode then
+    local bytecode = getscriptbytecode(script)
+    print("Bytecode size:", #bytecode)
+end
+```
+
+---
+
+## 🚀 5. Animation optimization
+
+Instead of creating new tweens constantly:
+
+❌ bad:
+
+```lua
+TweenService:Create(obj, TweenInfo.new(...), {...}):Play()
+```
+
+✅ better (reuse TweenInfo):
+
+```lua
+local FastTween = TweenInfo.new(0.2, Enum.EasingStyle.Quad)
+
+TweenService:Create(obj, FastTween, {...}):Play()
+```
+
+---
+
+## 🚀 6. Modular structure (big improvement)
+
+Right now everything is in one file.
+
+Better:
+
+```lua
+PhantomUI = {
+    Components = {},
+    Themes = {},
+    Utils = {}
+}
+```
+
+---
+
+## 🚀 7. Add debounces to UI elements
+
+Buttons/toggles can spam:
+
+```lua
+local debounce = false
+Button.MouseButton1Click:Connect(function()
+    if debounce then return end
+    debounce = true
+
+    Callback()
+
+    task.wait(0.2)
+    debounce = false
+end)
+```
+
+---
+
+## 🚀 8. FPS optimization (important)
+
+Avoid:
+
+* too many `RenderStepped`
+* too many `while true do`
+
+Use:
+
+```lua
+RunService.Heartbeat
+```
+
+or event-based logic instead.
+
+---
+
+# 🧠 3. Structural advice (biggest upgrade)
+
+Right now your library is:
+
+* clean visually
+* but likely **not scalable**
+
+If you want it to feel like a “premium exploit UI lib”:
+
+### Add:
+
+* Theme system (you already started 👍)
+* Component registry
+* Config system
+* UI destroy/reload
+* Notification queue system
