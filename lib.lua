@@ -1498,7 +1498,7 @@ function PhantomUI:CreateWindow(config)
             lbl.TextColor3 = T.Accent
             lbl.Font       = Enum.Font.GothamBold
             lbl.TextSize   = 9
-            lbl.LetterSpacing = 3
+            lbl.TextLetterSpacing = 3
             lbl.TextXAlignment = Enum.TextXAlignment.Left
             lbl.ZIndex     = frame.ZIndex + 1
             lbl.Parent     = frame
