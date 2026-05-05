@@ -152,7 +152,7 @@ function Utility.Tween(instance, properties, duration, easingStyle, easingDirect
 end
 
 function Utility.Spring(instance, properties, duration)
-    return Utility.Tween(instance, properties, duration or 0.5, Enum.EasingStyle.Spring, Enum.EasingDirection.Out)
+    return Utility.Tween(instance, properties, duration or 0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
 end
 
 function Utility.MakeDraggable(frame, handle)
