@@ -1,3 +1,10 @@
+--[[
+	Modern NexusLib v2.3 – Executor-Ready with Acrylic, Glow & Animations
+	Features: Tabs, Toggles, Sliders, Dropdowns, ColorPickers, Keybinds,
+	Buttons, Labels, Notifications, Draggable Window, Status Bar,
+	Acrylic glass, Glow layers, Hover/Click tweens, Consistent theme.
+--]]
+
 local Library = {}
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
