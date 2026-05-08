@@ -767,10 +767,18 @@ function Controls.Toggle(parent, opts, T, Z, cfg)
 	local name = opts.Name or "Toggle"
 	local flag = opts.Flag
 	local desc = opts.Description
-	local cb   = opts.Callback or function() end
+	local cb   = type(opts.Callback) == "function" and opts.Callback or function() end
 
 	local savedVal = flag and cfg and cfg:GetFlag(flag)
-	local value    = savedVal ~= nil and savedVal or (opts.Default or false)
+	-- Use explicit nil check so that a saved value of `false` is honoured
+	local value
+	if savedVal ~= nil then
+		value = savedVal
+	elseif opts.Default ~= nil then
+		value = opts.Default
+	else
+		value = false
+	end
 
 	if flag and cfg then cfg:RegisterFlag(flag, value) end
 
@@ -848,15 +856,14 @@ function Controls.Toggle(parent, opts, T, Z, cfg)
 
 	local function setState(v, animate)
 		value = v
-		local dur = animate and nil or 0
 
-		Util.Tween(track, { BackgroundColor3 = v and T.ToggleOn or T.ToggleOff }, animate and "Fast" or nil)
-		Util.Tween(trackStroke, { Color = v and T.ToggleOnStroke or T.ToggleOffStroke }, animate and "Fast" or nil)
+		Util.Tween(track, { BackgroundColor3 = v and T.ToggleOn or T.ToggleOff }, animate and "Fast" or "Linear")
+		Util.Tween(trackStroke, { Color = v and T.ToggleOnStroke or T.ToggleOffStroke }, animate and "Fast" or "Linear")
 		Util.Tween(knob, {
 			Position = v
 				and UDim2.new(0, trackW - knobSize - 3, 0.5, 0)
 				or  UDim2.new(0, 3, 0.5, 0),
-		}, animate and "Fast" or nil)
+		}, animate and "Fast" or "Linear")
 
 		if flag and cfg then cfg:SetFlag(flag, v) end
 		cb(v)
@@ -893,7 +900,7 @@ function Controls.Button(parent, opts, T, Z)
 	opts      = opts or {}
 	local name = opts.Name or "Button"
 	local desc = opts.Description
-	local cb   = opts.Callback or function() end
+	local cb   = type(opts.Callback) == "function" and opts.Callback or function() end
 	local style= opts.Style or "Primary"   -- Primary | Secondary | Danger
 
 	local bgColor   = style == "Primary"   and T.ButtonPrimary
@@ -980,10 +987,18 @@ function Controls.Slider(parent, opts, T, Z, cfg)
 	local maxV    = opts.Max     or 100
 	local decimal = opts.Decimal or 0
 	local suffix  = opts.Suffix  or ""
-	local cb      = opts.Callback or function() end
+	local cb      = type(opts.Callback) == "function" and opts.Callback or function() end
 
 	local savedVal = flag and cfg and cfg:GetFlag(flag)
-	local value    = Util.Clamp(savedVal ~= nil and savedVal or (opts.Default or minV), minV, maxV)
+	local rawVal
+	if savedVal ~= nil then
+		rawVal = savedVal
+	elseif opts.Default ~= nil then
+		rawVal = opts.Default
+	else
+		rawVal = minV
+	end
+	local value = Util.Clamp(rawVal, minV, maxV)
 
 	if flag and cfg then cfg:RegisterFlag(flag, value) end
 
@@ -1186,13 +1201,11 @@ function Controls.Dropdown(parent, opts, T, Z, cfg)
 	local flag  = opts.Flag
 	local items = opts.Options or opts.Items or {}
 	local multi = opts.Multi   or false
-	local cb    = opts.Callback or function() end
-	local searchEnabled = opts.Searchable ~= false and #items > 5
+	local cb    = type(opts.Callback) == "function" and opts.Callback or function() end
+	local searchEnabled = opts.Searchable == true or (opts.Searchable ~= false and #items > 5)
 
 	local savedVal = flag and cfg and cfg:GetFlag(flag)
 	local selected
-
-	if multi then
 		selected = savedVal or opts.Default or {}
 		if type(selected) ~= "table" then selected = { selected } end
 	else
@@ -1524,7 +1537,7 @@ function Controls.Textbox(parent, opts, T, Z, cfg)
 	local ph      = opts.Placeholder or ""
 	local numeric = opts.Numeric or false
 	local liveUpdate = opts.LiveUpdate or false
-	local cb    = opts.Callback or function() end
+	local cb    = type(opts.Callback) == "function" and opts.Callback or function() end
 
 	local savedVal = flag and cfg and cfg:GetFlag(flag)
 	local defVal   = savedVal or opts.Default or ""
@@ -1607,8 +1620,8 @@ function Controls.Keybind(parent, opts, T, Z, cfg)
 	opts     = opts or {}
 	local name      = opts.Name or "Keybind"
 	local flag      = opts.Flag
-	local cb        = opts.Callback or function() end
-	local changedCb = opts.Changed  or function() end
+	local cb        = type(opts.Callback) == "function" and opts.Callback or function() end
+	local changedCb = type(opts.Changed)   == "function" and opts.Changed   or function() end
 
 	local savedKey = flag and cfg and cfg:GetFlag(flag)
 	local binding  = savedKey and Enum.KeyCode[savedKey] or (opts.Default or Enum.KeyCode.Unknown)
@@ -1711,7 +1724,7 @@ function Controls.ColorPicker(parent, opts, T, Z, cfg)
 	opts     = opts or {}
 	local name = opts.Name or "Color"
 	local flag = opts.Flag
-	local cb   = opts.Callback or function() end
+	local cb   = type(opts.Callback) == "function" and opts.Callback or function() end
 
 	local savedColor = flag and cfg and cfg:GetFlag(flag)
 	if savedColor and type(savedColor) == "table" then
@@ -2092,7 +2105,7 @@ end
 -- ─── SEARCH INPUT ─────────────────────────────────────
 function Controls.SearchInput(parent, opts, T, Z)
 	opts = opts or {}
-	local cb = opts.Callback or function() end
+	local cb = type(opts.Callback) == "function" and opts.Callback or function() end
 
 	local wrapper = Util.New("Frame", {
 		Name                 = "SearchInput",
@@ -2252,16 +2265,14 @@ function Card.new(parent, opts, T, Z)
 		})
 
 		-- Accent pill
-		Util.New("Frame", {
+		local pill = Util.New("Frame", {
 			BackgroundColor3 = T.Accent,
 			Size             = UDim2.new(0, 4, 0, 18),
 			BorderSizePixel  = 0,
 			LayoutOrder      = 0,
 			ZIndex           = Z + 3,
-		}, header):FindFirstChildOfClass("UICorner") or Util.Corner(2, header:GetChildren()[1] or header)
-
-		local pill = header:GetChildren()[1]
-		if pill then Util.Corner(2, pill) end
+		}, header)
+		Util.Corner(2, pill)
 
 		Util.New("TextLabel", {
 			Text             = opts.Title,
@@ -2311,34 +2322,42 @@ function Card:_nextOrder()
 end
 
 function Card:AddToggle(opts)
+	opts = opts or {}
 	opts.Order = opts.Order or self:_nextOrder()
 	return Controls.Toggle(self.Inner, opts, self.T, self.Z + 2, self._cfg)
 end
 function Card:AddButton(opts)
+	opts = opts or {}
 	opts.Order = opts.Order or self:_nextOrder()
 	return Controls.Button(self.Inner, opts, self.T, self.Z + 2)
 end
 function Card:AddSlider(opts)
+	opts = opts or {}
 	opts.Order = opts.Order or self:_nextOrder()
 	return Controls.Slider(self.Inner, opts, self.T, self.Z + 2, self._cfg)
 end
 function Card:AddDropdown(opts)
+	opts = opts or {}
 	opts.Order = opts.Order or self:_nextOrder()
 	return Controls.Dropdown(self.Inner, opts, self.T, self.Z + 2, self._cfg)
 end
 function Card:AddTextbox(opts)
+	opts = opts or {}
 	opts.Order = opts.Order or self:_nextOrder()
 	return Controls.Textbox(self.Inner, opts, self.T, self.Z + 2, self._cfg)
 end
 function Card:AddKeybind(opts)
+	opts = opts or {}
 	opts.Order = opts.Order or self:_nextOrder()
 	return Controls.Keybind(self.Inner, opts, self.T, self.Z + 2, self._cfg)
 end
 function Card:AddColorPicker(opts)
+	opts = opts or {}
 	opts.Order = opts.Order or self:_nextOrder()
 	return Controls.ColorPicker(self.Inner, opts, self.T, self.Z + 2, self._cfg)
 end
 function Card:AddLabel(opts)
+	opts = opts or {}
 	opts.Order = opts.Order or self:_nextOrder()
 	return Controls.Label(self.Inner, opts, self.T, self.Z + 2)
 end
@@ -2348,10 +2367,12 @@ function Card:AddDivider(opts)
 	return Controls.Divider(self.Inner, opts, self.T, self.Z + 2)
 end
 function Card:AddParagraph(opts)
+	opts = opts or {}
 	opts.Order = opts.Order or self:_nextOrder()
 	return Controls.Paragraph(self.Inner, opts, self.T, self.Z + 2)
 end
 function Card:AddSearch(opts)
+	opts = opts or {}
 	opts.Order = opts.Order or self:_nextOrder()
 	return Controls.SearchInput(self.Inner, opts, self.T, self.Z + 2)
 end
@@ -2413,17 +2434,29 @@ function MasonryGrid:AddCard(opts, cfg)
 	self.CardCount += 1
 	opts.LayoutOrder = opts.LayoutOrder or self.CardCount
 
-	-- Alternate columns
-	local col = (self.CardCount % 2 == 1) and self.ColLeft or self.ColRight
+	local card
 
-	-- If width override requested
 	if opts.Width == "full" then
-		-- Full width card needs its own single-col wrapper; just use left for simplicity
-		col = self.ColLeft
+		-- Full-width card: lives in a dedicated single-column wrapper that spans the container
+		local fullRow = Util.New("Frame", {
+			Name                 = "FullRow_"..self.CardCount,
+			BackgroundTransparency = 1,
+			Size                 = UDim2.new(1, 0, 0, 0),
+			AutomaticSize        = Enum.AutomaticSize.Y,
+			LayoutOrder          = opts.LayoutOrder,
+			ZIndex               = self.Z,
+		}, self.Container)
+		-- Give the container a vertical layout to include full-width rows properly
+		-- (the container already has a horizontal list layout, so we re-parent via a trick:
+		--  insert a sentinel full-width Frame and put the card directly there)
+		card = Card.new(fullRow, opts, self.T, self.Z + 1)
+	else
+		-- Alternate left/right columns
+		local col = (self.CardCount % 2 == 1) and self.ColLeft or self.ColRight
+		card = Card.new(col, opts, self.T, self.Z + 1)
 	end
 
-	local card = Card.new(col, opts, self.T, self.Z + 1)
-	card._cfg   = cfg
+	card._cfg = cfg
 	table.insert(self.Cards, card)
 	return card
 end
