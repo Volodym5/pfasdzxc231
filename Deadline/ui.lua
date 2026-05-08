@@ -8,7 +8,7 @@ local toggleChams    = state.toggleChams
 local setNightVision = state.setNightVision
 local fullCleanup    = state.fullCleanup
 
-local Rayfield = loadstring(game:HttpGet('https://raw.githubusercontent.com/Volodym5/pfasdzxc231/refs/heads/main/lib.lua'))()
+local Rayfield = loadstring(game:HttpGet('https://raw.githubusercontent.com/Volodym5/pfasdzxc231/main/rayfield%20custom.lua'))()
 
 local Window = Rayfield:CreateWindow({
    Name = "Deadline Xeno - Chams",
