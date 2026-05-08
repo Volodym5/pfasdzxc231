@@ -57,17 +57,83 @@ MainTab:CreateToggle({
 })
 
 MainTab:CreateSection("Colors")
+
+-- Quick swatches: applied to whichever picker was last focused
+local lastFocused = "visible" -- "visible" | "occluded"
+
+local swatches = {
+    { name = "Red",    c = Color3.fromRGB(255, 50,  50)  },
+    { name = "Orange", c = Color3.fromRGB(255, 150, 50)  },
+    { name = "Yellow", c = Color3.fromRGB(240, 230, 50)  },
+    { name = "Green",  c = Color3.fromRGB(50,  255, 80)  },
+    { name = "Cyan",   c = Color3.fromRGB(0,   220, 255) },
+    { name = "Blue",   c = Color3.fromRGB(30,  80,  255) },
+    { name = "Purple", c = Color3.fromRGB(180, 60,  255) },
+    { name = "Pink",   c = Color3.fromRGB(255, 80,  180) },
+    { name = "White",  c = Color3.fromRGB(255, 255, 255) },
+    { name = "Grey",   c = Color3.fromRGB(140, 140, 140) },
+}
+
+-- Debounce so dragging custom picker doesn't spam every frame
+local debounceThread = nil
+local function applyColor(target, color)
+    if target == "visible" then
+        settings.VisibleColor = color
+        for _, h in pairs(highlightCache) do
+            if h.Enabled then
+                local dVis = (h.FillColor - color).Magnitude
+                local dOcc = (h.FillColor - settings.OccludedColor).Magnitude
+                if dVis <= dOcc then h.FillColor = color; h.OutlineColor = color end
+            end
+        end
+    else
+        settings.OccludedColor = color
+        for _, h in pairs(highlightCache) do
+            if h.Enabled then
+                local dOcc = (h.FillColor - color).Magnitude
+                local dVis = (h.FillColor - settings.VisibleColor).Magnitude
+                if dOcc < dVis then h.FillColor = color; h.OutlineColor = color end
+            end
+        end
+    end
+end
+
+local function debouncedApply(target, color)
+    if debounceThread then task.cancel(debounceThread) end
+    debounceThread = task.delay(0.1, function()
+        applyColor(target, color)
+        debounceThread = nil
+    end)
+end
+
+MainTab:CreateSection("Colors")
+MainTab:CreateLabel("Click a swatch to set the focused picker's color")
+
+for _, s in ipairs(swatches) do
+    local sw = s
+    MainTab:CreateButton({
+        Name = sw.name,
+        Callback = function() applyColor(lastFocused, sw.c) end,
+    })
+end
+
 MainTab:CreateColorPicker({
-   Name = "Visible Color",
-   Color = settings.VisibleColor,
-   Flag = "VisibleColor",
-   Callback = function(Color) settings.VisibleColor = Color end,
+    Name = "Visible Color",
+    Color = settings.VisibleColor,
+    Flag = "VisibleColor",
+    Callback = function(Color)
+        lastFocused = "visible"
+        debouncedApply("visible", Color)
+    end,
 })
 MainTab:CreateColorPicker({
-   Name = "Occluded Color",
-   Color = settings.OccludedColor,
-   Flag = "OccludedColor",
-   Callback = function(Color) settings.OccludedColor = Color end,
+    Name = "Occluded Color",
+    Color = settings.OccludedColor,
+    Flag = "OccludedColor",
+    Callback = function(Color)
+        lastFocused = "occluded"
+        debouncedApply("occluded", Color)
+    end,
 })
 
 MainTab:CreateSection("Transparency")
