@@ -2,15 +2,18 @@
 loadstring(game:HttpGet('https://raw.githubusercontent.com/Volodym5/pfasdzxc231/main/Deadline/main.lua'))()
 
 local Rayfield = loadstring(game:HttpGet('https://raw.githubusercontent.com/Volodym5/pfasdzxc231/main/rayfield.lua'))()
--- ===== MAIN.LUA — UI only, loads backend from ui.lua =====
 
 local state          = _G.ChamsState
 local settings       = state.settings
 local highlightCache = state.highlightCache
 local toggleChams    = state.toggleChams
 local fullCleanup    = state.fullCleanup
-local setNoShake     = state.setNoShake
-local setNoBlur      = state.setNoBlur
+local setNoShake      = state.setNoShake
+local setNoBlur       = state.setNoBlur
+local flashKiller     = state.flashKiller
+local suppressionKiller = state.suppressionKiller
+local explosionKiller = state.explosionKiller
+local waterKiller     = state.waterKiller
 
 local Window = Rayfield:CreateWindow({
     Name                   = "Deadline Xeno - Chams",
@@ -96,14 +99,30 @@ local MiscTab = Window:CreateTab("Misc", 4483362458)
 
 MiscTab:CreateSection("Camera")
 MiscTab:CreateToggle({
-    Name         = "No Camera Shake",
-    CurrentValue = false,
-    Callback     = function(v) setNoShake(v) end,
+    Name = "No Camera Shake", CurrentValue = false,
+    Callback = function(v) setNoShake(v) end,
 })
 MiscTab:CreateToggle({
-    Name         = "No Blur",
-    CurrentValue = false,
-    Callback     = function(v) setNoBlur(v) end,
+    Name = "No Blur", CurrentValue = false,
+    Callback = function(v) setNoBlur(v) end,
+})
+
+MiscTab:CreateSection("Screen Effects")
+MiscTab:CreateToggle({
+    Name = "No Flash", CurrentValue = false,
+    Callback = function(v) if v then flashKiller.enable() else flashKiller.disable() end end,
+})
+MiscTab:CreateToggle({
+    Name = "No Suppression", CurrentValue = false,
+    Callback = function(v) if v then suppressionKiller.enable() else suppressionKiller.disable() end end,
+})
+MiscTab:CreateToggle({
+    Name = "No Explosion Screen Effect", CurrentValue = false,
+    Callback = function(v) if v then explosionKiller.enable() else explosionKiller.disable() end end,
+})
+MiscTab:CreateToggle({
+    Name = "No Water Effects", CurrentValue = false,
+    Callback = function(v) if v then waterKiller.enable() else waterKiller.disable() end end,
 })
 
 MiscTab:CreateSection("Night Vision")
