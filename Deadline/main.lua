@@ -260,6 +260,48 @@ end)
 
 detectLocalTeam()
 
+-- ===== NO CAMERA SHAKE =====
+local shakeHooked = false
+local origShakeNew = nil
+
+local function setNoShake(enabled)
+    local ok, CameraShakeInstance = pcall(require,
+        game:GetService("ReplicatedStorage").class.dependencies.CameraShake.CameraShakeInstance)
+    if not ok then warn("[MISC] CameraShakeInstance not found") return end
+
+    if enabled and not shakeHooked then
+        origShakeNew = CameraShakeInstance.new
+        CameraShakeInstance.new = function(magnitude, roughness, ...)
+            return origShakeNew(0, 0, ...)
+        end
+        shakeHooked = true
+    elseif not enabled and shakeHooked and origShakeNew then
+        CameraShakeInstance.new = origShakeNew
+        shakeHooked = false
+    end
+end
+
+-- ===== NO BLUR =====
+local blurConnection = nil
+
+local function setNoBlur(enabled)
+    local blurPart = workspace:FindFirstChild("ignore")
+        and workspace.ignore:FindFirstChild("builder")
+        and workspace.ignore.builder:FindFirstChild("FrameBlur, blur")
+
+    if not blurPart then warn("[MISC] Blur part not found") return end
+
+    if enabled then
+        blurPart.Transparency = 1
+        blurConnection = blurPart:GetPropertyChangedSignal("Transparency"):Connect(function()
+            blurPart.Transparency = 1
+        end)
+    else
+        if blurConnection then blurConnection:Disconnect(); blurConnection = nil end
+        blurPart.Transparency = 0
+    end
+end
+
 -- ===== EXPOSE =====
 _G.ChamsState = {
     settings       = settings,
@@ -268,4 +310,6 @@ _G.ChamsState = {
     fullCleanup    = fullCleanup,
     startNV        = startNV,
     stopNV         = stopNV,
+    setNoShake     = setNoShake,
+    setNoBlur      = setNoBlur,
 }
