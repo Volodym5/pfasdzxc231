@@ -272,7 +272,15 @@ if debugX then
 end
 
 local ANALYTICS_TOKEN = nil
-local reporter = nil
+
+local reporter = {
+	windowCreated = function() end,
+	send = function() end,
+	log = function() end,
+	report = function() end,
+	track = function() end,
+	destroy = function() end
+}
 
 local promptUser = 2
 
