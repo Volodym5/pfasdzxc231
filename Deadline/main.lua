@@ -40,31 +40,15 @@ end
 -- ===== TEAM DETECTION =====
 local localFingerprint = nil
 
-local function getHeadFingerprint(model)
-    local headMesh  = model:FindFirstChild("head")
+local function getPlayerTeamType(model)
+    if teamTypeCache[model] ~= nil then return teamTypeCache[model] end
+    local headMesh = model:FindFirstChild("head")
     if not headMesh then return nil end
     local headModel = headMesh:FindFirstChild("head")
     if not headModel then return nil end
-    -- count direct children by class, order-independent
-    local counts = {}
-    for _, child in ipairs(headModel:GetChildren()) do
-        local c = child.ClassName
-        counts[c] = (counts[c] or 0) + 1
-    end
-    local parts = {}
-    for class, count in pairs(counts) do
-        parts[#parts + 1] = class .. "=" .. count
-    end
-    table.sort(parts)
-    return table.concat(parts, ",")
-end
-
-local function getPlayerTeamType(model)
-    if teamTypeCache[model] ~= nil then return teamTypeCache[model] end
-    local fp = getHeadFingerprint(model)
-    if fp == nil then return nil end
-    teamTypeCache[model] = fp
-    return fp
+    local t = headModel:FindFirstChildWhichIsA("Model") ~= nil
+    teamTypeCache[model] = t
+    return t
 end
 
 local function detectLocalTeam()
@@ -73,14 +57,14 @@ local function detectLocalTeam()
     local mine = chars:FindFirstChild("StarterCharacter")
     if not mine then return end
     teamTypeCache[mine] = nil
-    local fp = getHeadFingerprint(mine)
-    if fp and fp ~= localFingerprint then
-        localFingerprint = fp
+    local detected = getPlayerTeamType(mine)
+    if detected ~= nil and detected ~= localFingerprint then
+        localFingerprint = detected
     end
 end
 
 local function isFriendlyModel(model)
-    if not settings.TeamCheck or not localFingerprint then return false end
+    if not settings.TeamCheck or localFingerprint == nil then return false end
     return getPlayerTeamType(model) == localFingerprint
 end
 
