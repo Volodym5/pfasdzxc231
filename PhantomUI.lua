@@ -1,15 +1,16 @@
 -- PhantomUI_Premium.lua
--- Professional Roblox UI Framework (Premium Version)
+-- Professional Roblox UI Framework (Refined Premium Version)
 -- Bundled for single-file distribution
 
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
 local CoreGui = game:GetService("CoreGui")
+local GuiService = game:GetService("GuiService")
 local Camera = workspace.CurrentCamera
 
 local Library = {
-    Version = "1.1.0",
+    Version = "1.2.0",
     Windows = {},
     Notifications = {},
     _maid = nil
@@ -77,7 +78,6 @@ local Theme = {
         Text = Color3.fromRGB(230, 230, 230),
         TextMuted = Color3.fromRGB(150, 150, 150),
         Accent = Color3.fromRGB(99, 102, 241),
-        AccentGradient = Color3.fromRGB(129, 132, 255),
     },
     Themes = {
         Obsidian = {
@@ -100,14 +100,20 @@ end
 local function CreateShadow(parent, radius)
     local Shadow = Instance.new("ImageLabel")
     Shadow.Name = "Shadow"
-    Shadow.Image = "rbxassetid://1316045217"
+    Shadow.Image = "rbxassetid://6015897843"
     Shadow.ScaleType = Enum.ScaleType.Slice
-    Shadow.SliceCenter = Rect.new(10, 10, 118, 118)
+    Shadow.SliceCenter = Rect.new(49, 49, 450, 450)
     Shadow.BackgroundTransparency = 1
-    Shadow.ImageTransparency = 0.5
-    Shadow.Size = UDim2.new(1, radius * 2, 1, radius * 2)
-    Shadow.Position = UDim2.fromOffset(-radius, -radius)
-    Shadow.ZIndex = 0
+    Shadow.ImageColor3 = Color3.new(0, 0, 0)
+    Shadow.ImageTransparency = 0.35
+    Shadow.Size = UDim2.new(1, 18, 1, 18)
+    Shadow.Position = UDim2.fromOffset(-9, -9)
+    Shadow.ZIndex = parent.ZIndex - 1
+    
+    local Corner = Instance.new("UICorner")
+    Corner.CornerRadius = UDim.new(0, radius)
+    Corner.Parent = Shadow
+    
     Shadow.Parent = parent
     return Shadow
 end
@@ -145,6 +151,7 @@ function Button.new(section, options)
     Container.BackgroundColor3 = Theme.Current.Background
     Container.BorderSizePixel = 0
     Container.AutoButtonColor = false
+    Container.ClipsDescendants = true
     Container.Text = ""
     Container.Parent = self.Section.Instances.Content
     
@@ -168,9 +175,9 @@ function Button.new(section, options)
     Label.ZIndex = 2
     Label.Parent = Container
     
-    -- Spring Animation
-    local hoverSpring = Spring.new(25, 0.8)
-    local pressSpring = Spring.new(35, 0.6)
+    -- Refined Springs
+    local hoverSpring = Spring.new(45, 0.75)
+    local pressSpring = Spring.new(65, 0.7)
     
     self._maid:GiveTask(RunService.RenderStepped:Connect(function(dt)
         local h = hoverSpring:Update(dt)
@@ -178,19 +185,27 @@ function Button.new(section, options)
         
         Stroke.Color = Theme.Current.Border:Lerp(Theme.Current.Accent, h)
         Container.BackgroundColor3 = Theme.Current.Background:Lerp(Theme.Current.Surface, h)
+        Container.Position = UDim2.fromOffset(0, -h * 1) -- Suble Hover Lift
         Label.TextSize = 13 - (p * 1)
     end))
     
-    Container.MouseEnter:Connect(function() hoverSpring.Target = 1 end)
+    Container.MouseEnter:Connect(function() 
+        hoverSpring.Position = 0.4 -- Instant feedback
+        hoverSpring.Target = 1 
+    end)
     Container.MouseLeave:Connect(function() hoverSpring.Target = 0; pressSpring.Target = 0 end)
     Container.MouseButton1Down:Connect(function() pressSpring.Target = 1 end)
+    
     Container.MouseButton1Up:Connect(function() 
         pressSpring.Target = 0
         
-        -- Ripple Effect
+        -- Refined Ripple Effect
         local mouse = UserInputService:GetMouseLocation()
+        local guiInset = GuiService:GetGuiInset()
         local relativeX = mouse.X - Container.AbsolutePosition.X
-        local relativeY = (mouse.Y - 36) - Container.AbsolutePosition.Y -- Offset for top bar
+        local relativeY = mouse.Y - guiInset.Y - Container.AbsolutePosition.Y
+        
+        local size = math.max(Container.AbsoluteSize.X, Container.AbsoluteSize.Y) * 1.5
         
         local Ripple = Instance.new("Frame", Container)
         Ripple.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -200,8 +215,11 @@ function Button.new(section, options)
         Ripple.ZIndex = 3
         Instance.new("UICorner", Ripple).CornerRadius = UDim.new(1, 0)
         
-        TweenService:Create(Ripple, TweenInfo.new(0.5), {Size = UDim2.fromOffset(200, 200), BackgroundTransparency = 1}):Play()
-        task.delay(0.5, function() Ripple:Destroy() end)
+        TweenService:Create(Ripple, TweenInfo.new(0.25, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
+            Size = UDim2.fromOffset(size, size), 
+            BackgroundTransparency = 1
+        }):Play()
+        task.delay(0.25, function() Ripple:Destroy() end)
         
         self.Callback() 
     end)
@@ -261,13 +279,14 @@ function Toggle.new(section, options)
     KnobCorner.CornerRadius = UDim.new(1, 0)
     KnobCorner.Parent = Knob
     
-    local stateSpring = Spring.new(20, 0.7)
+    local stateSpring = Spring.new(55, 0.7)
     stateSpring.Position = self.State and 1 or 0
     stateSpring.Target = stateSpring.Position
     
     self._maid:GiveTask(RunService.RenderStepped:Connect(function(dt)
         local s = stateSpring:Update(dt)
-        Switch.BackgroundColor3 = Theme.Current.Border:Lerp(Theme.Current.Accent, s)
+        local alpha = math.pow(s, 0.7) -- Sharper color interpolation
+        Switch.BackgroundColor3 = Theme.Current.Border:Lerp(Theme.Current.Accent, alpha)
         Knob.Position = UDim2.new(0, 3 + (s * 16), 0.5, 0)
     end))
     
@@ -344,7 +363,7 @@ function Slider.new(section, options)
     Knob.Parent = Track
     Instance.new("UICorner", Knob).CornerRadius = UDim.new(1, 0)
     
-    local fillSpring = Spring.new(25, 0.8)
+    local fillSpring = Spring.new(70, 0.72)
     fillSpring.Position = Fill.Size.X.Scale
     fillSpring.Target = fillSpring.Position
     
@@ -446,12 +465,12 @@ function Tab:Select()
     self.Active = true
     self.Window.CurrentTab = self
     self.Instances.Content.Visible = true
-    TweenService:Create(self.Instances.Button, TweenInfo.new(0.2), {BackgroundTransparency = 0, BackgroundColor3 = Theme.Current.Accent, TextColor3 = Color3.new(1, 1, 1)}):Play()
+    TweenService:Create(self.Instances.Button, TweenInfo.new(0.25, Enum.EasingStyle.Quint), {BackgroundTransparency = 0, BackgroundColor3 = Theme.Current.Accent, TextColor3 = Color3.new(1, 1, 1)}):Play()
 end
 function Tab:Deselect()
     self.Active = false
     self.Instances.Content.Visible = false
-    TweenService:Create(self.Instances.Button, TweenInfo.new(0.2), {BackgroundTransparency = 1, TextColor3 = Theme.Current.TextMuted}):Play()
+    TweenService:Create(self.Instances.Button, TweenInfo.new(0.25, Enum.EasingStyle.Quint), {BackgroundTransparency = 1, TextColor3 = Theme.Current.TextMuted}):Play()
 end
 function Tab:CreateSection(options) return Section.new(self, options) end
 
@@ -478,7 +497,7 @@ function Window.new(options)
     Main.ClipsDescendants = false
     
     Instance.new("UICorner", Main).CornerRadius = UDim.new(0, 12)
-    CreateShadow(Main, 15)
+    CreateShadow(Main, 12)
     CreateAcrylic(Main)
     
     local Sidebar = Instance.new("Frame", Main)
@@ -524,7 +543,7 @@ function Window.new(options)
     self._maid:GiveTask(UserInputService.InputEnded:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end end))
     
     self._maid:GiveTask(RunService.RenderStepped:Connect(function(dt)
-        Main.Position = Main.Position:Lerp(targetPos, 1 - math.exp(-20 * dt))
+        Main.Position = Main.Position:Lerp(targetPos, 1 - math.exp(-25 * dt))
     end))
     
     -- Open Animation
@@ -600,7 +619,7 @@ function Library:Notify(options)
     TweenService:Create(Toast, TweenInfo.new(0.5, Enum.EasingStyle.Quint), {Position = UDim2.new(0, 0, 0, 0)}):Play()
     
     task.delay(Duration, function()
-        TweenService:Create(Toast, TweenInfo.new(0.5, Enum.EasingStyle.Quint), {Position = UDim2.new(1, 20, 0, 0)}):Play()
+        TweenService:Create(Toast, TweenInfo.new(0.5, Enum.EasingStyle.Quint), {Position = UDim2.new(1, 320, 0, 0)}):Play()
         task.wait(0.5)
         Toast:Destroy()
     end)
