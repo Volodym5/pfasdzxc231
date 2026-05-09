@@ -20,6 +20,7 @@ local highlightCache   = {}
 local connections      = {}
 local cleaned          = false
 local localTeam        = nil
+local lastKnownTeam    = nil
 local teamTypeCache    = {}
 local ConfirmedEnemies = {}
 
@@ -56,10 +57,16 @@ end
 
 local function detectLocalTeam()
     local chars = Workspace:FindFirstChild("characters")
-    if not chars then return end
+    if not chars then localTeam = lastKnownTeam; return end
     local mine = chars:FindFirstChild("StarterCharacter")
-    if not mine then return end
-    localTeam = getPlayerTeamType(mine)
+    if not mine then localTeam = lastKnownTeam; return end
+    local detected = getPlayerTeamType(mine)
+    if detected then
+        localTeam     = detected
+        lastKnownTeam = detected
+    else
+        localTeam = lastKnownTeam -- head not loaded yet, hold previous
+    end
 end
 
 local function isFriendlyModel(model)
