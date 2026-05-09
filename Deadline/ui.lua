@@ -1,34 +1,30 @@
--- ===== CHAMS UI (loaded externally via loadstring) =====
-local state = _G.ChamsState
-if not state then warn("[UI] ChamsState not found in _G - did main.lua run first?") return end
+-- ===== MAIN.LUA — UI only, loads backend from ui.lua =====
+loadstring(game:HttpGet('https://raw.githubusercontent.com/YOUR_USER/YOUR_REPO/main/ui.lua'))()
 
+local state          = _G.ChamsState
 local settings       = state.settings
 local highlightCache = state.highlightCache
 local toggleChams    = state.toggleChams
-local setNightVision = state.setNightVision
 local fullCleanup    = state.fullCleanup
+local startNV        = state.startNV
+local stopNV         = state.stopNV
 
-local Rayfield = loadstring(game:HttpGet('https://raw.githubusercontent.com/Volodym5/pfasdzxc231/refs/heads/main/rayfield.lua'))()
+local Rayfield = loadstring(game:HttpGet('https://raw.githubusercontent.com/Volodym5/pfasdzxc231/refs/heads/main/lib.lua'))()
 
 local Window = Rayfield:CreateWindow({
-   Name = "Deadline Xeno - Chams",
-   Icon = 0,
-   LoadingTitle = "Deadline Xeno",
-   LoadingSubtitle = "Chams Menu",
-   Theme = "Default",
-   DisableRayfieldPrompts = false,
-   DisableBuildWarnings = false,
-   ConfigurationSaving = {
-      Enabled = true,
-      FolderName = "DeadlineXeno",
-      FileName = "ChamsSettings"
-   },
-   Discord = {
-      Enabled = false,
-      Invite = "noinvitelink",
-      RememberJoins = true
-   },
-   KeySystem = false,
+    Name                   = "Deadline Xeno - Chams",
+    Icon                   = 0,
+    LoadingTitle           = "Deadline Xeno",
+    LoadingSubtitle        = "Chams Menu",
+    Theme                  = "Default",
+    DisableRayfieldPrompts = false,
+    DisableBuildWarnings   = false,
+    ConfigurationSaving    = {
+        Enabled    = true,
+        FolderName = "DeadlineXeno",
+        FileName   = "ChamsSettings"
+    },
+    KeySystem = false,
 })
 
 -- ===== MAIN TAB =====
@@ -36,120 +32,84 @@ local MainTab = Window:CreateTab("Chams", 4483362458)
 
 MainTab:CreateSection("Toggle")
 MainTab:CreateToggle({
-   Name = "Enable Chams",
-   CurrentValue = settings.Enabled,
-   Flag = "ChamsEnabled",
-   Callback = function(Value) toggleChams(Value) end,
+    Name         = "Enable Chams",
+    CurrentValue = settings.Enabled,
+    Flag         = "ChamsEnabled",
+    Callback     = function(v) toggleChams(v) end,
 })
 
 MainTab:CreateSection("Settings")
 MainTab:CreateToggle({
-   Name = "Team Check (Friendly Detection)",
-   CurrentValue = settings.TeamCheck,
-   Flag = "TeamCheck",
-   Callback = function(Value) settings.TeamCheck = Value end,
+    Name         = "Team Check",
+    CurrentValue = settings.TeamCheck,
+    Flag         = "TeamCheck",
+    Callback     = function(v) settings.TeamCheck = v end,
 })
 MainTab:CreateToggle({
-   Name = "Visibility Check",
-   CurrentValue = settings.VisibilityCheck,
-   Flag = "VisibilityCheck",
-   Callback = function(Value) settings.VisibilityCheck = Value end,
+    Name         = "Visibility Check",
+    CurrentValue = settings.VisibilityCheck,
+    Flag         = "VisibilityCheck",
+    Callback     = function(v) settings.VisibilityCheck = v end,
 })
 
 MainTab:CreateSection("Colors")
-
-MainTab:CreateSection("Colors")
 MainTab:CreateColorPicker({
-    Name = "Visible Color",
-    Color = settings.VisibleColor,
-    Flag = "VisibleColor",
-    Callback = function(Color) settings.VisibleColor = Color end,
+    Name     = "Visible Color",
+    Color    = settings.VisibleColor,
+    Flag     = "VisibleColor",
+    Callback = function(c) settings.VisibleColor = c end,
 })
 MainTab:CreateColorPicker({
-    Name = "Occluded Color",
-    Color = settings.OccludedColor,
-    Flag = "OccludedColor",
-    Callback = function(Color) settings.OccludedColor = Color end,
+    Name     = "Occluded Color",
+    Color    = settings.OccludedColor,
+    Flag     = "OccludedColor",
+    Callback = function(c) settings.OccludedColor = c end,
 })
 
 MainTab:CreateSection("Transparency")
 MainTab:CreateSlider({
-   Name = "Fill Transparency",
-   Range = {0, 1},
-   Increment = 0.05,
-   Suffix = "",
-   CurrentValue = settings.FillTransparency,
-   Flag = "FillTrans",
-   Callback = function(Value)
-       settings.FillTransparency = Value
-       for _, h in pairs(highlightCache) do h.FillTransparency = Value end
-   end,
+    Name         = "Fill Transparency",
+    Range        = {0, 1},
+    Increment    = 0.05,
+    CurrentValue = settings.FillTransparency,
+    Flag         = "FillTrans",
+    Callback     = function(v)
+        settings.FillTransparency = v
+        for _, h in pairs(highlightCache) do h.FillTransparency = v end
+    end,
 })
 MainTab:CreateSlider({
-   Name = "Outline Transparency",
-   Range = {0, 1},
-   Increment = 0.05,
-   Suffix = "",
-   CurrentValue = settings.OutlineTransparency,
-   Flag = "OutlineTrans",
-   Callback = function(Value)
-       settings.OutlineTransparency = Value
-       for _, h in pairs(highlightCache) do h.OutlineTransparency = Value end
-   end,
+    Name         = "Outline Transparency",
+    Range        = {0, 1},
+    Increment    = 0.05,
+    CurrentValue = settings.OutlineTransparency,
+    Flag         = "OutlineTrans",
+    Callback     = function(v)
+        settings.OutlineTransparency = v
+        for _, h in pairs(highlightCache) do h.OutlineTransparency = v end
+    end,
 })
 
 -- ===== MISC TAB =====
 local MiscTab = Window:CreateTab("Misc", 4483362458)
 
 MiscTab:CreateSection("Night Vision")
-
-local NV_TARGETS = {
-    ["NightVision, dof"] = true,
-    ["NightVision, color_correction"] = true,
-    ["NightVision, blur"] = true,
-    ["NightVision, bloom"] = true,
-    ["IngameView, universal_desaturation"] = true,
-}
-
-local nvConnection = nil
-
-local function stopNV()
-    if nvConnection then
-        nvConnection:Disconnect()
-        nvConnection = nil
-    end
-end
-
-local function startNV()
-    -- delete any already present
-    for name in pairs(NV_TARGETS) do
-        local e = game:GetService("Lighting"):FindFirstChild(name)
-        if e then e:Destroy() end
-    end
-    -- watch for re-adds
-    nvConnection = game:GetService("Lighting").ChildAdded:Connect(function(child)
-        if NV_TARGETS[child.Name] then
-            child:Destroy()
-        end
-    end)
-end
-
 MiscTab:CreateToggle({
-    Name = "Night Vision",
+    Name         = "Night Vision",
     CurrentValue = settings.NightVision,
-    Callback = function(Value)
-        settings.NightVision = Value
-        if Value then startNV() else stopNV() end
+    Callback     = function(v)
+        settings.NightVision = v
+        if v then startNV() else stopNV() end
     end,
 })
 
 MiscTab:CreateSection("Utility")
 MiscTab:CreateButton({
-   Name = "Unload Script",
-   Callback = function()
-       fullCleanup()
-       Rayfield:Destroy()
-   end,
+    Name     = "Unload",
+    Callback = function()
+        fullCleanup()
+        Rayfield:Destroy()
+    end,
 })
 
 Rayfield:LoadConfiguration()
