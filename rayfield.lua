@@ -65,7 +65,7 @@ local function loadWithTimeout(url: string, timeout: number?): ...any
 
 	-- Wait for completion or timeout
 	while not requestCompleted do
-		task.wait()
+		task.wait(0.05)
 	end
 	-- Cancel timeout thread if still running when request completes
 	if coroutine.status(timeoutThread) ~= "dead" then
@@ -127,6 +127,8 @@ local settingsTable = {
 		-- rayfieldprompts
 
 	},
+	System = {
+	}
 }
 
 -- Settings that have been overridden by the developer. These will not be saved to the user's configuration file
@@ -142,11 +144,6 @@ local function getSetting(category: string, name: string): any
 	elseif settingsTable[category][name] ~= nil then
 		return settingsTable[category][name].Value
 	end
-end
-
--- If requests/analytics have been disabled by developer, set the user-facing setting to false as well
-if requestsDisabled then
-	overrideSetting("System", "usageAnalytics", false)
 end
 
 local HttpService = getService('HttpService')
@@ -203,7 +200,7 @@ local function loadSettings()
 		-- for debug in studio
 		if useStudio then
 			file = [[
-	{"General":{"rayfieldOpen":{"Value":"K","Type":"bind","Name":"Rayfield Keybind","Element":{"HoldToInteract":false,"Ext":true,"Name":"Rayfield Keybind","Set":null,"CallOnChange":true,"Callback":null,"CurrentKeybind":"K"}}},"System":{"usageAnalytics":{"Value":false,"Type":"toggle","Name":"Anonymised Analytics","Element":{"Ext":false,"Name":"Anonymised Analytics","Set":null,"CurrentValue":false,"Callback":null}}}}
+	{"General":{"rayfieldOpen":{"Value":"K","Type":"bind","Name":"Rayfield Keybind","Element":{"HoldToInteract":false,"Ext":true,"Name":"Rayfield Keybind","Set":null,"CallOnChange":true,"Callback":null,"CurrentKeybind":"K"}}},"System":{"usageAnalytics":{"Value":false,"Type":"toggle","Name":"Anonymised Analytics","Element":{"Ext":true,"Name":"Anonymised Analytics","Set":null,"CurrentValue":false,"Callback":null}}}}
 ]]
 		end
 
@@ -264,28 +261,6 @@ loadSettings()
 
 if debugX then
 	warn('Settings Loaded')
-end
-
-local ANALYTICS_TOKEN = "05de7f9fd320d3b8428cd1c77014a337b85b6c8efee2c5914f5ab5700c354b9a"
-
-local reporter = nil
-if not requestsDisabled and not useStudio then
-	local fetchSuccess, fetchResult = pcall((game :: any).HttpGet, game, "https://raw.githubusercontent.com/SiriusSoftwareLtd/Rayfield/refs/heads/main/reporter.lua")
-	if fetchSuccess and #fetchResult > 0 then
-		local execSuccess, Analytics = pcall(function()
-			return (loadstring(fetchResult) :: any)()
-		end)
-		if execSuccess and Analytics then
-			pcall(function()
-				reporter = Analytics.new({
-					url          = "https://rayfield-collect.sirius-software-ltd.workers.dev",
-					token        = ANALYTICS_TOKEN,
-					product_name = "Rayfield",
-					category     = "UILibrary",
-				})
-			end)
-		end
-	end
 end
 
 local promptUser = 2
@@ -1078,7 +1053,7 @@ local function makeDraggable(object, dragObject, enableTaptic, tapticOffset)
 		end
 	end)
 
-	local renderStepped = RunService.RenderStepped:Connect(function()
+	local renderStepped = RunService.Heartbeat:Connect(function()
 		if dragging and not Hidden then
 			local position = UserInputService:GetMouseLocation() + relative + offset
 			if enableTaptic and tapticOffset then
@@ -1233,13 +1208,13 @@ function RayfieldLibrary:Notify(data) -- action e.g open messages
 		newNotification.Visible = true
 
 		if data.Actions then
-			warn('Rayfield | Not seeing your actions in notifications?')
-			print("Notification Actions are being sunset for now, keep up to date on when they're back in the discord. (sirius.menu/discord)")
+			warn('Rayfield | Notification Actions are not currently supported.')
 		end
 
 		-- Calculate textbounds and set initial values
 		local bounds = {newNotification.Title.TextBounds.Y, newNotification.Description.TextBounds.Y}
-		newNotification.Size = UDim2.new(1, -60, 0, -Notifications:FindFirstChild("UIListLayout").Padding.Offset)
+		local notifLayout = Notifications:FindFirstChild("UIListLayout")
+		newNotification.Size = UDim2.new(1, -60, 0, -notifLayout.Padding.Offset)
 
 		newNotification.Icon.Size = UDim2.new(0, 32, 0, 32)
 		newNotification.Icon.Position = UDim2.new(0, 20, 0.5, 0)
@@ -1273,7 +1248,7 @@ function RayfieldLibrary:Notify(data) -- action e.g open messages
 
 		task.wait(1)
 
-		TweenService:Create(newNotification, TweenInfo.new(1, Enum.EasingStyle.Exponential), {Size = UDim2.new(1, -90, 0, -Notifications:FindFirstChild("UIListLayout").Padding.Offset)}):Play()
+		TweenService:Create(newNotification, TweenInfo.new(1, Enum.EasingStyle.Exponential), {Size = UDim2.new(1, -90, 0, -notifLayout.Padding.Offset)}):Play()
 
 		newNotification.Visible = false
 		newNotification:Destroy()
@@ -1765,21 +1740,6 @@ function RayfieldLibrary:CreateWindow(Settings)
 	Elements.Visible = false
 	LoadingFrame.Visible = true
 
-	if false and not Settings.DisableRayfieldPrompts then
-		task.spawn(function()
-			while not rayfieldDestroyed do
-				task.wait(math.random(180, 600))
-				if rayfieldDestroyed then break end
-				RayfieldLibrary:Notify({
-					Title = "Rayfield Interface",
-					Content = "Enjoying this UI library? Find it at sirius.menu/discord",
-					Duration = 7,
-					Image = 4370033185,
-				})
-			end
-		end)
-	end
-
 	pcall(function()
 		if not Settings.ConfigurationSaving.FileName then
 			Settings.ConfigurationSaving.FileName = tostring(game.PlaceId)
@@ -1808,34 +1768,6 @@ function RayfieldLibrary:CreateWindow(Settings)
 			TabButton.Title.TextTransparency = 1
 			TabButton.Image.ImageTransparency = 1
 			TabButton.UIStroke.Transparency = 1
-		end
-	end
-
-	if false and Settings.Discord and Settings.Discord.Enabled and not useStudio and not secureMode then
-		ensureFolder(RayfieldFolder.."/Discord Invites")
-
-		if not callSafely(isfile, RayfieldFolder.."/Discord Invites".."/"..Settings.Discord.Invite..ConfigurationExtension) then
-			if requestFunc then
-				pcall(function()
-					requestFunc({
-						Url = 'http://127.0.0.1:6463/rpc?v=1',
-						Method = 'POST',
-						Headers = {
-							['Content-Type'] = 'application/json',
-							Origin = 'https://discord.com'
-						},
-						Body = HttpService:JSONEncode({
-							cmd = 'INVITE_BROWSER',
-							nonce = HttpService:GenerateGUID(false),
-							args = {code = Settings.Discord.Invite}
-						})
-					})
-				end)
-			end
-
-			if Settings.Discord.RememberJoins then -- We do logic this way so if the developer changes this setting, the user still won't be prompted, only new users
-				callSafely(writefile, RayfieldFolder.."/Discord Invites".."/"..Settings.Discord.Invite..ConfigurationExtension,"Rayfield RememberJoins is true for this invite, this invite will not ask you to join again")
-			end
 		end
 	end
 
@@ -3620,48 +3552,6 @@ function RayfieldLibrary:CreateWindow(Settings)
 
 	if not success then warn('Rayfield had an issue creating settings.') end
 
-	-- Report after createSettings so loadSettings() has run and usageAnalytics reflects the user's saved preference
-	if reporter and getSetting("System", "usageAnalytics") then
-		local themeName = "Default"
-		if Settings.Theme then
-			if type(Settings.Theme) == "string" then
-				themeName = Settings.Theme
-			elseif type(Settings.Theme) == "table" then
-				themeName = "Custom"
-			end
-		end
-
-		local discordInvite = nil
-		if Settings.Discord and Settings.Discord.Enabled and Settings.Discord.Invite and Settings.Discord.Invite ~= "" then
-			local raw = tostring(Settings.Discord.Invite)
-			-- Normalize: strip URL prefixes to extract just the invite code
-			discordInvite = (raw:match("discord%.gg/([%w%-]+)") or raw:match("discord%.com/invite/([%w%-]+)") or raw):sub(1, 32)
-		end
-
-		local sampleSend = false
-
-		-- Random Sampling Test
-		if not Settings.ScriptID and math.random() > 0.4 then
-			sampleSend = true
-		end
-
-		--if Settings.ScriptID then
-		if false and reporter then
-			reporter:windowCreated({
-				script_name        = Settings.Name or "Unknown",
-				script_version     = Release,
-				interface_version  = InterfaceBuild,
-				theme              = themeName,
-				is_mobile          = useMobileSizing and true or false,
-				has_key_system     = Settings.KeySystem and true or false,
-				discord_invite     = discordInvite,
-				config_saving      = (Settings.ConfigurationSaving and Settings.ConfigurationSaving.Enabled) and true or false,
-				script_id          = Settings.ScriptID or sampleSend and 'sid_tzfyxawonjx9' or nil,
-				verification_token = Settings.VerificationToken,
-			})
-		--end
-	end
-
 	return Window
 end
 
@@ -4103,7 +3993,5 @@ task.delay(4, function()
 		Main.Notice.Visible = false
 	end
 end)
-		end
 
 return RayfieldLibrary
-
