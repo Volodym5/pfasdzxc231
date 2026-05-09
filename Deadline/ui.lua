@@ -1,5 +1,6 @@
--- ===== MAIN.LUA — UI only, loads backend from ui.lua =====
-loadstring(game:HttpGet('https://raw.githubusercontent.com/YOUR_USER/YOUR_REPO/main/ui.lua'))()
+-- ===== UI.LUA — UI only, loads backend from main.lua =====
+loadstring(game:HttpGet('https://raw.githubusercontent.com/Volodym5/pfasdzxc231/main/Deadline/main.lua'))()
+local Rayfield = loadstring(game:HttpGet('https://raw.githubusercontent.com/Volodym5/pfasdzxc231/main/rayfield.lua'))()
 
 local state          = _G.ChamsState
 local settings       = state.settings
@@ -8,8 +9,6 @@ local toggleChams    = state.toggleChams
 local fullCleanup    = state.fullCleanup
 local startNV        = state.startNV
 local stopNV         = state.stopNV
-
-local Rayfield = loadstring(game:HttpGet('https://raw.githubusercontent.com/Volodym5/pfasdzxc231/refs/heads/main/lib.lua'))()
 
 local Window = Rayfield:CreateWindow({
     Name                   = "Deadline Xeno - Chams",
