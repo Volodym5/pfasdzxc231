@@ -146,7 +146,7 @@ end
 
 -- If requests/analytics have been disabled by developer, set the user-facing setting to false as well
 if requestsDisabled then
-	overrideSetting("System", "usageAnalytics", false)
+	print("request disabled")
 end
 
 local HttpService = getService('HttpService')
