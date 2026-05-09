@@ -302,6 +302,61 @@ local function setNoBlur(enabled)
     end
 end
 
+-- ===== SCREEN EFFECTS =====
+local IngameView = Lighting:FindFirstChild("IngameView")
+
+local function makeEffectKiller(names, props)
+    local conns = {}
+    return {
+        enable = function()
+            if not IngameView then return end
+            for _, name in ipairs(names) do
+                local effect = IngameView:FindFirstChild(name)
+                if not effect then continue end
+                for _, prop in ipairs(props) do
+                    pcall(function()
+                        if prop == "Size"       then effect.Size = 0
+                        elseif prop == "Brightness" then effect.Brightness = 0
+                        elseif prop == "Saturation" then effect.Saturation = 0
+                        elseif prop == "TintColor"  then effect.TintColor = Color3.new(1,1,1)
+                        end
+                        table.insert(conns, effect:GetPropertyChangedSignal(prop):Connect(function()
+                            pcall(function()
+                                if prop == "Size"       then effect.Size = 0
+                                elseif prop == "Brightness" then effect.Brightness = 0
+                                elseif prop == "Saturation" then effect.Saturation = 0
+                                elseif prop == "TintColor"  then effect.TintColor = Color3.new(1,1,1)
+                                end
+                            end)
+                        end))
+                    end)
+                end
+            end
+        end,
+        disable = function()
+            for _, c in ipairs(conns) do pcall(function() c:Disconnect() end) end
+            conns = {}
+        end,
+    }
+end
+
+local flashKiller = makeEffectKiller(
+    {"flash_color_correction", "flash_desaturation", "flash_blur_effect"},
+    {"Brightness", "Saturation", "TintColor", "Size"}
+)
+local suppressionKiller = makeEffectKiller(
+    {"suppression_color_correction", "suppression_blur_effect"},
+    {"Brightness", "Saturation", "TintColor", "Size"}
+)
+local explosionKiller = makeEffectKiller(
+    {"explosion_color_correction", "explosion_blur_effect"},
+    {"Brightness", "Saturation", "TintColor", "Size"}
+)
+local waterKiller = makeEffectKiller(
+    {"water_color_correction", "water_blur", "drown_blur"},
+    {"Brightness", "Saturation", "TintColor", "Size"}
+)
+
 -- ===== EXPOSE =====
 _G.ChamsState = {
     settings       = settings,
@@ -312,4 +367,8 @@ _G.ChamsState = {
     stopNV         = stopNV,
     setNoShake     = setNoShake,
     setNoBlur      = setNoBlur,
+    flashKiller    = flashKiller,
+    suppressionKiller = suppressionKiller,
+    explosionKiller   = explosionKiller,
+    waterKiller    = waterKiller,
 }
