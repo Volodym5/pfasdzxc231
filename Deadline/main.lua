@@ -1,4 +1,4 @@
--- ===== MAIN.LUA — backend systems =====
+-- ===== UI.LUA — backend systems =====
 local Workspace  = workspace
 local Camera     = Workspace.CurrentCamera
 local Lighting   = game:GetService("Lighting")
@@ -19,8 +19,6 @@ local settings = {
 local highlightCache   = {}
 local connections      = {}
 local cleaned          = false
-local localTeam        = nil
-local lastKnownTeam    = nil
 local teamTypeCache    = {}
 local ConfirmedEnemies = {}
 
@@ -40,38 +38,50 @@ local function createCham(model)
 end
 
 -- ===== TEAM DETECTION =====
-local function isDefenderHead(headModel)
-    return headModel:FindFirstChildWhichIsA("Model") ~= nil
-end
+local localFingerprint = nil
 
-local function getPlayerTeamType(model)
-    if teamTypeCache[model] ~= nil then return teamTypeCache[model] end
+local function getHeadFingerprint(model)
     local headMesh  = model:FindFirstChild("head")
     if not headMesh then return nil end
     local headModel = headMesh:FindFirstChild("head")
     if not headModel then return nil end
-    local t = isDefenderHead(headModel) and "defender" or "attacker"
-    teamTypeCache[model] = t
-    return t
+    -- count direct children by class, order-independent
+    local counts = {}
+    for _, child in ipairs(headModel:GetChildren()) do
+        local c = child.ClassName
+        counts[c] = (counts[c] or 0) + 1
+    end
+    local parts = {}
+    for class, count in pairs(counts) do
+        parts[#parts + 1] = class .. "=" .. count
+    end
+    table.sort(parts)
+    return table.concat(parts, ",")
+end
+
+local function getPlayerTeamType(model)
+    if teamTypeCache[model] ~= nil then return teamTypeCache[model] end
+    local fp = getHeadFingerprint(model)
+    if fp == nil then return nil end
+    teamTypeCache[model] = fp
+    return fp
 end
 
 local function detectLocalTeam()
     local chars = Workspace:FindFirstChild("characters")
-    if not chars then localTeam = lastKnownTeam; return end
+    if not chars then return end
     local mine = chars:FindFirstChild("StarterCharacter")
-    if not mine then localTeam = lastKnownTeam; return end
-    local detected = getPlayerTeamType(mine)
-    if detected then
-        localTeam     = detected
-        lastKnownTeam = detected
-    else
-        localTeam = lastKnownTeam -- head not loaded yet, hold previous
+    if not mine then return end
+    teamTypeCache[mine] = nil
+    local fp = getHeadFingerprint(mine)
+    if fp and fp ~= localFingerprint then
+        localFingerprint = fp
     end
 end
 
 local function isFriendlyModel(model)
-    if not settings.TeamCheck or not localTeam then return false end
-    return getPlayerTeamType(model) == localTeam
+    if not settings.TeamCheck or not localFingerprint then return false end
+    return getPlayerTeamType(model) == localFingerprint
 end
 
 local function scanFriendly()
@@ -228,7 +238,7 @@ table.insert(connections, RunService.Heartbeat:Connect(function()
         end
     end
 
-    if now - lastTeamRecheck >= 5 then
+    if now - lastTeamRecheck >= 10 then
         lastTeamRecheck = now
         local prev = localTeam
         localTeam  = nil
