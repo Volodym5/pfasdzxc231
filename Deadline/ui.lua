@@ -2,14 +2,15 @@
 loadstring(game:HttpGet('https://raw.githubusercontent.com/Volodym5/pfasdzxc231/main/Deadline/main.lua'))()
 
 local Rayfield = loadstring(game:HttpGet('https://raw.githubusercontent.com/Volodym5/pfasdzxc231/main/rayfield.lua'))()
+-- ===== MAIN.LUA — UI only, loads backend from ui.lua =====
 
 local state          = _G.ChamsState
 local settings       = state.settings
 local highlightCache = state.highlightCache
 local toggleChams    = state.toggleChams
 local fullCleanup    = state.fullCleanup
-local startNV        = state.startNV
-local stopNV         = state.stopNV
+local setNoShake     = state.setNoShake
+local setNoBlur      = state.setNoBlur
 
 local Window = Rayfield:CreateWindow({
     Name                   = "Deadline Xeno - Chams",
@@ -92,6 +93,18 @@ MainTab:CreateSlider({
 
 -- ===== MISC TAB =====
 local MiscTab = Window:CreateTab("Misc", 4483362458)
+
+MiscTab:CreateSection("Camera")
+MiscTab:CreateToggle({
+    Name         = "No Camera Shake",
+    CurrentValue = false,
+    Callback     = function(v) setNoShake(v) end,
+})
+MiscTab:CreateToggle({
+    Name         = "No Blur",
+    CurrentValue = false,
+    Callback     = function(v) setNoBlur(v) end,
+})
 
 MiscTab:CreateSection("Night Vision")
 MiscTab:CreateToggle({
