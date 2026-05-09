@@ -84,15 +84,31 @@ end
 local function checkVisibility(model)
     local head = model:FindFirstChild("head")
     if not head then return nil end
-    local camPos    = Camera.CFrame.Position
-    local rayParams = RaycastParams.new()
-    rayParams.FilterType = Enum.RaycastFilterType.Blacklist
-    rayParams.FilterDescendantsInstances = {model}
-    rayParams.IgnoreWater = true
-    local dir  = head.Position - camPos
-    local dist = dir.Magnitude
-    if dist < 0.1 then return true end
-    return Workspace:Raycast(camPos, dir.Unit * dist, rayParams) == nil
+
+    local excluded = {model}
+    local target   = head.Position
+    local MAX_ITER = 10 -- prevent infinite loops on edge cases
+
+    for _ = 1, MAX_ITER do
+        local params = RaycastParams.new()
+        params.FilterType = Enum.RaycastFilterType.Exclude
+        params.FilterDescendantsInstances = excluded
+        params.IgnoreWater = true
+
+        local origin = Camera.CFrame.Position
+        local dir    = target - origin
+        local result = Workspace:Raycast(origin, dir, params)
+
+        if result == nil then
+            return true -- nothing blocking, visible
+        elseif result.Instance.Transparency ~= 0 then
+            table.insert(excluded, result.Instance) -- skip transparent, try again
+        else
+            return false -- solid hit, occluded
+        end
+    end
+
+    return false
 end
 
 -- ===== TOGGLE / CLEANUP =====
@@ -222,7 +238,7 @@ table.insert(connections, RunService.Heartbeat:Connect(function()
         end
     end
 
-    if now - lastTeamRecheck >= 5 then
+    if now - lastTeamRecheck >= 10 then
         lastTeamRecheck = now
         local prev = localTeam
         localTeam  = nil
