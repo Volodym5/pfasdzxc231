@@ -222,7 +222,7 @@ table.insert(connections, RunService.Heartbeat:Connect(function()
         end
     end
 
-    if now - lastTeamRecheck >= 10 then
+    if now - lastTeamRecheck >= 5 then
         lastTeamRecheck = now
         local prev = localTeam
         localTeam  = nil
