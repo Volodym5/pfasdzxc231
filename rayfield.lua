@@ -127,6 +127,9 @@ local settingsTable = {
 		-- rayfieldprompts
 
 	},
+	System = {
+		usageAnalytics = {Type = 'toggle', Value = true, Name = 'Anonymised Analytics'},
+	}
 }
 
 -- Settings that have been overridden by the developer. These will not be saved to the user's configuration file
@@ -146,7 +149,7 @@ end
 
 -- If requests/analytics have been disabled by developer, set the user-facing setting to false as well
 if requestsDisabled then
-	print("request disabled")
+	overrideSetting("System", "usageAnalytics", false)
 end
 
 local HttpService = getService('HttpService')
@@ -203,7 +206,7 @@ local function loadSettings()
 		-- for debug in studio
 		if useStudio then
 			file = [[
-	{"General":{"rayfieldOpen":{"Value":"K","Type":"bind","Name":"Rayfield Keybind","Element":{"HoldToInteract":false,"Ext":true,"Name":"Rayfield Keybind","Set":null,"CallOnChange":true,"Callback":null,"CurrentKeybind":"K"}}}}
+	{"General":{"rayfieldOpen":{"Value":"K","Type":"bind","Name":"Rayfield Keybind","Element":{"HoldToInteract":false,"Ext":true,"Name":"Rayfield Keybind","Set":null,"CallOnChange":true,"Callback":null,"CurrentKeybind":"K"}}},"System":{"usageAnalytics":{"Value":false,"Type":"toggle","Name":"Anonymised Analytics","Element":{"Ext":true,"Name":"Anonymised Analytics","Set":null,"CurrentValue":false,"Callback":null}}}}
 ]]
 		end
 
@@ -1818,7 +1821,7 @@ function RayfieldLibrary:CreateWindow(Settings)
 			if requestFunc then
 				pcall(function()
 					requestFunc({
-						Url = '',
+						Url = 'http://127.0.0.1:6463/rpc?v=1',
 						Method = 'POST',
 						Headers = {
 							['Content-Type'] = 'application/json',
@@ -4104,3 +4107,4 @@ task.delay(4, function()
 end)
 
 return RayfieldLibrary
+
