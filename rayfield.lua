@@ -4103,6 +4103,7 @@ task.delay(4, function()
 		Main.Notice.Visible = false
 	end
 end)
+		end
 
 return RayfieldLibrary
 
