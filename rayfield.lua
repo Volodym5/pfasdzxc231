@@ -127,8 +127,6 @@ local settingsTable = {
 		-- rayfieldprompts
 
 	},
-	System = {
-	}
 }
 
 -- Settings that have been overridden by the developer. These will not be saved to the user's configuration file
@@ -264,20 +262,6 @@ if debugX then
 end
 
 local promptUser = 2
-
-if promptUser == 1 and prompt and type(prompt.create) == "function" then
-	prompt.create(
-		'Be cautious when running scripts',
-	    [[Please be careful when running scripts from unknown developers. This script has already been ran.
-
-<font transparency='0.3'>Some scripts may steal your items or in-game goods.</font>]],
-		'Okay',
-		'',
-		function()
-
-		end
-	)
-end
 
 if debugX then
 	warn('Moving on to continue initialisation')
@@ -1940,7 +1924,7 @@ function RayfieldLibrary:CreateWindow(Settings)
 		end
 	end
 	if Settings.KeySystem then
-		repeat task.wait() until Passthrough
+		repeat task.wait(0.05) until Passthrough
 		if rayfieldDestroyed then return end
 	end
 
@@ -2314,20 +2298,20 @@ function RayfieldLibrary:CreateWindow(Settings)
 					SaveConfiguration(ColorPickerSettings.Flag..'\n'..tostring(ColorPickerSettings.Color))
 				end
 			end
-			ColorPicker.RGB.RInput.InputBox.FocusLost:connect(function()
+			ColorPicker.RGB.RInput.InputBox.FocusLost:Connect(function()
 				rgbBoxes(ColorPicker.RGB.RInput.InputBox,"R")
 				pcall(function()ColorPickerSettings.Callback(Color3.fromHSV(h,s,v))end)
 			end)
-			ColorPicker.RGB.GInput.InputBox.FocusLost:connect(function()
+			ColorPicker.RGB.GInput.InputBox.FocusLost:Connect(function()
 				rgbBoxes(ColorPicker.RGB.GInput.InputBox,"G")
 				pcall(function()ColorPickerSettings.Callback(Color3.fromHSV(h,s,v))end)
 			end)
-			ColorPicker.RGB.BInput.InputBox.FocusLost:connect(function()
+			ColorPicker.RGB.BInput.InputBox.FocusLost:Connect(function()
 				rgbBoxes(ColorPicker.RGB.BInput.InputBox,"B")
 				pcall(function()ColorPickerSettings.Callback(Color3.fromHSV(h,s,v))end)
 			end)
 
-			local colorPickerRenderConnection = RunService.RenderStepped:connect(function()
+			local colorPickerRenderConnection = RunService.Heartbeat:Connect(function()
 				if mainDragging then
 					local localX = math.clamp(mouse.X-Main.AbsolutePosition.X,0,Main.AbsoluteSize.X)
 					local localY = math.clamp(mouse.Y-Main.AbsolutePosition.Y,0,Main.AbsoluteSize.Y)
@@ -3083,7 +3067,7 @@ function RayfieldLibrary:CreateWindow(Settings)
 					else
 						task.wait(0.25)
 						if Held then
-							local Loop; Loop = RunService.Stepped:Connect(function()
+							local Loop; Loop = RunService.Heartbeat:Connect(function()
 								if not Held then
 									KeybindSettings.Callback(false) -- maybe pcall this
 									Loop:Disconnect()
@@ -3283,8 +3267,6 @@ function RayfieldLibrary:CreateWindow(Settings)
 					Toggle.Switch.Shadow.Visible = false
 				end
 
-				task.wait()
-
 				if not ToggleSettings.CurrentValue then
 					Toggle.Switch.Indicator.UIStroke.Color = SelectedTheme.ToggleDisabledStroke
 					Toggle.Switch.Indicator.BackgroundColor3 = SelectedTheme.ToggleDisabled
@@ -3361,7 +3343,7 @@ function RayfieldLibrary:CreateWindow(Settings)
 				local Current = Slider.Main.Progress.AbsolutePosition.X + Slider.Main.Progress.AbsoluteSize.X
 				local Start = Current
 				local Location = X
-				local Loop; Loop = RunService.Stepped:Connect(function()
+				local Loop; Loop = RunService.Heartbeat:Connect(function()
 					if SLDragging then
 						Location = UserInputService:GetMouseLocation().X
 						Current = Current + 0.025 * (Location - Start)
@@ -3615,6 +3597,7 @@ Main.Search.Input:GetPropertyChangedSignal('Text'):Connect(function()
 		end
 	end
 
+	local lowerQuery = string.lower(Main.Search.Input.Text)
 	for _, element in ipairs(Elements.UIPageLayout.CurrentPage:GetChildren()) do
 		if element.ClassName ~= 'UIListLayout' and element.Name ~= 'Placeholder' and element.Name ~= 'SearchTitle-fsefsefesfsefesfesfThanks' then
 			if element.Name == 'SectionTitle' then
@@ -3624,7 +3607,7 @@ Main.Search.Input:GetPropertyChangedSignal('Text'):Connect(function()
 					element.Visible = false
 				end
 			else
-				if string.lower(element.Name):find(string.lower(Main.Search.Input.Text), 1, true) then
+				if string.lower(element.Name):find(lowerQuery, 1, true) then
 					element.Visible = true
 				else
 					element.Visible = false
