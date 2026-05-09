@@ -102,12 +102,46 @@ MainTab:CreateSlider({
 local MiscTab = Window:CreateTab("Misc", 4483362458)
 
 MiscTab:CreateSection("Night Vision")
+
+local NV_TARGETS = {
+    ["NightVision, dof"] = true,
+    ["NightVision, color_correction"] = true,
+    ["NightVision, blur"] = true,
+    ["NightVision, bloom"] = true,
+    ["IngameView, universal_desaturation"] = true,
+}
+
+local nvConnection = nil
+
+local function stopNV()
+    if nvConnection then
+        nvConnection:Disconnect()
+        nvConnection = nil
+    end
+end
+
+local function startNV()
+    -- delete any already present
+    for name in pairs(NV_TARGETS) do
+        local e = game:GetService("Lighting"):FindFirstChild(name)
+        if e then e:Destroy() end
+    end
+    -- watch for re-adds
+    nvConnection = game:GetService("Lighting").ChildAdded:Connect(function(child)
+        if NV_TARGETS[child.Name] then
+            child:Destroy()
+        end
+    end)
+end
+
 MiscTab:CreateToggle({
-   Name = "Remove Night Vision Effects",
-   CurrentValue = settings.NightVision,
-   Callback = function(Value) setNightVision(Value) end,
+    Name = "Night Vision",
+    CurrentValue = settings.NightVision,
+    Callback = function(Value)
+        settings.NightVision = Value
+        if Value then startNV() else stopNV() end
+    end,
 })
-MiscTab:CreateLabel("Removes: NightVision dof/color_correction/blur/bloom\nand IngameView universal_desaturation from Lighting")
 
 MiscTab:CreateSection("Utility")
 MiscTab:CreateButton({
