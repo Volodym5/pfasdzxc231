@@ -127,9 +127,6 @@ local settingsTable = {
 		-- rayfieldprompts
 
 	},
-	System = {
-		usageAnalytics = {Type = 'toggle', Value = true, Name = 'Anonymised Analytics'},
-	}
 }
 
 -- Settings that have been overridden by the developer. These will not be saved to the user's configuration file
@@ -206,7 +203,7 @@ local function loadSettings()
 		-- for debug in studio
 		if useStudio then
 			file = [[
-	{"General":{"rayfieldOpen":{"Value":"K","Type":"bind","Name":"Rayfield Keybind","Element":{"HoldToInteract":false,"Ext":true,"Name":"Rayfield Keybind","Set":null,"CallOnChange":true,"Callback":null,"CurrentKeybind":"K"}}},"System":{"usageAnalytics":{"Value":false,"Type":"toggle","Name":"Anonymised Analytics","Element":{"Ext":true,"Name":"Anonymised Analytics","Set":null,"CurrentValue":false,"Callback":null}}}}
+	{"General":{"rayfieldOpen":{"Value":"K","Type":"bind","Name":"Rayfield Keybind","Element":{"HoldToInteract":false,"Ext":true,"Name":"Rayfield Keybind","Set":null,"CallOnChange":true,"Callback":null,"CurrentKeybind":"K"}}},"System":{"usageAnalytics":{"Value":false,"Type":"toggle","Name":"Anonymised Analytics","Element":{"Ext":false,"Name":"Anonymised Analytics","Set":null,"CurrentValue":false,"Callback":null}}}}
 ]]
 		end
 
@@ -1768,7 +1765,7 @@ function RayfieldLibrary:CreateWindow(Settings)
 	Elements.Visible = false
 	LoadingFrame.Visible = true
 
-	if not Settings.DisableRayfieldPrompts then
+	if false and not Settings.DisableRayfieldPrompts then
 		task.spawn(function()
 			while not rayfieldDestroyed do
 				task.wait(math.random(180, 600))
@@ -1814,7 +1811,7 @@ function RayfieldLibrary:CreateWindow(Settings)
 		end
 	end
 
-	if Settings.Discord and Settings.Discord.Enabled and not useStudio and not secureMode then
+	if false and Settings.Discord and Settings.Discord.Enabled and not useStudio and not secureMode then
 		ensureFolder(RayfieldFolder.."/Discord Invites")
 
 		if not callSafely(isfile, RayfieldFolder.."/Discord Invites".."/"..Settings.Discord.Invite..ConfigurationExtension) then
@@ -3649,6 +3646,7 @@ function RayfieldLibrary:CreateWindow(Settings)
 		end
 
 		--if Settings.ScriptID then
+		if false and reporter then
 			reporter:windowCreated({
 				script_name        = Settings.Name or "Unknown",
 				script_version     = Release,
