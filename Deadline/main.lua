@@ -4,6 +4,8 @@ local Camera     = Workspace.CurrentCamera
 local Lighting   = game:GetService("Lighting")
 local RunService = game:GetService("RunService")
 local UIS        = game:GetService("UserInputService")
+local Players    = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
 
 local settings = {
     Enabled             = true,
@@ -14,7 +16,7 @@ local settings = {
     FillTransparency    = 0.75,
     OutlineTransparency = 0.5,
     NightVision         = false,
-     -- Aimbot settings
+    -- Aimbot settings
     AimbotEnabled       = false,
     AimbotFOV           = 150,
     AimbotSmoothness    = 0.5,
@@ -30,6 +32,10 @@ local connections      = {}
 local cleaned          = false
 local teamTypeCache    = {}
 local ConfirmedEnemies = {}
+
+-- Aim variables
+local aimConnection = nil
+local fovCircle = nil
 
 -- ===== HIGHLIGHT CREATION =====
 local function createCham(model)
@@ -96,7 +102,7 @@ local function checkVisibility(model)
 
     local excluded = {model}
     local target   = head.Position
-    local MAX_ITER = 10 -- prevent infinite loops on edge cases
+    local MAX_ITER = 10
 
     for _ = 1, MAX_ITER do
         local params = RaycastParams.new()
@@ -109,15 +115,155 @@ local function checkVisibility(model)
         local result = Workspace:Raycast(origin, dir, params)
 
         if result == nil then
-            return true -- nothing blocking, visible
+            return true
         elseif result.Instance.Transparency ~= 0 then
-            table.insert(excluded, result.Instance) -- skip transparent, try again
+            table.insert(excluded, result.Instance)
         else
-            return false -- solid hit, occluded
+            return false
         end
     end
 
     return false
+end
+
+-- ===== AIMBOT SYSTEM =====
+local function getHeadPosition(model)
+    local head = model:FindFirstChild("head")
+    if head then
+        return head.Position
+    end
+    return nil
+end
+
+local function getClosestTargetToCursor()
+    if not settings.AimbotEnabled then return nil end
+    
+    local mouse = LocalPlayer:GetMouse()
+    local mousePos = Vector2.new(mouse.X, mouse.Y)
+    local closestTarget = nil
+    local closestDistance = settings.AimbotFOV
+    local screenSize = Camera.ViewportSize
+    
+    for model in pairs(highlightCache) do
+        if model.Parent and ConfirmedEnemies[model] then
+            if settings.VisibilityCheck then
+                local visible = checkVisibility(model)
+                if not visible then continue end
+            end
+            
+            local headPos = getHeadPosition(model)
+            if headPos then
+                local screenPos, onScreen = Camera:WorldToViewportPoint(headPos)
+                if onScreen then
+                    local screenPoint = Vector2.new(screenPos.X * screenSize.X, screenPos.Y * screenSize.Y)
+                    local distance = (mousePos - screenPoint).Magnitude
+                    
+                    if distance < closestDistance then
+                        closestDistance = distance
+                        closestTarget = {
+                            model = model,
+                            headPos = headPos,
+                            screenPos = screenPoint,
+                            distance = distance
+                        }
+                    end
+                end
+            end
+        end
+    end
+    
+    return closestTarget
+end
+
+local function smoothAim(target)
+    if not target then return end
+    
+    local mouse = LocalPlayer:GetMouse()
+    local screenSize = Camera.ViewportSize
+    local targetScreenPos, onScreen = Camera:WorldToViewportPoint(target.headPos)
+    
+    if not onScreen then return end
+    
+    local targetPoint = Vector2.new(targetScreenPos.X * screenSize.X, targetScreenPos.Y * screenSize.Y)
+    local currentMousePos = Vector2.new(mouse.X, mouse.Y)
+    
+    local smoothness = math.clamp(1 - settings.AimbotSmoothness, 0.01, 1)
+    local delta = targetPoint - currentMousePos
+    
+    local moveTo = currentMousePos + (delta * smoothness)
+    local relX = moveTo.X - currentMousePos.X
+    local relY = moveTo.Y - currentMousePos.Y
+    
+    mousemoverel(relX * 0.1, relY * 0.1)
+end
+
+local function createFOVCircle()
+    if fovCircle then
+        fovCircle:Remove()
+        fovCircle = nil
+    end
+    
+    if not settings.AimbotShowFOV then return end
+    
+    fovCircle = Drawing.new("Circle")
+    fovCircle.Visible = settings.AimbotShowFOV and settings.AimbotEnabled
+    fovCircle.Radius = settings.AimbotFOV
+    fovCircle.Color = settings.AimbotFOVColor
+    fovCircle.Transparency = settings.AimbotFOVTransparency
+    fovCircle.Thickness = 1.5
+    fovCircle.Filled = false
+    fovCircle.Position = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+end
+
+local function updateFOVCircle()
+    if fovCircle then
+        fovCircle.Visible = settings.AimbotShowFOV and settings.AimbotEnabled
+        fovCircle.Radius = settings.AimbotFOV
+        fovCircle.Color = settings.AimbotFOVColor
+        fovCircle.Transparency = settings.AimbotFOVTransparency
+        fovCircle.Position = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+    end
+end
+
+local function startAimbot()
+    if aimConnection then
+        aimConnection:Disconnect()
+        aimConnection = nil
+    end
+    
+    createFOVCircle()
+    
+    aimConnection = RunService.RenderStepped:Connect(function()
+        if cleaned or not settings.AimbotEnabled then
+            if fovCircle then fovCircle.Visible = false end
+            return
+        end
+        
+        local shouldAim = true
+        if settings.AimbotHoldKey then
+            shouldAim = UIS:IsMouseButtonPressed(settings.AimbotKey)
+        end
+        
+        if shouldAim then
+            local target = getClosestTargetToCursor()
+            if target then
+                smoothAim(target)
+            end
+        end
+        
+        updateFOVCircle()
+    end)
+end
+
+local function stopAimbot()
+    if aimConnection then
+        aimConnection:Disconnect()
+        aimConnection = nil
+    end
+    if fovCircle then
+        fovCircle:Remove()
+        fovCircle = nil
+    end
 end
 
 -- ===== TOGGLE / CLEANUP =====
@@ -137,6 +283,7 @@ local function fullCleanup()
     cleaned = true
     for _, h in pairs(highlightCache) do pcall(function() h:Destroy() end) end
     for _, c in ipairs(connections) do pcall(function() c:Disconnect() end) end
+    stopAimbot()
 end
 
 -- ===== NIGHT VISION =====
@@ -157,7 +304,6 @@ local function startNV()
     nvActive = true
 end
 
--- NV poll runs inside the periodic heartbeat — no ChildAdded callback needed
 local lastNVPoll = 0
 table.insert(connections, RunService.Heartbeat:Connect(function()
     if cleaned or not nvActive then return end
@@ -232,6 +378,7 @@ end))
 -- ===== PERIODIC CHECKS =====
 local lastStateCheck  = 0
 local lastTeamRecheck = 0
+local localTeam = nil
 table.insert(connections, RunService.Heartbeat:Connect(function()
     if cleaned then return end
     local now = tick()
@@ -369,7 +516,10 @@ _G.ChamsState = {
     suppressionKiller = suppressionKiller,
     explosionKiller   = explosionKiller,
     waterKiller    = waterKiller,
+    -- Aimbot functions
     startAimbot    = startAimbot,
     stopAimbot     = stopAimbot,
     updateFOVCircle = updateFOVCircle,
+    getClosestTargetToCursor = getClosestTargetToCursor,
+    ConfirmedEnemies = ConfirmedEnemies,
 }
