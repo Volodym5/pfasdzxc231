@@ -24,6 +24,8 @@ local settings = {
     AimbotFOVColor      = Color3.fromRGB(255, 255, 255),
     AimbotFOVTransparency = 0.5,
     AimbotTargetPart    = "Head",
+    AimbotVisCheck      = false,
+    AimbotPrediction    = 0,
 }
 
 local highlightCache   = {}
@@ -31,6 +33,7 @@ local connections      = {}
 local cleaned          = false
 local teamTypeCache    = {}
 local ConfirmedEnemies = {}
+local velocityCache    = {}
 
 -- Aim variables
 local aimConnection = nil
@@ -136,6 +139,31 @@ local function getAimPart(model)
     end
 end
 
+local function getPredictedPosition(part)
+    if settings.AimbotPrediction <= 0 then return part.Position end
+    
+    local root = part.Parent:FindFirstChild("humanoid_root_part")
+    if not root then return part.Position end
+    
+    -- Cache velocity for smoother prediction
+    local currentPos = root.Position
+    local lastData = velocityCache[part.Parent]
+    
+    if lastData then
+        local velocity = (currentPos - lastData.Position) / math.max(tick() - lastData.Time, 0.01)
+        local predictionTime = settings.AimbotPrediction / 100 -- Convert to reasonable scale
+        
+        -- Store current data for next frame
+        velocityCache[part.Parent] = {Position = currentPos, Time = tick()}
+        
+        -- Return predicted position
+        return part.Position + (velocity * predictionTime)
+    else
+        velocityCache[part.Parent] = {Position = currentPos, Time = tick()}
+        return part.Position
+    end
+end
+
 local function getClosestTarget()
     local mousePos = UIS:GetMouseLocation()
     local bestTarget = nil
@@ -145,16 +173,25 @@ local function getClosestTarget()
         if not model.Parent then continue end
         if not ConfirmedEnemies[model] then continue end
         
+        -- Visibility check for aimbot
+        if settings.AimbotVisCheck then
+            local visible = checkVisibility(model)
+            if not visible then continue end
+        end
+        
         local part = getAimPart(model)
         if not part then continue end
         
-        local screenPos, onScreen = Camera:WorldToViewportPoint(part.Position)
+        -- Get predicted position
+        local aimPos = getPredictedPosition(part)
+        
+        local screenPos, onScreen = Camera:WorldToViewportPoint(aimPos)
         if not onScreen or screenPos.Z <= 0 then continue end
         
         local dist = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude
         if dist < bestDist then
             bestDist = dist
-            bestTarget = {part = part, screenPos = Vector2.new(screenPos.X, screenPos.Y)}
+            bestTarget = {part = part, screenPos = Vector2.new(screenPos.X, screenPos.Y), aimPos = aimPos}
         end
     end
     
@@ -208,6 +245,17 @@ local function stopAimbot()
     if aimConnection then aimConnection:Disconnect(); aimConnection = nil end
     if fovCircle then fovCircle:Remove(); fovCircle = nil end
 end
+
+-- Cleanup velocity cache periodically
+table.insert(connections, RunService.Heartbeat:Connect(function()
+    if cleaned then return end
+    local now = tick()
+    for model, data in pairs(velocityCache) do
+        if not model.Parent or now - data.Time > 0.5 then
+            velocityCache[model] = nil
+        end
+    end
+end))
 
 -- ===== TOGGLE / CLEANUP =====
 local function toggleChams(enabled)
@@ -291,6 +339,7 @@ if Characters then
             highlightCache[model]   = nil
             ConfirmedEnemies[model] = nil
             teamTypeCache[model]    = nil
+            velocityCache[model]    = nil
         end
     end))
 end
@@ -335,6 +384,7 @@ table.insert(connections, RunService.Heartbeat:Connect(function()
                 highlightCache[model]   = nil
                 ConfirmedEnemies[model] = nil
                 teamTypeCache[model]    = nil
+                velocityCache[model]    = nil
                 for i = #visQueue, 1, -1 do
                     if visQueue[i] == model then table.remove(visQueue, i) end
                 end
