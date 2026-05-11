@@ -138,23 +138,28 @@ local NV_TARGETS = {
     ["NightVision, bloom"]                 = true,
     ["IngameView, universal_desaturation"] = true,
 }
-local nvConnection = nil
+local nvActive = false
 
 local function stopNV()
-    if nvConnection then nvConnection:Disconnect(); nvConnection = nil end
+    nvActive = false
 end
 
 local function startNV()
+    nvActive = true
+end
+
+-- NV poll runs inside the periodic heartbeat — no ChildAdded callback needed
+local lastNVPoll = 0
+table.insert(connections, RunService.Heartbeat:Connect(function()
+    if cleaned or not nvActive then return end
+    local now = tick()
+    if now - lastNVPoll < 0.2 then return end
+    lastNVPoll = now
     for name in pairs(NV_TARGETS) do
         local e = Lighting:FindFirstChild(name)
-        if e then e:Destroy() end
+        if e then pcall(function() e:Destroy() end) end
     end
-    nvConnection = Lighting.ChildAdded:Connect(function(child)
-        if NV_TARGETS[child.Name] then
-            task.defer(function() child:Destroy() end)
-        end
-    end)
-end
+end))
 
 -- ===== CHARACTER WATCHING =====
 local visQueue = {}
