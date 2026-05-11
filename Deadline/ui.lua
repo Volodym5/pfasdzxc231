@@ -104,7 +104,8 @@ local AimbotTab = Window:CreateTab("Aimbot", 4483362458)
 AimbotTab:CreateSection("Main")
 AimbotTab:CreateToggle({
     Name = "Enable Aimbot",
-    CurrentValue = false,
+    CurrentValue = settings.AimbotEnabled,
+    Flag = "AimbotEnabled",
     Callback = function(v)
         settings.AimbotEnabled = v
         if v then startAimbot() else stopAimbot() end
@@ -115,14 +116,15 @@ AimbotTab:CreateSection("Targeting")
 AimbotTab:CreateDropdown({
     Name = "Target Part",
     Options = {"Head", "Torso", "Root"},
-    CurrentOption = "Head",
+    CurrentOption = settings.AimbotTargetPart,
     Flag = "AimbotTargetPart",
     Callback = function(v) settings.AimbotTargetPart = v end,
 })
 
 AimbotTab:CreateToggle({
     Name = "Visibility Check",
-    CurrentValue = false,
+    CurrentValue = settings.AimbotVisCheck,
+    Flag = "AimbotVisCheck",
     Callback = function(v) settings.AimbotVisCheck = v end,
 })
 
@@ -130,7 +132,8 @@ AimbotTab:CreateSlider({
     Name = "Prediction",
     Range = {0, 100},
     Increment = 1,
-    CurrentValue = 0,
+    CurrentValue = settings.AimbotPrediction,
+    Flag = "AimbotPrediction",
     Callback = function(v) settings.AimbotPrediction = v end,
 })
 
@@ -139,7 +142,8 @@ AimbotTab:CreateSlider({
     Name = "FOV Size",
     Range = {50, 500},
     Increment = 5,
-    CurrentValue = 180,
+    CurrentValue = settings.AimbotFOV,
+    Flag = "AimbotFOV",
     Callback = function(v) settings.AimbotFOV = v end,
 })
 
@@ -147,20 +151,23 @@ AimbotTab:CreateSlider({
     Name = "Smoothness",
     Range = {0.05, 0.5},
     Increment = 0.01,
-    CurrentValue = 0.18,
+    CurrentValue = settings.AimbotSmoothness,
+    Flag = "AimbotSmoothness",
     Callback = function(v) settings.AimbotSmoothness = v end,
 })
 
 AimbotTab:CreateSection("FOV Circle")
 AimbotTab:CreateToggle({
     Name = "Show FOV Circle",
-    CurrentValue = true,
+    CurrentValue = settings.AimbotShowFOV,
+    Flag = "AimbotShowFOV",
     Callback = function(v) settings.AimbotShowFOV = v end,
 })
 
 AimbotTab:CreateColorPicker({
     Name = "FOV Color",
-    Color = Color3.fromRGB(255, 255, 255),
+    Color = settings.AimbotFOVColor,
+    Flag = "AimbotFOVColor",
     Callback = function(c) settings.AimbotFOVColor = c end,
 })
 
@@ -168,7 +175,8 @@ AimbotTab:CreateSlider({
     Name = "FOV Transparency",
     Range = {0, 1},
     Increment = 0.05,
-    CurrentValue = 0.5,
+    CurrentValue = settings.AimbotFOVTransparency,
+    Flag = "AimbotFOVTrans",
     Callback = function(v) settings.AimbotFOVTransparency = v end,
 })
 
