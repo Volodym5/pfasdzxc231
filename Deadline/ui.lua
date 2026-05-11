@@ -14,6 +14,9 @@ local flashKiller     = state.flashKiller
 local suppressionKiller = state.suppressionKiller
 local explosionKiller = state.explosionKiller
 local waterKiller     = state.waterKiller
+local startAimbot     = state.startAimbot
+local stopAimbot      = state.stopAimbot
+local updateFOVCircle = state.updateFOVCircle
 
 local Window = Rayfield:CreateWindow({
     Name                   = "Deadline Xeno - Chams",
@@ -31,7 +34,79 @@ local Window = Rayfield:CreateWindow({
     KeySystem = false,
 })
 
--- ===== MAIN TAB =====
+-- ===== AIMBOT TAB =====
+local AimbotTab = Window:CreateTab("Aimbot", 4483362458)
+
+AimbotTab:CreateSection("Main")
+AimbotTab:CreateToggle({
+    Name         = "Enable Aimbot",
+    CurrentValue = settings.AimbotEnabled,
+    Flag         = "AimbotEnabled",
+    Callback     = function(v)
+        settings.AimbotEnabled = v
+        if v then startAimbot() else stopAimbot() end
+    end,
+})
+
+AimbotTab:CreateSection("Settings")
+AimbotTab:CreateSlider({
+    Name         = "FOV",
+    Range        = {10, 500},
+    Increment    = 5,
+    CurrentValue = settings.AimbotFOV,
+    Flag         = "AimbotFOV",
+    Callback     = function(v)
+        settings.AimbotFOV = v
+        updateFOVCircle()
+    end,
+})
+
+AimbotTab:CreateSlider({
+    Name         = "Smoothness",
+    Range        = {0, 1},
+    Increment    = 0.01,
+    CurrentValue = settings.AimbotSmoothness,
+    Flag         = "AimbotSmoothness",
+    Callback     = function(v)
+        settings.AimbotSmoothness = v
+    end,
+})
+
+AimbotTab:CreateSection("FOV Circle")
+AimbotTab:CreateToggle({
+    Name         = "Show FOV Circle",
+    CurrentValue = settings.AimbotShowFOV,
+    Flag         = "ShowFOV",
+    Callback     = function(v)
+        settings.AimbotShowFOV = v
+        updateFOVCircle()
+    end,
+})
+
+AimbotTab:CreateColorPicker({
+    Name     = "FOV Color",
+    Color    = settings.AimbotFOVColor,
+    Flag     = "FOVColor",
+    Callback = function(c)
+        settings.AimbotFOVColor = c
+        updateFOVCircle()
+    end,
+})
+
+AimbotTab:CreateSlider({
+    Name         = "FOV Transparency",
+    Range        = {0, 1},
+    Increment    = 0.05,
+    CurrentValue = settings.AimbotFOVTransparency,
+    Flag         = "FOVTrans",
+    Callback     = function(v)
+        settings.AimbotFOVTransparency = v
+        updateFOVCircle()
+    end,
+})
+
+
+-- ===== MAIN TAB (VISUALS)=====
 local MainTab = Window:CreateTab("Chams", 4483362458)
 
 MainTab:CreateSection("Toggle")
