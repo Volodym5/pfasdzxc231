@@ -14,6 +14,15 @@ local settings = {
     FillTransparency    = 0.75,
     OutlineTransparency = 0.5,
     NightVision         = false,
+     -- Aimbot settings
+    AimbotEnabled       = false,
+    AimbotFOV           = 150,
+    AimbotSmoothness    = 0.5,
+    AimbotKey           = Enum.UserInputType.MouseButton2,
+    AimbotHoldKey       = true,
+    AimbotShowFOV       = true,
+    AimbotFOVColor      = Color3.fromRGB(255, 255, 255),
+    AimbotFOVTransparency = 0.5,
 }
 
 local highlightCache   = {}
@@ -360,4 +369,7 @@ _G.ChamsState = {
     suppressionKiller = suppressionKiller,
     explosionKiller   = explosionKiller,
     waterKiller    = waterKiller,
+    startAimbot    = startAimbot,
+    stopAimbot     = stopAimbot,
+    updateFOVCircle = updateFOVCircle,
 }
