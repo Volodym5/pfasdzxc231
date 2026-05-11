@@ -51,8 +51,8 @@ AimbotTab:CreateToggle({
 AimbotTab:CreateSection("Settings")
 AimbotTab:CreateSlider({
     Name         = "FOV",
-    Range        = {10, 500},
-    Increment    = 5,
+    Range        = {50, 500},
+    Increment    = 10,
     CurrentValue = settings.AimbotFOV,
     Flag         = "AimbotFOV",
     Callback     = function(v)
@@ -64,7 +64,7 @@ AimbotTab:CreateSlider({
 AimbotTab:CreateSlider({
     Name         = "Smoothness",
     Range        = {0, 1},
-    Increment    = 0.01,
+    Increment    = 0.1,
     CurrentValue = settings.AimbotSmoothness,
     Flag         = "AimbotSmoothness",
     Callback     = function(v)
@@ -96,7 +96,7 @@ AimbotTab:CreateColorPicker({
 AimbotTab:CreateSlider({
     Name         = "FOV Transparency",
     Range        = {0, 1},
-    Increment    = 0.05,
+    Increment    = 0.1,
     CurrentValue = settings.AimbotFOVTransparency,
     Flag         = "FOVTrans",
     Callback     = function(v)
@@ -104,7 +104,6 @@ AimbotTab:CreateSlider({
         updateFOVCircle()
     end,
 })
-
 
 -- ===== MAIN TAB (VISUALS)=====
 local MainTab = Window:CreateTab("Chams", 4483362458)
