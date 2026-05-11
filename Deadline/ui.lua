@@ -107,64 +107,78 @@ AimbotTab:CreateToggle({
     Flag         = "AimbotEnabled",
     Callback     = function(v)
         settings.AimbotEnabled = v
-        if v then startAimbot() else stopAimbot() end
+        if v then 
+            startAimbot() 
+        else 
+            stopAimbot() 
+        end
     end,
 })
 
 AimbotTab:CreateSection("Settings")
-AimbotTab:CreateSlider({
+local fovSlider = AimbotTab:CreateSlider({
     Name         = "FOV",
     Range        = {50, 500},
-    Increment    = 10,
-    CurrentValue = settings.AimbotFOV,
+    Increment    = 5,
+    CurrentValue = settings.AimbotFOV and 150 or 150,
     Flag         = "AimbotFOV",
-    Callback     = function(v)
-        settings.AimbotFOV = v
-        updateFOVCircle()
+    Callback     = function(v) 
+        if v then
+            settings.AimbotFOV = v
+            updateFOVCircle()
+        end
     end,
 })
 
-AimbotTab:CreateSlider({
+local smoothSlider = AimbotTab:CreateSlider({
     Name         = "Smoothness",
     Range        = {0, 1},
-    Increment    = 0.1,
-    CurrentValue = settings.AimbotSmoothness,
+    Increment    = 0.05,
+    CurrentValue = settings.AimbotSmoothness and 0.5 or 0.5,
     Flag         = "AimbotSmoothness",
-    Callback     = function(v)
-        settings.AimbotSmoothness = v
+    Callback     = function(v) 
+        if v then
+            settings.AimbotSmoothness = v
+        end
     end,
 })
 
 AimbotTab:CreateSection("FOV Circle")
 AimbotTab:CreateToggle({
     Name         = "Show FOV Circle",
-    CurrentValue = settings.AimbotShowFOV,
+    CurrentValue = settings.AimbotShowFOV ~= nil and settings.AimbotShowFOV or true,
     Flag         = "ShowFOV",
-    Callback     = function(v)
-        settings.AimbotShowFOV = v
-        updateFOVCircle()
+    Callback     = function(v) 
+        if v ~= nil then
+            settings.AimbotShowFOV = v
+            updateFOVCircle()
+        end
     end,
 })
 
 AimbotTab:CreateColorPicker({
     Name     = "FOV Color",
-    Color    = settings.AimbotFOVColor,
+    Color    = settings.AimbotFOVColor or Color3.fromRGB(255, 255, 255),
     Flag     = "FOVColor",
-    Callback = function(c)
-        settings.AimbotFOVColor = c
-        updateFOVCircle()
+    Callback = function(c) 
+        if c then
+            settings.AimbotFOVColor = c
+            updateFOVCircle()
+        end
     end,
 })
 
 AimbotTab:CreateSlider({
     Name         = "FOV Transparency",
     Range        = {0, 1},
-    Increment    = 0.1,
-    CurrentValue = settings.AimbotFOVTransparency,
+    Increment    = 0.05,
+    CurrentValue = settings.AimbotFOVTransparency or 0.5,
     Flag         = "FOVTrans",
-    Callback     = function(v)
-        settings.AimbotFOVTransparency = v
-        updateFOVCircle()
+    Callback     = function(v) 
+        if v then
+            settings.AimbotFOVTransparency = v
+            updateFOVCircle()
+        end
     end,
 })
 
