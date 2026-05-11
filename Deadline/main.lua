@@ -354,9 +354,7 @@ local explosionKiller = makeEffectKiller(
 local waterKiller = makeEffectKiller(
     {"water_color_correction", "water_blur", "drown_blur"}
 )
-if not startAimbot then warn("startAimbot is nil") end
-if not stopAimbot then warn("stopAimbot is nil") end
-if not updateFOVCircle then warn("updateFOVCircle is nil") end
+
 -- ===== EXPOSE =====
 _G.ChamsState = {
     settings       = settings,
