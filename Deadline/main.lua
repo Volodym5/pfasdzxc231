@@ -150,7 +150,9 @@ local function startNV()
         if e then e:Destroy() end
     end
     nvConnection = Lighting.ChildAdded:Connect(function(child)
-        if NV_TARGETS[child.Name] then child:Destroy() end
+        if NV_TARGETS[child.Name] then
+            task.defer(function() child:Destroy() end)
+        end
     end)
 end
 
