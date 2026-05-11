@@ -18,13 +18,12 @@ local settings = {
     NightVision         = false,
     -- Aimbot settings
     AimbotEnabled       = false,
-    AimbotFOV           = 150,
-    AimbotSmoothness    = 0.5,
-    AimbotKey           = Enum.UserInputType.MouseButton2,
-    AimbotHoldKey       = true,
+    AimbotFOV           = 180,
+    AimbotSmoothness    = 0.18,
     AimbotShowFOV       = true,
     AimbotFOVColor      = Color3.fromRGB(255, 255, 255),
     AimbotFOVTransparency = 0.5,
+    AimbotTargetPart    = "Head",
 }
 
 local highlightCache   = {}
@@ -127,92 +126,39 @@ local function checkVisibility(model)
 end
 
 -- ===== AIMBOT SYSTEM =====
-local function getHeadPosition(model)
-    local head = model:FindFirstChild("head")
-    if head then
-        return head.Position
+local function getAimPart(model)
+    if settings.AimbotTargetPart == "Head" then
+        return model:FindFirstChild("head")
+    elseif settings.AimbotTargetPart == "Torso" then
+        return model:FindFirstChild("torso")
+    else
+        return model:FindFirstChild("humanoid_root_part")
     end
-    return nil
 end
 
-local function getClosestTargetToCursor()
-    if not settings.AimbotEnabled then return nil end
-    
-    local mouse = LocalPlayer:GetMouse()
-    local mousePos = Vector2.new(mouse.X, mouse.Y)
-    local closestTarget = nil
-    local closestDistance = settings.AimbotFOV
-    local screenSize = Camera.ViewportSize
+local function getClosestTarget()
+    local mousePos = UIS:GetMouseLocation()
+    local bestTarget = nil
+    local bestDist = settings.AimbotFOV
     
     for model in pairs(highlightCache) do
-        if model.Parent and ConfirmedEnemies[model] then
-            if settings.VisibilityCheck then
-                local visible = checkVisibility(model)
-                if not visible then continue end
-            end
-            
-            local headPos = getHeadPosition(model)
-            if headPos then
-                local screenPos, onScreen = Camera:WorldToViewportPoint(headPos)
-                if onScreen then
-                    local screenPoint = Vector2.new(screenPos.X * screenSize.X, screenPos.Y * screenSize.Y)
-                    local distance = (mousePos - screenPoint).Magnitude
-                    
-                    if distance < closestDistance then
-                        closestDistance = distance
-                        closestTarget = {
-                            model = model,
-                            headPos = headPos,
-                            screenPos = screenPoint,
-                            distance = distance
-                        }
-                    end
-                end
-            end
+        if not model.Parent then continue end
+        if not ConfirmedEnemies[model] then continue end
+        
+        local part = getAimPart(model)
+        if not part then continue end
+        
+        local screenPos, onScreen = Camera:WorldToViewportPoint(part.Position)
+        if not onScreen or screenPos.Z <= 0 then continue end
+        
+        local dist = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude
+        if dist < bestDist then
+            bestDist = dist
+            bestTarget = {part = part, screenPos = Vector2.new(screenPos.X, screenPos.Y)}
         end
     end
     
-    return closestTarget
-end
-
-local function smoothAim(target)
-    if not target then return end
-    
-    local mouse = LocalPlayer:GetMouse()
-    local screenSize = Camera.ViewportSize
-    local targetScreenPos, onScreen = Camera:WorldToViewportPoint(target.headPos)
-    
-    if not onScreen then return end
-    
-    local targetPoint = Vector2.new(targetScreenPos.X * screenSize.X, targetScreenPos.Y * screenSize.Y)
-    local currentMousePos = Vector2.new(mouse.X, mouse.Y)
-    
-    local smoothness = math.clamp(1 - settings.AimbotSmoothness, 0.01, 1)
-    local delta = targetPoint - currentMousePos
-    
-    local moveTo = currentMousePos + (delta * smoothness)
-    local relX = moveTo.X - currentMousePos.X
-    local relY = moveTo.Y - currentMousePos.Y
-    
-    mousemoverel(relX * 0.1, relY * 0.1)
-end
-
-local function createFOVCircle()
-    if fovCircle then
-        fovCircle:Remove()
-        fovCircle = nil
-    end
-    
-    if not settings.AimbotShowFOV then return end
-    
-    fovCircle = Drawing.new("Circle")
-    fovCircle.Visible = settings.AimbotShowFOV and settings.AimbotEnabled
-    fovCircle.Radius = settings.AimbotFOV
-    fovCircle.Color = settings.AimbotFOVColor
-    fovCircle.Transparency = settings.AimbotFOVTransparency
-    fovCircle.Thickness = 1.5
-    fovCircle.Filled = false
-    fovCircle.Position = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+    return bestTarget
 end
 
 local function updateFOVCircle()
@@ -221,17 +167,18 @@ local function updateFOVCircle()
         fovCircle.Radius = settings.AimbotFOV
         fovCircle.Color = settings.AimbotFOVColor
         fovCircle.Transparency = settings.AimbotFOVTransparency
-        fovCircle.Position = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+        fovCircle.Position = UIS:GetMouseLocation()
     end
 end
 
 local function startAimbot()
-    if aimConnection then
-        aimConnection:Disconnect()
-        aimConnection = nil
-    end
+    if aimConnection then aimConnection:Disconnect() end
     
-    createFOVCircle()
+    fovCircle = Drawing.new("Circle")
+    fovCircle.Thickness = 1.5
+    fovCircle.Filled = false
+    fovCircle.NumSides = 100
+    updateFOVCircle()
     
     aimConnection = RunService.RenderStepped:Connect(function()
         if cleaned or not settings.AimbotEnabled then
@@ -239,31 +186,27 @@ local function startAimbot()
             return
         end
         
-        local shouldAim = true
-        if settings.AimbotHoldKey then
-            shouldAim = UIS:IsMouseButtonPressed(settings.AimbotKey)
-        end
-        
-        if shouldAim then
-            local target = getClosestTargetToCursor()
-            if target then
-                smoothAim(target)
-            end
-        end
-        
         updateFOVCircle()
+        
+        if not UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then return end
+        
+        local target = getClosestTarget()
+        if not target then return end
+        
+        local mousePos = UIS:GetMouseLocation()
+        local delta = target.screenPos - mousePos
+        
+        pcall(function()
+            if mousemoverel then
+                mousemoverel(delta.X * settings.AimbotSmoothness, delta.Y * settings.AimbotSmoothness)
+            end
+        end)
     end)
 end
 
 local function stopAimbot()
-    if aimConnection then
-        aimConnection:Disconnect()
-        aimConnection = nil
-    end
-    if fovCircle then
-        fovCircle:Remove()
-        fovCircle = nil
-    end
+    if aimConnection then aimConnection:Disconnect(); aimConnection = nil end
+    if fovCircle then fovCircle:Remove(); fovCircle = nil end
 end
 
 -- ===== TOGGLE / CLEANUP =====
@@ -281,9 +224,9 @@ end
 local function fullCleanup()
     if cleaned then return end
     cleaned = true
+    stopAimbot()
     for _, h in pairs(highlightCache) do pcall(function() h:Destroy() end) end
     for _, c in ipairs(connections) do pcall(function() c:Disconnect() end) end
-    stopAimbot()
 end
 
 -- ===== NIGHT VISION =====
@@ -516,10 +459,7 @@ _G.ChamsState = {
     suppressionKiller = suppressionKiller,
     explosionKiller   = explosionKiller,
     waterKiller    = waterKiller,
-    -- Aimbot functions
     startAimbot    = startAimbot,
     stopAimbot     = stopAimbot,
     updateFOVCircle = updateFOVCircle,
-    getClosestTargetToCursor = getClosestTargetToCursor,
-    ConfirmedEnemies = ConfirmedEnemies,
 }
