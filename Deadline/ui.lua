@@ -18,6 +18,7 @@ local startAimbot     = state.startAimbot
 local stopAimbot      = state.stopAimbot
 local updateFOVCircle = state.updateFOVCircle
 
+
 local Window = Rayfield:CreateWindow({
     Name                   = "Deadline Xeno - Chams",
     Icon                   = 0,
