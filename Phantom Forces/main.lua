@@ -1,9 +1,9 @@
 -- Phantom Forces - Main Loader
 
-loadstring(game:HttpGet("https://raw.githubusercontent.com/Volodym5/pfasdzxc231/main/Phantom%20Forces/esp.lua"))()
-loadstring(game:HttpGet("https://raw.githubusercontent.com/Volodym5/pfasdzxc231/main/Phantom%20Forces/aimbot.lua"))()
-local libary = loadstring(game:HttpGet("https://raw.githubusercontent.com/Volodym5/pfasdzxc231/main/puppyware.lua"))()
-local NotifyLibrary = loadstring(game:HttpGet("https://raw.githubusercontent.com/Volodym5/pfasdzxc231/main/puppyware_notify.lua"))()
+loadstring(game:HttpGet("https://raw.githubusercontent.com/Volodym5/pfasdzxc231/refs/heads/main/esp.lua"))()
+loadstring(game:HttpGet("https://raw.githubusercontent.com/Volodym5/pfasdzxc231/refs/heads/main/aimbot.lua"))()
+local libary = loadstring(game:HttpGet("https://raw.githubusercontent.com/Volodym5/pfasdzxc231/refs/heads/main/puppyware.lua"))()
+local NotifyLibrary = loadstring(game:HttpGet("https://raw.githubusercontent.com/Volodym5/pfasdzxc231/refs/heads/main/notify.lua"))()
 local Notify = NotifyLibrary.Notify
 
 repeat task.wait() until _G.PF_ESP_Settings and _G.PF_ESP_Functions and _G.PF_Aimbot_Settings
