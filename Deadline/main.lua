@@ -38,7 +38,6 @@ local ConfirmedEnemies = {}
 local aimConnection  = nil
 local fovCircle      = nil
 local predictionData = {}
-local sightModule    = nil
 local intentData     = {
     smoothedDelta = Vector2.zero,
     currentTarget = nil,
@@ -56,21 +55,6 @@ local VISIBILITY_POINTS = {
     { part = "torso",              weight = 0.35 },
     { part = "humanoid_root_part", weight = 0.25 },
 }
-
-local raycastParams = RaycastParams.new()
-raycastParams.FilterType = Enum.RaycastFilterType.Exclude
-
--- ===== INIT SIGHT MODULE =====
-task.spawn(function()
-    local success, result = pcall(function()
-        local ReplicatedStorage = game:GetService("ReplicatedStorage")
-        local RuntimeLib = require(ReplicatedStorage:WaitForChild("include"):WaitForChild("RuntimeLib"))
-        return RuntimeLib.import(script, ReplicatedStorage, "module", "sight_raycast", "is_occluded")
-    end)
-    if success and result then
-        sightModule = result
-    end
-end)
 
 -- ===== HIGHLIGHT CREATION =====
 local function createCham(model)
@@ -165,7 +149,6 @@ end
 local function getPartialVisibility(model)
     local myChar = LocalPlayer.Character
     local ignoreList = myChar and {model, myChar} or {model}
-    raycastParams.FilterDescendantsInstances = ignoreList
     
     local origin = Camera.CFrame.Position
     local totalVis = 0
@@ -173,34 +156,23 @@ local function getPartialVisibility(model)
     for _, entry in ipairs(VISIBILITY_POINTS) do
         local targetPart = model:FindFirstChild(entry.part)
         if targetPart then
-            local direction = targetPart.Position - origin
-            local result = Workspace:Raycast(origin, direction, raycastParams)
+            local params = RaycastParams.new()
+            params.FilterType = Enum.RaycastFilterType.Exclude
+            params.FilterDescendantsInstances = ignoreList
+            params.IgnoreWater = true
             
-            if not result or result.Instance:IsDescendantOf(model) then
+            local direction = targetPart.Position - origin
+            local result = Workspace:Raycast(origin, direction, params)
+            
+            if not result then
                 totalVis = totalVis + entry.weight
+            elseif result.Instance.Transparency ~= 0 then
+                totalVis = totalVis + entry.weight * 0.5
             end
         end
     end
     
     return totalVis
-end
-
-local function getNativeVisibility(model)
-    if not sightModule then return getPartialVisibility(model) end
-    
-    local head = model:FindFirstChild("head")
-    if not head then return getPartialVisibility(model) end
-    
-    local excluded = {model}
-    local success, result = pcall(function()
-        return sightModule.is_occluded(excluded, head.Position)
-    end)
-    
-    if success and result then
-        return result[1] and 0 or 1
-    end
-    
-    return getPartialVisibility(model)
 end
 
 -- ===== DISTANCE-BASED STRENGTH =====
@@ -368,7 +340,7 @@ local function getAssistTarget()
     for _, c in ipairs(candidates) do
         if c.model == targetModel then
             local assistStr = getAssistStrength(c.aimPos)
-            local visibility = settings.AimbotVisCheck and getNativeVisibility(targetModel) or 1.0
+            local visibility = settings.AimbotVisCheck and getPartialVisibility(targetModel) or 1.0
             
             return {
                 screenPos = c.screenPos,
@@ -600,18 +572,28 @@ local shakeHooked = false
 local origShakeNew = nil
 
 local function setNoShake(enabled)
-    local ok, CameraShakeInstance = pcall(require,
-        game:GetService("ReplicatedStorage").class.dependencies.CameraShake.CameraShakeInstance)
-    if not ok then warn("[MISC] CameraShakeInstance not found") return end
-
+    local ok, CameraShakeInstance = pcall(function()
+        return game:GetService("ReplicatedStorage").class.dependencies.CameraShake.CameraShakeInstance
+    end)
+    if not ok then return end
+    
+    local CameraShakeModule = CameraShakeInstance
+    
     if enabled and not shakeHooked then
-        origShakeNew = CameraShakeInstance.new
-        CameraShakeInstance.new = function(magnitude, roughness, ...)
-            return origShakeNew(0, 0, ...)
+        local mt = getrawmetatable(CameraShakeModule)
+        local oldNew = mt.__index.new
+        if oldNew then
+            origShakeNew = oldNew
+            mt.__index.new = function(self, magnitude, roughness, ...)
+                return origShakeNew(self, 0, 0, ...)
+            end
+            shakeHooked = true
         end
-        shakeHooked = true
     elseif not enabled and shakeHooked and origShakeNew then
-        CameraShakeInstance.new = origShakeNew
+        local mt = getrawmetatable(CameraShakeModule)
+        if mt and mt.__index then
+            mt.__index.new = origShakeNew
+        end
         shakeHooked = false
     end
 end
@@ -624,7 +606,7 @@ local function setNoBlur(enabled)
         and workspace.ignore:FindFirstChild("builder")
         and workspace.ignore.builder:FindFirstChild("FrameBlur, blur")
 
-    if not blurPart then warn("[MISC] Blur part not found") return end
+    if not blurPart then return end
 
     if enabled then
         blurPart.Transparency = 1
