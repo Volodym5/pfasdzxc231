@@ -129,49 +129,50 @@ local function checkVisibility(model)
 end
 
 -- ===== DYNAMIC PREDICTION SYSTEM =====
+-- ===== DYNAMIC PREDICTION SYSTEM =====
 local NEAR_THRESHOLD = 20
 
 local function getPredictedPosition(model, part, smoothness)
     local data = predictionData[model]
     local root = model:FindFirstChild("humanoid_root_part")
     local currentPos = root and root.Position or part.Position
-    local now = tick()
-    
+
     if not data then
         predictionData[model] = {
-            lastPos = currentPos,
-            velocity = Vector3.zero,
-            smoothedAimPos = nil,
-            lastTime = now
+            lastPos     = currentPos,
+            velocity    = Vector3.zero,
+            smoothedPos = currentPos,
+            lastTime    = tick()
         }
         return currentPos
     end
-    
-    local timeDelta = now - data.lastTime
-    if timeDelta > 0.001 then
-        data.velocity = (currentPos - data.lastPos) / timeDelta
-    end
-    
-    local logTerm = math.log(1 - smoothness)
-    local lag = -timeDelta / logTerm
-    local decayRate = -logTerm * 60
+
+    local now       = tick()
+    local timeDelta = math.clamp(now - data.lastTime, 1e-6, 0.1)  -- cap at 100ms
+
+    local rawVelocity = (currentPos - data.lastPos) / timeDelta
+    local velAlpha    = math.clamp(timeDelta / 0.05, 0, 1)
+    data.velocity     = data.velocity:Lerp(rawVelocity, velAlpha)
+
+    local logTerm    = math.log(1 - smoothness)
+    local decayRate  = -logTerm * 60
     local frameAlpha = 1 - math.exp(-decayRate * timeDelta)
-    
-    local distance = (currentPos - Camera.CFrame.Position).Magnitude
+
+    data.smoothedPos = data.smoothedPos:Lerp(currentPos, frameAlpha)
+
+    local filterLag  = 1 / decayRate  -- FPS-independent time constant
+    local networkLag = 0.1
+    local totalLag   = filterLag + networkLag + 0.025
+
+    local distance     = (currentPos - Camera.CFrame.Position).Magnitude
     local distanceDamp = math.clamp(distance / NEAR_THRESHOLD, 0.5, 1.0)
-    
-    local predictedPos = currentPos + data.velocity * lag * distanceDamp
-    
-    if not data.smoothedAimPos then
-        data.smoothedAimPos = predictedPos
-    else
-        data.smoothedAimPos = data.smoothedAimPos:Lerp(predictedPos, frameAlpha)
-    end
-    
-    data.lastPos = currentPos
+
+    local aimPos = data.smoothedPos + data.velocity * totalLag * distanceDamp
+
+    data.lastPos  = currentPos
     data.lastTime = now
-    
-    return data.smoothedAimPos
+
+    return aimPos
 end
 
 -- ===== AIMBOT SYSTEM =====
