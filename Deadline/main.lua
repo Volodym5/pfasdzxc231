@@ -39,6 +39,9 @@ local aimConnection  = nil
 local fovCircle      = nil
 local predictionData = {}
 
+-- Sight module
+local sightModule = nil
+
 -- ===== HIGHLIGHT CREATION =====
 local function createCham(model)
     if cleaned or highlightCache[model] then return end
@@ -128,7 +131,67 @@ local function checkVisibility(model)
     return false
 end
 
--- ===== DYNAMIC PREDICTION SYSTEM =====
+-- ===== INIT SIGHT MODULE =====
+task.spawn(function()
+    local success, result = pcall(function()
+        local ReplicatedStorage = game:GetService("ReplicatedStorage")
+        local RuntimeLib = require(ReplicatedStorage:WaitForChild("include"):WaitForChild("RuntimeLib"))
+        return RuntimeLib.import(script, ReplicatedStorage, "module", "sight_raycast", "is_occluded")
+    end)
+    if success and result then
+        sightModule = result
+    end
+end)
+
+-- ===== GET BEST VISIBLE AIM POINT =====
+local function getBestAimPoint(model)
+    if not sightModule then
+        local head = model:FindFirstChild("head")
+        return head and head.Position
+    end
+    
+    local head = model:FindFirstChild("head")
+    local torso = model:FindFirstChild("torso")
+    local root = model:FindFirstChild("humanoid_root_part")
+    
+    local partsToCheck = {}
+    
+    if settings.AimbotTargetPart == "Head" then
+        if head then table.insert(partsToCheck, head) end
+        if torso then table.insert(partsToCheck, torso) end
+        if root then table.insert(partsToCheck, root) end
+    elseif settings.AimbotTargetPart == "Torso" then
+        if torso then table.insert(partsToCheck, torso) end
+        if root then table.insert(partsToCheck, root) end
+        if head then table.insert(partsToCheck, head) end
+    else
+        if root then table.insert(partsToCheck, root) end
+        if torso then table.insert(partsToCheck, torso) end
+        if head then table.insert(partsToCheck, head) end
+    end
+    
+    for _, part in ipairs(partsToCheck) do
+        local excluded = {model}
+        local success, result = pcall(function()
+            return sightModule.is_occluded(excluded, part.Position)
+        end)
+        
+        if success and result and not result[1] then
+            return part.Position
+        end
+    end
+    
+    local primaryPart
+    if settings.AimbotTargetPart == "Head" then
+        primaryPart = head
+    elseif settings.AimbotTargetPart == "Torso" then
+        primaryPart = torso
+    else
+        primaryPart = root
+    end
+    return primaryPart and primaryPart.Position
+end
+
 -- ===== DYNAMIC PREDICTION SYSTEM =====
 local NEAR_THRESHOLD = 20
 
@@ -148,7 +211,7 @@ local function getPredictedPosition(model, part, smoothness)
     end
 
     local now       = tick()
-    local timeDelta = math.clamp(now - data.lastTime, 1e-6, 0.1)  -- cap at 100ms
+    local timeDelta = math.clamp(now - data.lastTime, 1e-6, 0.1)
 
     local rawVelocity = (currentPos - data.lastPos) / timeDelta
     local velAlpha    = math.clamp(timeDelta / 0.05, 0, 1)
@@ -160,7 +223,7 @@ local function getPredictedPosition(model, part, smoothness)
 
     data.smoothedPos = data.smoothedPos:Lerp(currentPos, frameAlpha)
 
-    local filterLag  = 1 / decayRate  -- FPS-independent time constant
+    local filterLag  = 1 / decayRate
     local networkLag = 0.1
     local totalLag   = filterLag + networkLag + 0.025
 
@@ -195,19 +258,20 @@ local function getClosestTarget()
         if not model.Parent then continue end
         if not ConfirmedEnemies[model] then continue end
         
-        if settings.AimbotVisCheck then
-            local visible = checkVisibility(model)
-            if not visible then continue end
-        end
-        
-        local part = getAimPart(model)
-        if not part then continue end
-        
         local aimPos
-        if settings.AimbotPrediction then
-            aimPos = getPredictedPosition(model, part, settings.AimbotSmoothness)
+        
+        if settings.AimbotVisCheck then
+            aimPos = getBestAimPoint(model)
+            if not aimPos then continue end
         else
-            aimPos = part.Position
+            local part = getAimPart(model)
+            if not part then continue end
+            
+            if settings.AimbotPrediction then
+                aimPos = getPredictedPosition(model, part, settings.AimbotSmoothness)
+            else
+                aimPos = part.Position
+            end
         end
         
         local screenPos, onScreen = Camera:WorldToViewportPoint(aimPos)
@@ -218,7 +282,6 @@ local function getClosestTarget()
             bestDist = dist
             bestTarget = {
                 screenPos = Vector2.new(screenPos.X, screenPos.Y),
-                aimPos = aimPos
             }
         end
     end
