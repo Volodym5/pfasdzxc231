@@ -35,6 +35,69 @@ local Window = Rayfield:CreateWindow({
     KeySystem = false,
 })
 
+-- ===== MAIN TAB (VISUALS)=====
+local MainTab = Window:CreateTab("Chams", 4483362458)
+
+MainTab:CreateSection("Toggle")
+MainTab:CreateToggle({
+    Name         = "Enable Chams",
+    CurrentValue = settings.Enabled,
+    Flag         = "ChamsEnabled",
+    Callback     = function(v) toggleChams(v) end,
+})
+
+MainTab:CreateSection("Settings")
+MainTab:CreateToggle({
+    Name         = "Team Check",
+    CurrentValue = settings.TeamCheck,
+    Flag         = "TeamCheck",
+    Callback     = function(v) settings.TeamCheck = v end,
+})
+MainTab:CreateToggle({
+    Name         = "Visibility Check",
+    CurrentValue = settings.VisibilityCheck,
+    Flag         = "VisibilityCheck",
+    Callback     = function(v) settings.VisibilityCheck = v end,
+})
+
+MainTab:CreateSection("Colors")
+MainTab:CreateColorPicker({
+    Name     = "Visible Color",
+    Color    = settings.VisibleColor,
+    Flag     = "VisibleColor",
+    Callback = function(c) settings.VisibleColor = c end,
+})
+MainTab:CreateColorPicker({
+    Name     = "Occluded Color",
+    Color    = settings.OccludedColor,
+    Flag     = "OccludedColor",
+    Callback = function(c) settings.OccludedColor = c end,
+})
+
+MainTab:CreateSection("Transparency")
+MainTab:CreateSlider({
+    Name         = "Fill Transparency",
+    Range        = {0, 1},
+    Increment    = 0.05,
+    CurrentValue = settings.FillTransparency,
+    Flag         = "FillTrans",
+    Callback     = function(v)
+        settings.FillTransparency = v
+        for _, h in pairs(highlightCache) do h.FillTransparency = v end
+    end,
+})
+MainTab:CreateSlider({
+    Name         = "Outline Transparency",
+    Range        = {0, 1},
+    Increment    = 0.05,
+    CurrentValue = settings.OutlineTransparency,
+    Flag         = "OutlineTrans",
+    Callback     = function(v)
+        settings.OutlineTransparency = v
+        for _, h in pairs(highlightCache) do h.OutlineTransparency = v end
+    end,
+})
+
 -- === Aimbot tab ===
 local AimbotTab = Window:CreateTab("Aimbot", 4483362458)
 
@@ -113,69 +176,6 @@ AimbotTab:CreateSlider({
     CurrentValue = settings.AimbotFOVTransparency,
     Flag = "AimbotFOVTrans",
     Callback = function(v) settings.AimbotFOVTransparency = v end,
-})
-
--- ===== MAIN TAB (VISUALS)=====
-local MainTab = Window:CreateTab("Chams", 4483362458)
-
-MainTab:CreateSection("Toggle")
-MainTab:CreateToggle({
-    Name         = "Enable Chams",
-    CurrentValue = settings.Enabled,
-    Flag         = "ChamsEnabled",
-    Callback     = function(v) toggleChams(v) end,
-})
-
-MainTab:CreateSection("Settings")
-MainTab:CreateToggle({
-    Name         = "Team Check",
-    CurrentValue = settings.TeamCheck,
-    Flag         = "TeamCheck",
-    Callback     = function(v) settings.TeamCheck = v end,
-})
-MainTab:CreateToggle({
-    Name         = "Visibility Check",
-    CurrentValue = settings.VisibilityCheck,
-    Flag         = "VisibilityCheck",
-    Callback     = function(v) settings.VisibilityCheck = v end,
-})
-
-MainTab:CreateSection("Colors")
-MainTab:CreateColorPicker({
-    Name     = "Visible Color",
-    Color    = settings.VisibleColor,
-    Flag     = "VisibleColor",
-    Callback = function(c) settings.VisibleColor = c end,
-})
-MainTab:CreateColorPicker({
-    Name     = "Occluded Color",
-    Color    = settings.OccludedColor,
-    Flag     = "OccludedColor",
-    Callback = function(c) settings.OccludedColor = c end,
-})
-
-MainTab:CreateSection("Transparency")
-MainTab:CreateSlider({
-    Name         = "Fill Transparency",
-    Range        = {0, 1},
-    Increment    = 0.05,
-    CurrentValue = settings.FillTransparency,
-    Flag         = "FillTrans",
-    Callback     = function(v)
-        settings.FillTransparency = v
-        for _, h in pairs(highlightCache) do h.FillTransparency = v end
-    end,
-})
-MainTab:CreateSlider({
-    Name         = "Outline Transparency",
-    Range        = {0, 1},
-    Increment    = 0.05,
-    CurrentValue = settings.OutlineTransparency,
-    Flag         = "OutlineTrans",
-    Callback     = function(v)
-        settings.OutlineTransparency = v
-        for _, h in pairs(highlightCache) do h.OutlineTransparency = v end
-    end,
 })
 
 -- ===== MISC TAB =====
