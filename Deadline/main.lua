@@ -25,7 +25,7 @@ local settings = {
     AimbotFOVTransparency = 0.5,
     AimbotTargetPart    = "Head",
     AimbotVisCheck      = false,
-    AimbotPrediction    = 0,
+    AimbotPrediction    = true,
 }
 
 local highlightCache   = {}
@@ -33,11 +33,11 @@ local connections      = {}
 local cleaned          = false
 local teamTypeCache    = {}
 local ConfirmedEnemies = {}
-local velocityCache    = {}
 
 -- Aim variables
-local aimConnection = nil
-local fovCircle = nil
+local aimConnection  = nil
+local fovCircle      = nil
+local predictionData = {}
 
 -- ===== HIGHLIGHT CREATION =====
 local function createCham(model)
@@ -128,6 +128,52 @@ local function checkVisibility(model)
     return false
 end
 
+-- ===== DYNAMIC PREDICTION SYSTEM =====
+local NEAR_THRESHOLD = 20
+
+local function getPredictedPosition(model, part, smoothness)
+    local data = predictionData[model]
+    local root = model:FindFirstChild("humanoid_root_part")
+    local currentPos = root and root.Position or part.Position
+    local now = tick()
+    
+    if not data then
+        predictionData[model] = {
+            lastPos = currentPos,
+            velocity = Vector3.zero,
+            smoothedAimPos = nil,
+            lastTime = now
+        }
+        return currentPos
+    end
+    
+    local timeDelta = now - data.lastTime
+    if timeDelta > 0.001 then
+        data.velocity = (currentPos - data.lastPos) / timeDelta
+    end
+    
+    local logTerm = math.log(1 - smoothness)
+    local lag = -timeDelta / logTerm
+    local decayRate = -logTerm * 60
+    local frameAlpha = 1 - math.exp(-decayRate * timeDelta)
+    
+    local distance = (currentPos - Camera.CFrame.Position).Magnitude
+    local distanceDamp = math.clamp(distance / NEAR_THRESHOLD, 0.5, 1.0)
+    
+    local predictedPos = currentPos + data.velocity * lag * distanceDamp
+    
+    if not data.smoothedAimPos then
+        data.smoothedAimPos = predictedPos
+    else
+        data.smoothedAimPos = data.smoothedAimPos:Lerp(predictedPos, frameAlpha)
+    end
+    
+    data.lastPos = currentPos
+    data.lastTime = now
+    
+    return data.smoothedAimPos
+end
+
 -- ===== AIMBOT SYSTEM =====
 local function getAimPart(model)
     if settings.AimbotTargetPart == "Head" then
@@ -136,31 +182,6 @@ local function getAimPart(model)
         return model:FindFirstChild("torso")
     else
         return model:FindFirstChild("humanoid_root_part")
-    end
-end
-
-local function getPredictedPosition(part)
-    if settings.AimbotPrediction <= 0 then return part.Position end
-    
-    local root = part.Parent:FindFirstChild("humanoid_root_part")
-    if not root then return part.Position end
-    
-    -- Cache velocity for smoother prediction
-    local currentPos = root.Position
-    local lastData = velocityCache[part.Parent]
-    
-    if lastData then
-        local velocity = (currentPos - lastData.Position) / math.max(tick() - lastData.Time, 0.01)
-        local predictionTime = settings.AimbotPrediction / 100 -- Convert to reasonable scale
-        
-        -- Store current data for next frame
-        velocityCache[part.Parent] = {Position = currentPos, Time = tick()}
-        
-        -- Return predicted position
-        return part.Position + (velocity * predictionTime)
-    else
-        velocityCache[part.Parent] = {Position = currentPos, Time = tick()}
-        return part.Position
     end
 end
 
@@ -173,7 +194,6 @@ local function getClosestTarget()
         if not model.Parent then continue end
         if not ConfirmedEnemies[model] then continue end
         
-        -- Visibility check for aimbot
         if settings.AimbotVisCheck then
             local visible = checkVisibility(model)
             if not visible then continue end
@@ -182,8 +202,12 @@ local function getClosestTarget()
         local part = getAimPart(model)
         if not part then continue end
         
-        -- Get predicted position
-        local aimPos = getPredictedPosition(part)
+        local aimPos
+        if settings.AimbotPrediction then
+            aimPos = getPredictedPosition(model, part, settings.AimbotSmoothness)
+        else
+            aimPos = part.Position
+        end
         
         local screenPos, onScreen = Camera:WorldToViewportPoint(aimPos)
         if not onScreen or screenPos.Z <= 0 then continue end
@@ -191,7 +215,10 @@ local function getClosestTarget()
         local dist = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude
         if dist < bestDist then
             bestDist = dist
-            bestTarget = {part = part, screenPos = Vector2.new(screenPos.X, screenPos.Y), aimPos = aimPos}
+            bestTarget = {
+                screenPos = Vector2.new(screenPos.X, screenPos.Y),
+                aimPos = aimPos
+            }
         end
     end
     
@@ -244,18 +271,8 @@ end
 local function stopAimbot()
     if aimConnection then aimConnection:Disconnect(); aimConnection = nil end
     if fovCircle then fovCircle:Remove(); fovCircle = nil end
+    predictionData = {}
 end
-
--- Cleanup velocity cache periodically
-table.insert(connections, RunService.Heartbeat:Connect(function()
-    if cleaned then return end
-    local now = tick()
-    for model, data in pairs(velocityCache) do
-        if not model.Parent or now - data.Time > 0.5 then
-            velocityCache[model] = nil
-        end
-    end
-end))
 
 -- ===== TOGGLE / CLEANUP =====
 local function toggleChams(enabled)
@@ -339,7 +356,7 @@ if Characters then
             highlightCache[model]   = nil
             ConfirmedEnemies[model] = nil
             teamTypeCache[model]    = nil
-            velocityCache[model]    = nil
+            predictionData[model]   = nil
         end
     end))
 end
@@ -384,7 +401,7 @@ table.insert(connections, RunService.Heartbeat:Connect(function()
                 highlightCache[model]   = nil
                 ConfirmedEnemies[model] = nil
                 teamTypeCache[model]    = nil
-                velocityCache[model]    = nil
+                predictionData[model]   = nil
                 for i = #visQueue, 1, -1 do
                     if visQueue[i] == model then table.remove(visQueue, i) end
                 end
