@@ -38,9 +38,39 @@ local ConfirmedEnemies = {}
 local aimConnection  = nil
 local fovCircle      = nil
 local predictionData = {}
+local sightModule    = nil
+local intentData     = {
+    smoothedDelta = Vector2.zero,
+    currentTarget = nil,
+    lastMousePos  = Vector2.zero,
+}
 
--- Sight module
-local sightModule = nil
+-- Constants
+local RETENTION_BONUS   = 0.25
+local SWITCH_THRESHOLD  = 0.4
+local INTENT_SMOOTH     = 0.15
+local NEAR_THRESHOLD    = 20
+
+local VISIBILITY_POINTS = {
+    { part = "head",               weight = 0.4 },
+    { part = "torso",              weight = 0.35 },
+    { part = "humanoid_root_part", weight = 0.25 },
+}
+
+local raycastParams = RaycastParams.new()
+raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+
+-- ===== INIT SIGHT MODULE =====
+task.spawn(function()
+    local success, result = pcall(function()
+        local ReplicatedStorage = game:GetService("ReplicatedStorage")
+        local RuntimeLib = require(ReplicatedStorage:WaitForChild("include"):WaitForChild("RuntimeLib"))
+        return RuntimeLib.import(script, ReplicatedStorage, "module", "sight_raycast", "is_occluded")
+    end)
+    if success and result then
+        sightModule = result
+    end
+end)
 
 -- ===== HIGHLIGHT CREATION =====
 local function createCham(model)
@@ -131,70 +161,109 @@ local function checkVisibility(model)
     return false
 end
 
--- ===== INIT SIGHT MODULE =====
-task.spawn(function()
-    local success, result = pcall(function()
-        local ReplicatedStorage = game:GetService("ReplicatedStorage")
-        local RuntimeLib = require(ReplicatedStorage:WaitForChild("include"):WaitForChild("RuntimeLib"))
-        return RuntimeLib.import(script, ReplicatedStorage, "module", "sight_raycast", "is_occluded")
-    end)
-    if success and result then
-        sightModule = result
-    end
-end)
-
--- ===== GET BEST VISIBLE AIM POINT =====
-local function getBestAimPoint(model)
-    if not sightModule then
-        local head = model:FindFirstChild("head")
-        return head and head.Position
-    end
+-- ===== PARTIAL VISIBILITY =====
+local function getPartialVisibility(model)
+    local myChar = LocalPlayer.Character
+    local ignoreList = myChar and {model, myChar} or {model}
+    raycastParams.FilterDescendantsInstances = ignoreList
     
-    local head = model:FindFirstChild("head")
-    local torso = model:FindFirstChild("torso")
-    local root = model:FindFirstChild("humanoid_root_part")
+    local origin = Camera.CFrame.Position
+    local totalVis = 0
     
-    local partsToCheck = {}
-    
-    if settings.AimbotTargetPart == "Head" then
-        if head then table.insert(partsToCheck, head) end
-        if torso then table.insert(partsToCheck, torso) end
-        if root then table.insert(partsToCheck, root) end
-    elseif settings.AimbotTargetPart == "Torso" then
-        if torso then table.insert(partsToCheck, torso) end
-        if root then table.insert(partsToCheck, root) end
-        if head then table.insert(partsToCheck, head) end
-    else
-        if root then table.insert(partsToCheck, root) end
-        if torso then table.insert(partsToCheck, torso) end
-        if head then table.insert(partsToCheck, head) end
-    end
-    
-    for _, part in ipairs(partsToCheck) do
-        local excluded = {model}
-        local success, result = pcall(function()
-            return sightModule.is_occluded(excluded, part.Position)
-        end)
-        
-        if success and result and not result[1] then
-            return part.Position
+    for _, entry in ipairs(VISIBILITY_POINTS) do
+        local targetPart = model:FindFirstChild(entry.part)
+        if targetPart then
+            local direction = targetPart.Position - origin
+            local result = Workspace:Raycast(origin, direction, raycastParams)
+            
+            if not result or result.Instance:IsDescendantOf(model) then
+                totalVis = totalVis + entry.weight
+            end
         end
     end
     
-    local primaryPart
-    if settings.AimbotTargetPart == "Head" then
-        primaryPart = head
-    elseif settings.AimbotTargetPart == "Torso" then
-        primaryPart = torso
-    else
-        primaryPart = root
-    end
-    return primaryPart and primaryPart.Position
+    return totalVis
 end
 
--- ===== DYNAMIC PREDICTION SYSTEM =====
-local NEAR_THRESHOLD = 20
+local function getNativeVisibility(model)
+    if not sightModule then return getPartialVisibility(model) end
+    
+    local head = model:FindFirstChild("head")
+    if not head then return getPartialVisibility(model) end
+    
+    local excluded = {model}
+    local success, result = pcall(function()
+        return sightModule.is_occluded(excluded, head.Position)
+    end)
+    
+    if success and result then
+        return result[1] and 0 or 1
+    end
+    
+    return getPartialVisibility(model)
+end
 
+-- ===== DISTANCE-BASED STRENGTH =====
+local function getAssistStrength(worldPos)
+    local worldDist = (worldPos - Camera.CFrame.Position).Magnitude
+    local screenRadius = (Camera.ViewportSize.Y / (2 * math.tan(math.rad(Camera.FieldOfView / 2)))) * (2 / worldDist)
+    local maxScreenRadius = 80
+    return math.clamp(1 - (screenRadius / maxScreenRadius), 0.1, 1.0)
+end
+
+-- ===== INTENT DETECTION =====
+local function updateIntent(mouseDelta, candidates, mousePos)
+    intentData.smoothedDelta = intentData.smoothedDelta:Lerp(mouseDelta, INTENT_SMOOTH)
+    local cursorDir = intentData.smoothedDelta.Unit
+    
+    local bestTarget = nil
+    local bestScore = -math.huge
+    local curTargetScore = -math.huge
+    
+    for _, candidate in ipairs(candidates) do
+        local screenPos = candidate.screenPos
+        local toTarget = (screenPos - mousePos).Unit
+        
+        local intentScore = 0
+        if cursorDir == cursorDir then
+            intentScore = cursorDir:Dot(toTarget)
+        end
+        
+        local proximityScore = 1 - math.clamp(candidate.dist / settings.AimbotFOV, 0, 1)
+        local score = intentScore * 0.6 + proximityScore * 0.4
+        
+        if candidate.model == intentData.currentTarget then
+            score = score + RETENTION_BONUS
+            curTargetScore = score
+        end
+        
+        if score > bestScore then
+            bestScore = score
+            bestTarget = candidate.model
+        end
+    end
+    
+    if bestTarget and bestTarget ~= intentData.currentTarget then
+        if bestScore - curTargetScore > SWITCH_THRESHOLD then
+            intentData.currentTarget = bestTarget
+        end
+    end
+    
+    local assistMultiplier = 1.0
+    if intentData.currentTarget then
+        local root = intentData.currentTarget:FindFirstChild("humanoid_root_part")
+        if root then
+            local targetScreenPos = Camera:WorldToViewportPoint(root.Position)
+            local awayDir = (Vector2.new(targetScreenPos.X, targetScreenPos.Y) - mousePos).Unit
+            local awayScore = cursorDir ~= cursorDir and 0 or cursorDir:Dot(awayDir)
+            assistMultiplier = math.clamp((awayScore + 0.5) / 1.5, 0.1, 1.0)
+        end
+    end
+    
+    return intentData.currentTarget, assistMultiplier
+end
+
+-- ===== PREDICTION =====
 local function getPredictedPosition(model, part, smoothness)
     local data = predictionData[model]
     local root = model:FindFirstChild("humanoid_root_part")
@@ -238,7 +307,7 @@ local function getPredictedPosition(model, part, smoothness)
     return aimPos
 end
 
--- ===== AIMBOT SYSTEM =====
+-- ===== TARGET SELECTION =====
 local function getAimPart(model)
     if settings.AimbotTargetPart == "Head" then
         return model:FindFirstChild("head")
@@ -249,46 +318,69 @@ local function getAimPart(model)
     end
 end
 
-local function getClosestTarget()
+local function getAssistTarget()
     local mousePos = UIS:GetMouseLocation()
-    local bestTarget = nil
-    local bestDist = settings.AimbotFOV
+    local candidates = {}
     
     for model in pairs(highlightCache) do
         if not model.Parent then continue end
         if not ConfirmedEnemies[model] then continue end
         
-        local aimPos
+        local part = getAimPart(model)
+        if not part then continue end
         
-        if settings.AimbotVisCheck then
-            aimPos = getBestAimPoint(model)
-            if not aimPos then continue end
+        local aimPos
+        if settings.AimbotPrediction then
+            aimPos = getPredictedPosition(model, part, settings.AimbotSmoothness)
         else
-            local part = getAimPart(model)
-            if not part then continue end
-            
-            if settings.AimbotPrediction then
-                aimPos = getPredictedPosition(model, part, settings.AimbotSmoothness)
-            else
-                aimPos = part.Position
-            end
+            aimPos = part.Position
         end
         
         local screenPos, onScreen = Camera:WorldToViewportPoint(aimPos)
         if not onScreen or screenPos.Z <= 0 then continue end
         
-        local dist = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude
-        if dist < bestDist then
-            bestDist = dist
-            bestTarget = {
-                screenPos = Vector2.new(screenPos.X, screenPos.Y),
+        local screenPoint = Vector2.new(screenPos.X, screenPos.Y)
+        local dist = (screenPoint - mousePos).Magnitude
+        
+        if dist < settings.AimbotFOV then
+            table.insert(candidates, {
+                model     = model,
+                part      = part,
+                screenPos = screenPoint,
+                dist      = dist,
+                aimPos    = aimPos,
+            })
+        end
+    end
+    
+    if #candidates == 0 then
+        intentData.currentTarget = nil
+        return nil
+    end
+    
+    local mouseDelta = mousePos - intentData.lastMousePos
+    intentData.lastMousePos = mousePos
+    
+    local targetModel, intentMult = updateIntent(mouseDelta, candidates, mousePos)
+    
+    if not targetModel then return nil end
+    
+    for _, c in ipairs(candidates) do
+        if c.model == targetModel then
+            local assistStr = getAssistStrength(c.aimPos)
+            local visibility = settings.AimbotVisCheck and getNativeVisibility(targetModel) or 1.0
+            
+            return {
+                screenPos = c.screenPos,
+                strength  = assistStr * visibility * intentMult,
             }
         end
     end
     
-    return bestTarget
+    return nil
 end
 
+-- ===== FOV CIRCLE =====
 local function updateFOVCircle()
     if fovCircle then
         fovCircle.Visible = settings.AimbotShowFOV and settings.AimbotEnabled
@@ -299,6 +391,7 @@ local function updateFOVCircle()
     end
 end
 
+-- ===== START / STOP =====
 local function startAimbot()
     if aimConnection then aimConnection:Disconnect() end
     
@@ -316,17 +409,21 @@ local function startAimbot()
         
         updateFOVCircle()
         
-        if not UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then return end
+        if not UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then
+            intentData.currentTarget = nil
+            return
+        end
         
-        local target = getClosestTarget()
+        local target = getAssistTarget()
         if not target then return end
         
         local mousePos = UIS:GetMouseLocation()
         local delta = target.screenPos - mousePos
+        local finalStrength = target.strength * settings.AimbotSmoothness
         
         pcall(function()
             if mousemoverel then
-                mousemoverel(delta.X * settings.AimbotSmoothness, delta.Y * settings.AimbotSmoothness)
+                mousemoverel(delta.X * finalStrength, delta.Y * finalStrength)
             end
         end)
     end)
@@ -336,6 +433,7 @@ local function stopAimbot()
     if aimConnection then aimConnection:Disconnect(); aimConnection = nil end
     if fovCircle then fovCircle:Remove(); fovCircle = nil end
     predictionData = {}
+    intentData.currentTarget = nil
 end
 
 -- ===== TOGGLE / CLEANUP =====
