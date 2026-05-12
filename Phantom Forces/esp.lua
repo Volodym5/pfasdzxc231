@@ -1,0 +1,620 @@
+-- Phantom Forces ESP - Rendering Engine
+-- Flicker-free team cache with streaming memory
+
+local Workspace = workspace
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local Camera = Workspace.CurrentCamera
+local RunService = game:GetService("RunService")
+local GuiService = game:GetService("GuiService")
+local UIS = game:GetService("UserInputService")
+
+_G.PF_ESP_Settings = _G.PF_ESP_Settings or {
+    Enabled = true,
+    Boxes = true,
+    Tracers = true,
+    Names = true,
+    Chams = false,
+    VisibilityCheck = false,
+    MaxDistance = 800,
+    TeamCheck = true,
+    TracerFromCrosshair = false,
+    EnemyColor = Color3.fromRGB(255, 50, 50),
+    OccludedColor = Color3.fromRGB(255, 150, 50),
+    BoxThickness = 1,
+    TracerThickness = 1,
+    NameSize = 13,
+    ChamColor = Color3.fromRGB(255, 50, 50),
+    ChamOccludedColor = Color3.fromRGB(255, 150, 50),
+    ChamFillTransparency = 0.75
+}
+
+local settings = _G.PF_ESP_Settings
+
+_G.PF_HeadPositions = {}
+
+local espCache = {}
+local modelCache = {}
+local chamCache = {}
+local myPosCache = { pos = nil, time = 0 }
+local running = true
+
+-- Display (confirmed) state
+local nameMap = {}       -- model -> player name
+local teamMap = {}       -- model -> isFriendly
+
+-- Pending verification layer
+local pendingTeam = {}   -- model -> { team, confidence }
+local CONFIDENCE_THRESHOLD = 2
+
+-- Streaming memory (survives model destruction/recreation)
+local streamingMemory = {}  -- playerName -> isFriendly
+local streamingTimestamps = {}  -- playerName -> tick()
+
+local modelToName = {}   -- model -> playerName (for fast lookup)
+local roundSpawnBurst = 0
+local roundActive = true
+
+local chamContainer = Instance.new("Folder")
+chamContainer.Name = "RBX_" .. tostring(math.random(100000, 999999))
+chamContainer.Parent = game:GetService("CoreGui")
+
+_G.PF_ESP_Functions = {}
+
+function _G.PF_ESP_Functions.RefreshCache()
+    modelCache = {}
+    for _, c in pairs(chamCache) do pcall(function() c:Destroy() end) end
+    chamCache = {}
+    nameMap = {}
+    teamMap = {}
+    pendingTeam = {}
+    streamingMemory = {}
+    streamingTimestamps = {}
+    modelToName = {}
+    _G.PF_HeadPositions = {}
+end
+
+function _G.PF_ESP_Functions.Stop()
+    running = false
+    for _, d in pairs(espCache) do
+        for _, v in pairs(d) do pcall(function() v:Remove() end) end
+    end
+    for _, c in pairs(chamCache) do pcall(function() c:Destroy() end) end
+    espCache = {}
+    modelCache = {}
+    chamCache = {}
+    nameMap = {}
+    teamMap = {}
+    pendingTeam = {}
+    streamingMemory = {}
+    streamingTimestamps = {}
+    modelToName = {}
+    _G.PF_HeadPositions = {}
+end
+
+function _G.PF_ESP_Functions.Start()
+    running = true
+end
+
+function _G.PF_ESP_Functions.DetectTeams()
+end
+
+local function isPlayerActive()
+    return UIS.WindowFocused and not GuiService.MenuIsOpen
+end
+
+local function getPlayerNameFromModel(model)
+    for _, desc in ipairs(model:GetDescendants()) do
+        if desc.Name == "PlayerTag" and desc:IsA("TextLabel") then
+            local text = desc.Text
+            if text and #text > 0 then
+                return text
+            end
+        end
+    end
+    return nil
+end
+
+-- Resolve team from a player name (caches in playerTeamCache for speed)
+local function resolveTeamFromName(playerName)
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p.Name == playerName or p.DisplayName == playerName then
+            local isFriendly = false
+            if LocalPlayer.Team and p.Team then
+                isFriendly = (p.Team == LocalPlayer.Team)
+            elseif LocalPlayer.TeamColor and p.TeamColor then
+                isFriendly = (p.TeamColor.Number == LocalPlayer.TeamColor.Number)
+            end
+            return isFriendly
+        end
+    end
+    return nil
+end
+
+-- Immediate identification when a model appears
+local function identifyModel(model)
+    if not model:IsA("Model") then return end
+    if modelToName[model] then return end
+
+    local tagName = getPlayerNameFromModel(model)
+    if not tagName then return end
+
+    modelToName[model] = tagName
+
+    -- Check streaming memory first (avoid flicker on stream-back-in)
+    if streamingMemory[tagName] ~= nil then
+        teamMap[model] = streamingMemory[tagName]
+        nameMap[model] = tagName
+        pendingTeam[model] = { team = streamingMemory[tagName], confidence = CONFIDENCE_THRESHOLD }
+        return
+    end
+
+    -- Fresh identification
+    local isFriendly = resolveTeamFromName(tagName)
+    if isFriendly ~= nil then
+        teamMap[model] = isFriendly
+        nameMap[model] = tagName
+        pendingTeam[model] = { team = isFriendly, confidence = 1 }
+        
+        -- Also store in streaming memory for future stream cycles
+        streamingMemory[tagName] = isFriendly
+        streamingTimestamps[tagName] = tick()
+    end
+end
+
+local function setupInstantIdentification()
+    local playersFolder = Workspace:FindFirstChild("Players")
+    if not playersFolder then
+        Workspace.ChildAdded:Connect(function(child)
+            if child.Name == "Players" then setupInstantIdentification() end
+        end)
+        return
+    end
+
+    for _, teamFolder in ipairs(playersFolder:GetChildren()) do
+        if teamFolder:IsA("Folder") then
+            teamFolder.ChildAdded:Connect(function(model) identifyModel(model) end)
+            for _, model in ipairs(teamFolder:GetChildren()) do identifyModel(model) end
+        end
+    end
+
+    playersFolder.ChildAdded:Connect(function(teamFolder)
+        if teamFolder:IsA("Folder") then
+            teamFolder.ChildAdded:Connect(function(model) identifyModel(model) end)
+        end
+    end)
+end
+setupInstantIdentification()
+
+-- Periodic re-scan (no flicker — uses confidence gating)
+local lastScanTime = 0
+local SCAN_INTERVAL = 5
+
+local function periodicRescan()
+    local playerLookup = {}
+    for _, p in ipairs(Players:GetPlayers()) do
+        playerLookup[p.Name] = p
+        if p.DisplayName ~= p.Name then
+            playerLookup[p.DisplayName] = p
+        end
+    end
+
+    local currentModels = {}
+    local playersFolder = Workspace:FindFirstChild("Players")
+    if not playersFolder then return end
+
+    for _, teamFolder in ipairs(playersFolder:GetChildren()) do
+        if teamFolder:IsA("Folder") then
+            for _, model in ipairs(teamFolder:GetChildren()) do
+                if model:IsA("Model") then
+                    currentModels[model] = true
+
+                    local knownName = modelToName[model]
+                    if not knownName then
+                        local tagName = getPlayerNameFromModel(model)
+                        if tagName then
+                            modelToName[model] = tagName
+                            knownName = tagName
+                        end
+                    end
+
+                    if knownName and playerLookup[knownName] then
+                        local newTeam = resolveTeamFromName(knownName)
+                        if newTeam == nil then continue end
+
+                        local p = pendingTeam[model]
+                        if p and p.team == newTeam then
+                            p.confidence = p.confidence + 1
+                            if p.confidence >= CONFIDENCE_THRESHOLD then
+                                -- Promote to confirmed
+                                teamMap[model] = newTeam
+                                nameMap[model] = knownName
+                                streamingMemory[knownName] = newTeam
+                                streamingTimestamps[knownName] = tick()
+                            end
+                        else
+                            -- Disagreement or first scan — reset pending, don't touch confirmed
+                            pendingTeam[model] = { team = newTeam, confidence = 1 }
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    -- Cleanup dead models
+    for model, _ in pairs(modelToName) do
+        if not currentModels[model] then
+            -- Save to streaming memory before removing
+            local name = modelToName[model]
+            if name and teamMap[model] ~= nil then
+                streamingMemory[name] = teamMap[model]
+                streamingTimestamps[name] = tick()
+            end
+            modelToName[model] = nil
+            nameMap[model] = nil
+            teamMap[model] = nil
+            pendingTeam[model] = nil
+        end
+    end
+    for model, _ in pairs(teamMap) do
+        if not currentModels[model] then teamMap[model] = nil end
+    end
+    for model, _ in pairs(nameMap) do
+        if not currentModels[model] then nameMap[model] = nil end
+    end
+    for model, _ in pairs(pendingTeam) do
+        if not currentModels[model] then pendingTeam[model] = nil end
+    end
+
+    lastScanTime = tick()
+end
+
+-- Round detection: flush streaming memory on new round
+local function setupRoundDetection()
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            player.CharacterAdded:Connect(function()
+                roundSpawnBurst = roundSpawnBurst + 1
+                task.delay(2, function()
+                    roundSpawnBurst = math.max(0, roundSpawnBurst - 1)
+                end)
+                if roundSpawnBurst >= 3 and not roundActive then
+                    roundActive = true
+                    -- Flush streaming memory on new round (teams may have changed)
+                    streamingMemory = {}
+                    streamingTimestamps = {}
+                    pendingTeam = {}
+                    _G.PF_ESP_Functions.RefreshCache()
+                end
+            end)
+        end
+    end
+
+    task.spawn(function()
+        while task.wait(1) do
+            local playersFolder = Workspace:FindFirstChild("Players")
+            if playersFolder then
+                local allEmpty = true
+                for _, f in ipairs(playersFolder:GetChildren()) do
+                    if f:IsA("Folder") and #f:GetChildren() > 0 then
+                        allEmpty = false
+                        break
+                    end
+                end
+                if allEmpty and roundActive then
+                    roundActive = false
+                end
+            end
+        end
+    end)
+end
+setupRoundDetection()
+
+local function getOrCreateESP(model)
+    if espCache[model] then return espCache[model] end
+    local d = {}
+    if settings.Boxes then
+        d.box = Drawing.new("Square")
+        d.box.Visible = false
+        d.box.Filled = false
+        d.box.Transparency = 1
+    end
+    if settings.Tracers then
+        d.tracer = Drawing.new("Line")
+        d.tracer.Visible = false
+        d.tracer.Transparency = 1
+    end
+    if settings.Names then
+        d.nameShadow = Drawing.new("Text")
+        d.nameShadow.Visible = false
+        d.nameShadow.Center = true
+        d.nameShadow.Font = Drawing.Fonts.Monospace
+        d.nameShadow.Color = Color3.new(0, 0, 0)
+        d.nameShadow.Transparency = 0.5
+        d.name = Drawing.new("Text")
+        d.name.Visible = false
+        d.name.Center = true
+        d.name.Outline = true
+        d.name.Font = Drawing.Fonts.Monospace
+        d.name.Transparency = 1
+    end
+    espCache[model] = d
+    return d
+end
+
+local function getOrCreateCham(model)
+    if chamCache[model] then return chamCache[model] end
+    local cham = Instance.new("Highlight")
+    cham.Name = model.Name
+    cham.Adornee = model
+    cham.Parent = chamContainer
+    cham.Enabled = false
+    chamCache[model] = cham
+    return cham
+end
+
+local function removeCham(model)
+    if chamCache[model] then
+        pcall(function() chamCache[model]:Destroy() end)
+        chamCache[model] = nil
+    end
+end
+
+local function updateCham(cham, visible)
+    local color = visible and settings.ChamColor or settings.ChamOccludedColor
+    cham.FillColor = color
+    cham.OutlineColor = color
+    cham.FillTransparency = settings.ChamFillTransparency
+    cham.OutlineTransparency = math.min(0.99, settings.ChamFillTransparency - 0.25)
+end
+
+local function removeESP(model)
+    if espCache[model] then
+        for _, v in pairs(espCache[model]) do pcall(function() v:Remove() end) end
+        espCache[model] = nil
+    end
+    removeCham(model)
+    _G.PF_HeadPositions[model] = nil
+end
+
+local function getMyPosition()
+    if tick() - myPosCache.time < 0.1 and myPosCache.pos then return myPosCache.pos end
+    local ignore = Workspace:FindFirstChild("Ignore")
+    if ignore then
+        for _, model in ipairs(ignore:GetChildren()) do
+            if model:IsA("Model") then
+                local hrp = model:FindFirstChild("HumanoidRootPart")
+                if hrp then
+                    myPosCache.pos = hrp.Position
+                    myPosCache.time = tick()
+                    return myPosCache.pos
+                end
+            end
+        end
+    end
+    if LocalPlayer.Character then
+        local hrp = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            myPosCache.pos = hrp.Position
+            myPosCache.time = tick()
+            return myPosCache.pos
+        end
+    end
+    return nil
+end
+
+local function isVisible(targetPos, model)
+    local camPos = Camera.CFrame.Position
+    local dir = targetPos - camPos
+    local dist = dir.Magnitude
+    if dist < 0.1 then return true end
+    local rayParams = RaycastParams.new()
+    rayParams.FilterType = Enum.RaycastFilterType.Blacklist
+    rayParams.FilterDescendantsInstances = {LocalPlayer.Character or nil, model}
+    rayParams.IgnoreWater = true
+    local result = Workspace:Raycast(camPos, dir.Unit * dist, rayParams)
+    return result == nil
+end
+
+local function getCorners(cf, size)
+    local sx, sy, sz = size.X * 0.5, size.Y * 0.5, size.Z * 0.5
+    return {
+        Vector3.new(cf.X + sx, cf.Y + sy, cf.Z + sz),
+        Vector3.new(cf.X - sx, cf.Y + sy, cf.Z + sz),
+        Vector3.new(cf.X + sx, cf.Y - sy, cf.Z + sz),
+        Vector3.new(cf.X + sx, cf.Y + sy, cf.Z - sz),
+        Vector3.new(cf.X - sx, cf.Y - sy, cf.Z + sz),
+        Vector3.new(cf.X - sx, cf.Y + sy, cf.Z - sz),
+        Vector3.new(cf.X + sx, cf.Y - sy, cf.Z - sz),
+        Vector3.new(cf.X - sx, cf.Y - sy, cf.Z - sz),
+    }
+end
+
+local function updateESP()
+    if not running then return end
+    if not isPlayerActive() then return end
+    
+    local playersFolder = Workspace:FindFirstChild("Players")
+    if not playersFolder then return end
+
+    if not settings.Enabled then
+        for _, d in pairs(espCache) do
+            for _, v in pairs(d) do v.Visible = false end
+        end
+        for _, c in pairs(chamCache) do c.Enabled = false end
+        return
+    end
+
+    if tick() - lastScanTime > SCAN_INTERVAL then
+        periodicRescan()
+    end
+
+    local myPos = getMyPosition()
+    local activeModels = {}
+    local vs = Camera.ViewportSize
+    local screenCX = vs.X / 2
+    local screenBY = vs.Y
+    local tracerOriginY = settings.TracerFromCrosshair and (vs.Y / 2) or vs.Y
+
+    for _, teamFolder in ipairs(playersFolder:GetChildren()) do
+        if not teamFolder:IsA("Folder") then continue end
+
+        for _, model in ipairs(teamFolder:GetChildren()) do
+            if not model:IsA("Model") then continue end
+            activeModels[model] = true
+
+            local md = modelCache[model]
+            if not md or md.t + 0.5 < tick() then
+                local parts = {}
+                local head = nil
+                local hy = -math.huge
+                for _, part in ipairs(model:GetDescendants()) do
+                    if part:IsA("BasePart") and part.Transparency < 0.95 then
+                        parts[#parts + 1] = part
+                        if part.Position.Y > hy then
+                            hy = part.Position.Y
+                            head = part
+                        end
+                    end
+                end
+                md = { p = parts, h = head, t = tick() }
+                modelCache[model] = md
+            end
+
+            local parts = md.p
+            local head = md.h
+            if #parts == 0 then
+                if espCache[model] then
+                    for _, v in pairs(espCache[model]) do v.Visible = false end
+                end
+                if chamCache[model] then chamCache[model].Enabled = false end
+                _G.PF_HeadPositions[model] = nil
+                continue
+            end
+
+            local centerPos = head and head.Position or parts[1].Position
+            _G.PF_HeadPositions[model] = centerPos
+            
+            local dist = myPos and (myPos - centerPos).Magnitude or 0
+            local inRange = dist < settings.MaxDistance
+
+            local isFriendly = false
+            if settings.TeamCheck then
+                isFriendly = teamMap[model] == true
+            end
+
+            local visible = true
+            if settings.VisibilityCheck and inRange and not isFriendly then
+                visible = isVisible(centerPos, model)
+            end
+            local currentColor = visible and settings.EnemyColor or settings.OccludedColor
+
+            local showChams = settings.Chams and inRange and (not settings.TeamCheck or not isFriendly)
+            if showChams then
+                local cham = getOrCreateCham(model)
+                if cham then
+                    cham.Enabled = true
+                    updateCham(cham, visible)
+                end
+            else
+                if chamCache[model] then chamCache[model].Enabled = false end
+            end
+
+            if isFriendly then
+                if espCache[model] then
+                    for _, v in pairs(espCache[model]) do v.Visible = false end
+                end
+                continue
+            end
+
+            local d = getOrCreateESP(model)
+
+            local mx, my, Mx, My = math.huge, math.huge, -math.huge, -math.huge
+            local mz = math.huge
+            local step = math.max(1, math.floor(#parts / 8))
+
+            for i = 1, #parts, step do
+                local part = parts[i]
+                local corners = getCorners(part.CFrame, part.Size)
+                for j = 1, 8 do
+                    local sp, on = Camera:WorldToViewportPoint(corners[j])
+                    if on then
+                        if sp.X < mx then mx = sp.X end
+                        if sp.Y < my then my = sp.Y end
+                        if sp.X > Mx then Mx = sp.X end
+                        if sp.Y > My then My = sp.Y end
+                        if sp.Z < mz then mz = sp.Z end
+                    end
+                end
+            end
+
+            if mx == math.huge then
+                if d.box then d.box.Visible = false end
+                if d.tracer then d.tracer.Visible = false end
+                if d.name then d.name.Visible = false end
+                if d.nameShadow then d.nameShadow.Visible = false end
+                continue
+            end
+
+            local cs = Camera:WorldToViewportPoint(centerPos)
+            local show = mz > 0 and inRange
+            local playerName = nameMap[model]
+
+            if d.box then
+                d.box.Visible = show
+                if show then
+                    d.box.Color = currentColor
+                    d.box.Thickness = settings.BoxThickness
+                    d.box.Position = Vector2.new(mx, my)
+                    d.box.Size = Vector2.new(Mx - mx, My - my)
+                end
+            end
+
+            if d.tracer then
+                d.tracer.Visible = show
+                if show then
+                    d.tracer.Color = currentColor
+                    d.tracer.Thickness = settings.TracerThickness
+                    d.tracer.From = Vector2.new(screenCX, tracerOriginY)
+                    d.tracer.To = Vector2.new(cs.X, cs.Y)
+                end
+            end
+
+            if d.name then
+                d.name.Visible = show
+                d.nameShadow.Visible = show
+                if show then
+                    local displayName = playerName or "Enemy"
+                    d.nameShadow.Color = Color3.new(0, 0, 0)
+                    d.nameShadow.Transparency = 0.5
+                    d.nameShadow.Size = settings.NameSize
+                    d.nameShadow.Position = Vector2.new(cs.X + 1, my - settings.NameSize - 3)
+                    d.nameShadow.Text = displayName
+                    
+                    d.name.Color = Color3.fromRGB(255, 255, 255)
+                    d.name.Size = settings.NameSize
+                    d.name.Position = Vector2.new(cs.X, my - settings.NameSize - 4)
+                    d.name.Text = displayName
+                end
+            end
+        end
+    end
+
+    for model, _ in pairs(espCache) do
+        if not activeModels[model] then
+            removeESP(model)
+            modelCache[model] = nil
+            nameMap[model] = nil
+            teamMap[model] = nil
+        end
+    end
+    for model, _ in pairs(modelCache) do
+        if not activeModels[model] then modelCache[model] = nil end
+    end
+    for model, _ in pairs(chamCache) do
+        if not activeModels[model] then removeCham(model) end
+    end
+end
+
+RunService.RenderStepped:Connect(updateESP)
