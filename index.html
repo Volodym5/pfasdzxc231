@@ -1,0 +1,2301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>Obsidian UI — v2</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300&display=swap" rel="stylesheet"/>
+<style>
+/* ─────────────────────────────────────────────────────────
+   RESET & TOKENS
+───────────────────────────────────────────────────────── */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+
+:root{
+  --bg0:#07070a;
+  --bg1:#0e0e12;
+  --bg2:#14141a;
+  --bg3:#1c1c24;
+  --bg4:#24242e;
+  --bg5:#2e2e3a;
+  --line:rgba(255,255,255,.055);
+  --line2:rgba(255,255,255,.10);
+  --line3:rgba(255,255,255,.16);
+  --text0:#eeeef2;
+  --text1:#9090a4;
+  --text2:#52526a;
+  --text3:#363648;
+  --a:       #d4a853;
+  --a2:      #b8893a;
+  --a3:      #8c6420;
+  --alo:     rgba(212,168,83,.10);
+  --amed:    rgba(212,168,83,.20);
+  --aglow:   rgba(212,168,83,.28);
+  --red:     #e0606a;
+  --green:   #50c888;
+  --blue:    #5a9ae0;
+  --purple:  #9b72e0;
+  --orange:  #e08a5a;
+  --cyan:    #50c8c8;
+  --sw:220px;
+  --sw-collapsed:60px;
+  --r:10px;
+  --r2:14px;
+  --font:'Syne',sans-serif;
+  --mono:'DM Mono',monospace;
+  --spring:cubic-bezier(.34,1.56,.64,1);
+  --out:cubic-bezier(.16,1,.3,1);
+  --ease:cubic-bezier(.4,0,.2,1);
+}
+
+html,body{height:100%;width:100%;overflow:hidden;background:var(--bg0);color:var(--text0);font-family:var(--font);font-size:14px;-webkit-font-smoothing:antialiased}
+
+/* Grain */
+body::after{content:'';position:fixed;inset:0;background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 512 512' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");opacity:.025;pointer-events:none;z-index:9999}
+
+/* ─────────────────────────────────────────────────────────
+   LAYOUT
+───────────────────────────────────────────────────────── */
+.shell{display:flex;height:100vh;width:100vw;overflow:hidden}
+
+/* ─────────────────────────────────────────────────────────
+   SIDEBAR
+───────────────────────────────────────────────────────── */
+.sidebar{
+  width:var(--sw);min-width:var(--sw);
+  background:var(--bg1);
+  border-right:1px solid var(--line);
+  display:flex;flex-direction:column;
+  transition:width .32s var(--out),min-width .32s var(--out);
+  position:relative;z-index:20;overflow:hidden;
+}
+
+.sidebar.collapsed{width:var(--sw-collapsed);min-width:var(--sw-collapsed)}
+
+/* Logo row */
+.sb-logo{
+  display:flex;align-items:center;gap:10px;
+  padding:22px 16px 20px;
+  border-bottom:1px solid var(--line);
+  flex-shrink:0;overflow:hidden;
+}
+
+.logo-gem{
+  width:32px;height:32px;min-width:32px;
+  background:var(--a);
+  border-radius:9px;
+  display:grid;place-items:center;
+  box-shadow:0 0 24px var(--aglow),inset 0 1px 0 rgba(255,255,255,.25);
+  cursor:pointer;transition:box-shadow .2s,transform .2s;
+}
+.logo-gem:hover{box-shadow:0 0 36px var(--aglow),inset 0 1px 0 rgba(255,255,255,.25);transform:scale(1.06)}
+
+.logo-text-wrap{flex:1;min-width:0;overflow:hidden;white-space:nowrap}
+.logo-name{font-size:15px;font-weight:800;letter-spacing:-.01em;color:var(--text0);opacity:1;transition:opacity .2s}
+.logo-ver{font-size:9.5px;font-weight:500;letter-spacing:.16em;text-transform:uppercase;color:var(--text2);font-family:var(--mono);margin-top:1px}
+.sidebar.collapsed .logo-text-wrap{opacity:0;pointer-events:none}
+
+.collapse-btn{
+  width:26px;height:26px;min-width:26px;
+  background:transparent;border:none;cursor:pointer;
+  border-radius:6px;color:var(--text2);
+  display:grid;place-items:center;
+  transition:background .15s,color .15s,transform .32s var(--out);
+  flex-shrink:0;
+}
+.collapse-btn:hover{background:var(--bg3);color:var(--text0)}
+.sidebar.collapsed .collapse-btn{transform:rotate(180deg)}
+
+/* Sidebar search */
+.sb-search{padding:12px 12px;border-bottom:1px solid var(--line);flex-shrink:0;overflow:hidden}
+
+.sb-search-inner{
+  display:flex;align-items:center;gap:8px;
+  background:var(--bg2);
+  border:1px solid var(--line);
+  border-radius:8px;
+  padding:7px 10px;
+  cursor:pointer;
+  transition:border-color .2s,background .2s;
+  white-space:nowrap;overflow:hidden;
+}
+.sb-search-inner:hover{border-color:var(--line2);background:var(--bg3)}
+
+.sb-search-icon{color:var(--text2);flex-shrink:0}
+.sb-search-text{font-size:12.5px;color:var(--text2);font-family:var(--mono);flex:1;transition:opacity .2s}
+.sb-search-kbd{font-size:9px;font-family:var(--mono);color:var(--text3);background:var(--bg3);border:1px solid var(--line2);padding:2px 5px;border-radius:4px;flex-shrink:0;transition:opacity .2s}
+.sidebar.collapsed .sb-search-text,.sidebar.collapsed .sb-search-kbd{opacity:0;width:0;overflow:hidden}
+
+/* Nav */
+.sb-nav{flex:1;overflow-y:auto;overflow-x:hidden;padding:12px 10px;scrollbar-width:none}
+.sb-nav::-webkit-scrollbar{display:none}
+
+.sb-section{font-size:8.5px;font-weight:700;letter-spacing:.2em;text-transform:uppercase;color:var(--text3);font-family:var(--mono);padding:0 8px;margin:16px 0 5px;white-space:nowrap;overflow:hidden;transition:opacity .2s}
+.sb-section:first-child{margin-top:4px}
+.sidebar.collapsed .sb-section{opacity:0}
+
+.nav-item{
+  display:flex;align-items:center;gap:10px;
+  padding:8.5px 9px;
+  border-radius:8px;
+  cursor:pointer;
+  color:var(--text1);font-size:13.5px;font-weight:500;letter-spacing:.01em;
+  position:relative;user-select:none;
+  transition:background .15s,color .15s;
+  white-space:nowrap;overflow:hidden;
+  margin-bottom:1px;
+}
+.nav-item:hover{background:var(--bg3);color:var(--text0)}
+.nav-item.active{background:var(--alo);color:var(--a)}
+.nav-item.active::before{
+  content:'';position:absolute;left:0;top:50%;transform:translateY(-50%);
+  width:2.5px;height:16px;background:var(--a);border-radius:0 2px 2px 0;
+  box-shadow:0 0 10px var(--aglow);
+}
+
+.nav-icon{width:16px;height:16px;display:grid;place-items:center;flex-shrink:0;opacity:.7;transition:opacity .15s}
+.nav-item.active .nav-icon,.nav-item:hover .nav-icon{opacity:1}
+
+.nav-label{flex:1;overflow:hidden;text-overflow:ellipsis;transition:opacity .2s,width .32s var(--out)}
+.sidebar.collapsed .nav-label{opacity:0;width:0}
+
+.nav-pill{
+  margin-left:auto;font-size:9.5px;font-family:var(--mono);font-weight:400;
+  background:var(--bg4);color:var(--text2);padding:2px 7px;border-radius:20px;
+  flex-shrink:0;transition:opacity .2s;
+}
+.sidebar.collapsed .nav-pill{opacity:0;width:0;padding:0;overflow:hidden}
+.nav-item.active .nav-pill{background:var(--alo);color:var(--a2)}
+
+/* Sidebar footer */
+.sb-footer{padding:12px 10px;border-top:1px solid var(--line);flex-shrink:0;overflow:hidden}
+
+.sb-footer-top{display:flex;align-items:center;gap:9px;margin-bottom:10px;overflow:hidden}
+.sb-avatar{
+  width:32px;height:32px;min-width:32px;
+  border-radius:50%;
+  background:linear-gradient(135deg,var(--a),var(--purple));
+  display:grid;place-items:center;
+  font-size:12px;font-weight:700;color:var(--bg0);
+  position:relative;flex-shrink:0;
+}
+.sb-avatar::after{
+  content:'';position:absolute;bottom:0;right:0;
+  width:9px;height:9px;background:var(--green);
+  border-radius:50%;border:2px solid var(--bg1);
+  box-shadow:0 0 6px rgba(80,200,136,.5);
+}
+.sb-user{flex:1;min-width:0;overflow:hidden;white-space:nowrap;transition:opacity .2s}
+.sb-name{font-size:12.5px;font-weight:600;color:var(--text0)}
+.sb-role{font-size:10px;color:var(--text2);font-family:var(--mono)}
+.sidebar.collapsed .sb-user{opacity:0;width:0}
+
+.sb-actions{display:flex;gap:6px;overflow:hidden;transition:opacity .2s;flex-shrink:0}
+.sidebar.collapsed .sb-actions{opacity:0;width:0;overflow:hidden}
+
+.ib{width:26px;height:26px;border-radius:6px;background:transparent;border:none;cursor:pointer;display:grid;place-items:center;color:var(--text2);transition:background .15s,color .15s}
+.ib:hover{background:var(--bg3);color:var(--text0)}
+
+/* Accent swatches */
+.accent-row{display:flex;gap:6px;padding:0 2px;overflow:hidden;transition:opacity .2s}
+.sidebar.collapsed .accent-row{opacity:0}
+.accent-dot{
+  width:14px;height:14px;border-radius:50%;cursor:pointer;
+  transition:transform .15s var(--spring),box-shadow .15s;
+  border:2px solid transparent;
+}
+.accent-dot:hover{transform:scale(1.2)}
+.accent-dot.active{border-color:rgba(255,255,255,.5);box-shadow:0 0 8px currentColor}
+
+/* ─────────────────────────────────────────────────────────
+   MAIN PANEL
+───────────────────────────────────────────────────────── */
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden;position:relative}
+
+/* Topbar */
+.topbar{
+  display:flex;align-items:center;gap:12px;
+  padding:16px 32px;
+  background:rgba(7,7,10,.7);
+  backdrop-filter:blur(20px);
+  -webkit-backdrop-filter:blur(20px);
+  border-bottom:1px solid var(--line);
+  flex-shrink:0;position:relative;z-index:10;
+}
+
+.breadcrumb{display:flex;align-items:center;gap:6px;flex:1}
+.breadcrumb-root{font-size:12px;color:var(--text2);font-family:var(--mono);cursor:pointer;transition:color .15s}
+.breadcrumb-root:hover{color:var(--text1)}
+.breadcrumb-sep{color:var(--text3);font-size:12px}
+.breadcrumb-cur{font-size:16px;font-weight:800;letter-spacing:-.02em;color:var(--text0)}
+.page-chip{
+  font-size:9.5px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--a);font-family:var(--mono);background:var(--alo);
+  padding:3px 9px;border-radius:20px;border:1px solid var(--amed);
+  margin-left:4px;
+}
+
+.topbar-right{display:flex;align-items:center;gap:8px}
+
+.cmd-btn{
+  display:flex;align-items:center;gap:7px;
+  padding:6px 12px;background:var(--bg2);border:1px solid var(--line2);
+  border-radius:8px;cursor:pointer;color:var(--text2);
+  font-size:12px;font-family:var(--mono);
+  transition:all .15s;
+}
+.cmd-btn:hover{background:var(--bg3);color:var(--text1);border-color:var(--line3)}
+.cmd-btn kbd{background:var(--bg4);border:1px solid var(--line2);border-radius:4px;padding:1px 5px;font-size:10px}
+
+.notif-btn{
+  width:34px;height:34px;border-radius:9px;background:var(--bg2);
+  border:1px solid var(--line);cursor:pointer;
+  display:grid;place-items:center;color:var(--text1);
+  position:relative;transition:all .15s;
+}
+.notif-btn:hover{background:var(--bg3);border-color:var(--line2);color:var(--text0)}
+.notif-badge{
+  position:absolute;top:-3px;right:-3px;
+  width:16px;height:16px;background:var(--red);border-radius:50%;
+  font-size:8px;font-weight:700;color:white;font-family:var(--mono);
+  display:grid;place-items:center;border:2px solid var(--bg1);
+}
+
+/* ─────────────────────────────────────────────────────────
+   NOTIFICATION POPOVER
+───────────────────────────────────────────────────────── */
+.notif-popover{
+  position:absolute;top:calc(100% + 8px);right:32px;
+  width:340px;
+  background:var(--bg2);border:1px solid var(--line2);
+  border-radius:14px;
+  box-shadow:0 20px 60px rgba(0,0,0,.6),0 4px 16px rgba(0,0,0,.3);
+  z-index:50;
+  opacity:0;transform:translateY(-8px) scale(.97);
+  pointer-events:none;transition:opacity .2s var(--out),transform .2s var(--out);
+  overflow:hidden;
+}
+.notif-popover.open{opacity:1;transform:translateY(0) scale(1);pointer-events:all}
+
+.notif-head{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:14px 16px 12px;border-bottom:1px solid var(--line);
+}
+.notif-head-title{font-size:13px;font-weight:700;color:var(--text0)}
+.mark-read{font-size:11px;font-family:var(--mono);color:var(--a);cursor:pointer;transition:color .15s}
+.mark-read:hover{color:var(--a2)}
+
+.notif-list{max-height:320px;overflow-y:auto;scrollbar-width:none}
+.notif-list::-webkit-scrollbar{display:none}
+
+.notif-item{
+  display:flex;align-items:flex-start;gap:11px;
+  padding:12px 16px;border-bottom:1px solid var(--line);
+  transition:background .15s;cursor:pointer;position:relative;
+}
+.notif-item:last-child{border-bottom:none}
+.notif-item:hover{background:var(--bg3)}
+.notif-item.unread::after{
+  content:'';position:absolute;top:50%;right:14px;transform:translateY(-50%);
+  width:6px;height:6px;border-radius:50%;background:var(--a);
+  box-shadow:0 0 6px var(--aglow);
+}
+.notif-icon{
+  width:30px;height:30px;border-radius:8px;
+  display:grid;place-items:center;flex-shrink:0;font-size:13px;
+}
+.ni-green{background:rgba(80,200,136,.12);color:var(--green)}
+.ni-red{background:rgba(224,96,106,.12);color:var(--red)}
+.ni-blue{background:rgba(90,154,224,.12);color:var(--blue)}
+.ni-gold{background:var(--alo);color:var(--a)}
+.notif-body{flex:1;min-width:0}
+.notif-title{font-size:12.5px;font-weight:500;color:var(--text0);margin-bottom:2px}
+.notif-sub{font-size:11px;color:var(--text2);font-family:var(--mono);line-height:1.4}
+
+.notif-footer{padding:10px 16px;display:flex;justify-content:center}
+.notif-footer a{font-size:12px;font-family:var(--mono);color:var(--text2);cursor:pointer;transition:color .15s}
+.notif-footer a:hover{color:var(--a)}
+
+/* ─────────────────────────────────────────────────────────
+   CONTENT SCROLL AREA
+───────────────────────────────────────────────────────── */
+.content-scroll{
+  flex:1;overflow-y:auto;overflow-x:hidden;
+  scrollbar-width:thin;scrollbar-color:var(--bg4) transparent;
+}
+.content-scroll::-webkit-scrollbar{width:4px}
+.content-scroll::-webkit-scrollbar-thumb{background:var(--bg4);border-radius:2px}
+
+.tab-panel{display:none}
+.tab-panel.active{display:block}
+
+/* ─────────────────────────────────────────────────────────
+   SECTION + CARDS
+───────────────────────────────────────────────────────── */
+.page-body{padding:28px 32px 60px}
+.section-label{
+  font-size:9px;font-weight:700;letter-spacing:.2em;text-transform:uppercase;
+  color:var(--text3);font-family:var(--mono);margin-bottom:12px;
+}
+
+.card{
+  background:var(--bg1);border:1px solid var(--line);
+  border-radius:var(--r2);padding:22px 24px;
+  transition:border-color .25s,box-shadow .25s,transform .25s var(--out);
+  position:relative;overflow:hidden;
+}
+.card::before{
+  content:'';position:absolute;inset:0;
+  background:radial-gradient(circle at 0% 0%,rgba(255,255,255,.012),transparent 60%);
+  pointer-events:none;
+}
+.card:hover{border-color:var(--line2);transform:translateY(-1px);box-shadow:0 8px 32px rgba(0,0,0,.25)}
+
+.card-h{font-size:13.5px;font-weight:700;color:var(--text0);letter-spacing:-.01em;margin-bottom:3px}
+.card-s{font-size:11.5px;color:var(--text2);font-family:var(--mono);margin-bottom:20px;line-height:1.4}
+
+/* Stagger */
+.stagger>*{opacity:0;transform:translateY(12px);animation:staggerIn .4s var(--out) forwards}
+.stagger>*:nth-child(1){animation-delay:.04s}
+.stagger>*:nth-child(2){animation-delay:.09s}
+.stagger>*:nth-child(3){animation-delay:.14s}
+.stagger>*:nth-child(4){animation-delay:.19s}
+.stagger>*:nth-child(5){animation-delay:.24s}
+.stagger>*:nth-child(6){animation-delay:.29s}
+.stagger>*:nth-child(7){animation-delay:.34s}
+.stagger>*:nth-child(8){animation-delay:.39s}
+
+@keyframes staggerIn{to{opacity:1;transform:none}}
+
+/* Grid helpers */
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px}
+.g4{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+.gspan2{grid-column:span 2}
+
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.col{display:flex;flex-direction:column;gap:10px}
+.divider{height:1px;background:var(--line);margin:4px 0}
+.spacer{height:20px}
+
+/* ─────────────────────────────────────────────────────────
+   DASHBOARD — STAT CARDS
+───────────────────────────────────────────────────────── */
+.stat-card{
+  background:var(--bg1);border:1px solid var(--line);
+  border-radius:var(--r2);padding:18px 20px 16px;
+  transition:border-color .2s,transform .2s var(--out),box-shadow .2s;
+  overflow:hidden;position:relative;cursor:default;
+}
+.stat-card::after{
+  content:'';position:absolute;inset:0;
+  background:radial-gradient(circle at top left,rgba(255,255,255,.03),transparent 55%);
+  pointer-events:none;
+}
+.stat-card:hover{border-color:var(--line2);transform:translateY(-2px);box-shadow:0 10px 36px rgba(0,0,0,.3)}
+
+.stat-lbl{font-size:9.5px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--text2);font-family:var(--mono);margin-bottom:10px}
+.stat-num{font-size:28px;font-weight:800;letter-spacing:-.04em;color:var(--text0);line-height:1;margin-bottom:6px}
+.stat-delta{font-size:11px;font-family:var(--mono);display:flex;align-items:center;gap:4px;margin-bottom:12px}
+.up{color:var(--green)}.down{color:var(--red)}
+.stat-spark{width:100%;height:36px;overflow:visible}
+
+/* ─────────────────────────────────────────────────────────
+   DASHBOARD — AREA CHART
+───────────────────────────────────────────────────────── */
+.chart-wrap{position:relative}
+.chart-svg{width:100%;height:160px;overflow:visible}
+.chart-line{fill:none;stroke:var(--a);stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.chart-area{fill:url(#areaGrad);opacity:.5}
+.chart-dot{fill:var(--a);r:3;transition:r .15s}
+.chart-dot:hover{r:5}
+.chart-x-labels{display:flex;justify-content:space-between;padding:6px 2px 0;font-size:10px;font-family:var(--mono);color:var(--text2)}
+
+/* animated draw */
+.chart-line{
+  stroke-dasharray:1200;
+  stroke-dashoffset:1200;
+  animation:drawLine 1.4s var(--out) .2s forwards;
+}
+@keyframes drawLine{to{stroke-dashoffset:0}}
+
+/* ─────────────────────────────────────────────────────────
+   ACTIVITY FEED
+───────────────────────────────────────────────────────── */
+.feed-item{display:flex;gap:12px;padding:11px 0;border-bottom:1px solid var(--line);position:relative}
+.feed-item:last-child{border-bottom:none}
+.feed-dot{
+  width:28px;height:28px;min-width:28px;border-radius:8px;
+  display:grid;place-items:center;font-size:11px;flex-shrink:0;margin-top:1px;
+}
+.fd-green{background:rgba(80,200,136,.1);color:var(--green)}
+.fd-gold{background:var(--alo);color:var(--a)}
+.fd-red{background:rgba(224,96,106,.1);color:var(--red)}
+.fd-blue{background:rgba(90,154,224,.1);color:var(--blue)}
+.fd-purple{background:rgba(155,114,224,.1);color:var(--purple)}
+.feed-body{flex:1;min-width:0}
+.feed-msg{font-size:12.5px;color:var(--text1);line-height:1.45}
+.feed-msg b{color:var(--text0);font-weight:600}
+.feed-time{font-size:10px;font-family:var(--mono);color:var(--text2);margin-top:3px}
+
+/* ─────────────────────────────────────────────────────────
+   PROGRESS RINGS
+───────────────────────────────────────────────────────── */
+.ring-card{display:flex;flex-direction:column;align-items:center;gap:12px;padding:24px 16px;text-align:center}
+.ring-svg{width:80px;height:80px;transform:rotate(-90deg)}
+.ring-bg{fill:none;stroke:var(--bg4);stroke-width:7}
+.ring-fill{fill:none;stroke-width:7;stroke-linecap:round;transition:stroke-dashoffset .8s var(--out)}
+.ring-label{font-size:12px;font-weight:600;color:var(--text1)}
+.ring-val{font-size:11px;font-family:var(--mono);color:var(--text2);margin-top:1px}
+
+/* ─────────────────────────────────────────────────────────
+   BUTTONS
+───────────────────────────────────────────────────────── */
+.btn{
+  display:inline-flex;align-items:center;gap:7px;
+  padding:9px 18px;border-radius:9px;
+  font-family:var(--font);font-size:13px;font-weight:600;
+  cursor:pointer;border:none;letter-spacing:.01em;
+  white-space:nowrap;position:relative;overflow:hidden;user-select:none;
+  transition:transform .18s var(--spring),box-shadow .18s,filter .18s;
+}
+.btn::after{content:'';position:absolute;inset:0;background:white;opacity:0;transition:opacity .15s}
+.btn:hover::after{opacity:.055}
+.btn:active{transform:scale(.96)!important}
+
+/* Shimmer sweep */
+.btn-primary::before{
+  content:'';position:absolute;top:0;left:-100%;width:60%;height:100%;
+  background:linear-gradient(to right,transparent,rgba(255,255,255,.18),transparent);
+  transition:left .5s;
+}
+.btn-primary:hover::before{left:140%}
+
+.btn-primary{
+  background:linear-gradient(135deg,var(--a),var(--a2));
+  color:var(--bg0);
+  box-shadow:0 0 24px var(--aglow),inset 0 1px 0 rgba(255,255,255,.22);
+}
+.btn-primary:hover{box-shadow:0 0 36px var(--aglow),inset 0 1px 0 rgba(255,255,255,.22);transform:translateY(-1px)}
+
+.btn-secondary{background:var(--bg3);color:var(--text0);box-shadow:inset 0 0 0 1px var(--line2)}
+.btn-secondary:hover{background:var(--bg4)}
+
+.btn-ghost{background:transparent;color:var(--text1)}
+.btn-ghost:hover{background:var(--bg2);color:var(--text0)}
+
+.btn-danger{background:rgba(224,96,106,.12);color:var(--red);box-shadow:inset 0 0 0 1px rgba(224,96,106,.22)}
+.btn-danger:hover{background:rgba(224,96,106,.22)}
+
+.btn-success{background:rgba(80,200,136,.12);color:var(--green);box-shadow:inset 0 0 0 1px rgba(80,200,136,.22)}
+.btn-success:hover{background:rgba(80,200,136,.22)}
+
+.btn-sm{padding:6px 13px;font-size:12px;border-radius:7px}
+.btn-lg{padding:12px 26px;font-size:15px;border-radius:11px}
+.btn-icon{padding:9px;aspect-ratio:1/1}
+.btn[disabled]{opacity:.3;cursor:not-allowed;pointer-events:none}
+@keyframes spin{to{transform:rotate(360deg)}}
+.spinner{width:13px;height:13px;border:2px solid rgba(0,0,0,.2);border-top-color:var(--bg0);border-radius:50%;animation:spin .7s linear infinite;flex-shrink:0}
+
+/* ─────────────────────────────────────────────────────────
+   TOGGLES
+───────────────────────────────────────────────────────── */
+.toggle-row{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:12px 0;border-bottom:1px solid var(--line);
+}
+.toggle-row:last-child{border-bottom:none;padding-bottom:0}
+.toggle-info{flex:1;margin-right:16px}
+.toggle-name{font-size:13px;font-weight:500;color:var(--text0);margin-bottom:2px}
+.toggle-desc{font-size:11.5px;color:var(--text2);font-family:var(--mono);line-height:1.4}
+
+.toggle{
+  width:44px;height:25px;border-radius:13px;
+  background:var(--bg4);border:none;
+  appearance:none;-webkit-appearance:none;
+  cursor:pointer;position:relative;flex-shrink:0;
+  transition:background .25s;outline:none;
+  box-shadow:inset 0 1px 3px rgba(0,0,0,.4);
+}
+.toggle::after{
+  content:'';position:absolute;
+  width:19px;height:19px;background:var(--text2);
+  border-radius:50%;top:3px;left:3px;
+  transition:left .25s var(--spring),background .25s,box-shadow .25s;
+  box-shadow:0 1px 4px rgba(0,0,0,.4);
+}
+.toggle:checked{background:var(--a);box-shadow:0 0 14px var(--aglow)}
+.toggle:checked::after{left:22px;background:var(--bg0);box-shadow:0 1px 4px rgba(0,0,0,.6)}
+
+/* ─────────────────────────────────────────────────────────
+   SLIDER
+───────────────────────────────────────────────────────── */
+.slider-wrap{display:flex;flex-direction:column;gap:8px}
+.slider-head{display:flex;justify-content:space-between}
+.slider-name{font-size:12.5px;font-weight:500;color:var(--text1)}
+.slider-val{font-size:12px;font-family:var(--mono);color:var(--a)}
+
+input[type=range]{
+  -webkit-appearance:none;appearance:none;
+  width:100%;height:4px;border-radius:2px;
+  background:var(--bg4);outline:none;cursor:pointer;
+}
+input[type=range]::-webkit-slider-thumb{
+  -webkit-appearance:none;
+  width:18px;height:18px;border-radius:50%;
+  background:var(--a);margin-top:-7px;
+  box-shadow:0 0 12px var(--aglow),0 1px 4px rgba(0,0,0,.5);
+  transition:transform .15s var(--spring),box-shadow .15s;
+}
+input[type=range]:hover::-webkit-slider-thumb{transform:scale(1.22);box-shadow:0 0 20px var(--aglow)}
+input[type=range]::-moz-range-thumb{width:18px;height:18px;border-radius:50%;background:var(--a);border:none;box-shadow:0 0 12px var(--aglow)}
+
+/* ─────────────────────────────────────────────────────────
+   PROGRESS BARS
+───────────────────────────────────────────────────────── */
+.pbar-wrap{display:flex;flex-direction:column;gap:7px}
+.pbar-head{display:flex;justify-content:space-between;font-size:12px}
+.pbar-name{color:var(--text1);font-weight:500}
+.pbar-val{font-family:var(--mono);color:var(--text2)}
+.pbar-bg{height:5px;background:var(--bg4);border-radius:3px;overflow:hidden}
+.pbar-fill{height:100%;border-radius:3px;position:relative;transition:width .7s var(--out)}
+.pbar-fill::after{content:'';position:absolute;right:0;top:0;bottom:0;width:28px;background:linear-gradient(to right,transparent,rgba(255,255,255,.28));border-radius:0 3px 3px 0}
+.pf-gold{background:linear-gradient(to right,var(--a3),var(--a))}
+.pf-blue{background:linear-gradient(to right,#3a70c0,var(--blue))}
+.pf-green{background:linear-gradient(to right,#3da46b,var(--green))}
+.pf-purple{background:linear-gradient(to right,#7255bf,var(--purple))}
+.pf-red{background:linear-gradient(to right,#c03a48,var(--red))}
+
+/* ─────────────────────────────────────────────────────────
+   INPUTS
+───────────────────────────────────────────────────────── */
+.inp-group{display:flex;flex-direction:column;gap:6px}
+.inp-label{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--text2);font-family:var(--mono)}
+.inp{
+  background:var(--bg2);border:1px solid var(--line);
+  border-radius:9px;padding:10px 14px;
+  color:var(--text0);font-family:var(--font);font-size:13.5px;
+  outline:none;width:100%;transition:border-color .2s,box-shadow .2s,background .2s;
+}
+.inp::placeholder{color:var(--text3)}
+.inp:hover:not(:focus){border-color:var(--line2)}
+.inp:focus{border-color:var(--a);box-shadow:0 0 0 3px var(--alo),0 0 0 1px var(--a);background:var(--bg3)}
+
+.inp-row{
+  display:flex;background:var(--bg2);border:1px solid var(--line);
+  border-radius:9px;overflow:hidden;transition:border-color .2s,box-shadow .2s;
+}
+.inp-row:focus-within{border-color:var(--a);box-shadow:0 0 0 3px var(--alo)}
+.inp-prefix{
+  padding:10px 12px;background:var(--bg3);color:var(--text2);
+  font-family:var(--mono);font-size:12px;border-right:1px solid var(--line);
+  display:flex;align-items:center;white-space:nowrap;
+}
+.inp-row input{flex:1;background:transparent;border:none;padding:10px 14px;color:var(--text0);font-family:var(--font);font-size:13.5px;outline:none}
+
+select.inp{appearance:none;background-image:url("data:image/svg+xml,%3Csvg width='12' height='8' viewBox='0 0 12 8' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1L6 7L11 1' stroke='%2352526a' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 14px center;padding-right:38px;cursor:pointer}
+textarea.inp{resize:vertical;min-height:80px;font-family:var(--mono);font-size:12.5px;line-height:1.6}
+
+/* ─────────────────────────────────────────────────────────
+   CHECKBOX
+───────────────────────────────────────────────────────── */
+.cb-wrap{display:flex;align-items:center;gap:10px;cursor:pointer;user-select:none}
+.cb{
+  width:18px;height:18px;border-radius:5px;border:1.5px solid var(--bg5);
+  background:var(--bg2);appearance:none;-webkit-appearance:none;cursor:pointer;
+  transition:all .2s;flex-shrink:0;display:grid;place-items:center;outline:none;
+}
+.cb:checked{background:var(--a);border-color:var(--a);box-shadow:0 0 10px var(--aglow)}
+.cb:checked::after{content:'';width:9px;height:5px;border-left:2px solid var(--bg0);border-bottom:2px solid var(--bg0);transform:rotate(-45deg) translateY(-1px);display:block}
+.cb-label{font-size:13px;font-weight:500;color:var(--text1)}
+
+/* ─────────────────────────────────────────────────────────
+   RADIO
+───────────────────────────────────────────────────────── */
+.radio-group{display:flex;flex-direction:column;gap:8px}
+.radio-item{
+  display:flex;align-items:center;gap:12px;
+  padding:12px 16px;border-radius:10px;border:1px solid var(--line);
+  cursor:pointer;transition:border-color .2s,background .2s;user-select:none;
+}
+.radio-item:hover{background:var(--bg2);border-color:var(--line2)}
+.radio-item.sel{border-color:var(--a);background:var(--alo)}
+.radio-dot{
+  width:17px;height:17px;border-radius:50%;border:2px solid var(--bg5);
+  background:var(--bg3);flex-shrink:0;display:grid;place-items:center;transition:all .2s;
+}
+.radio-item.sel .radio-dot{border-color:var(--a);background:var(--a)}
+.radio-item.sel .radio-dot::after{content:'';width:5px;height:5px;border-radius:50%;background:var(--bg0)}
+.radio-name{font-size:13px;font-weight:500;color:var(--text1)}
+.radio-item.sel .radio-name{color:var(--a)}
+.radio-desc{font-size:11px;font-family:var(--mono);color:var(--text2);margin-top:1px}
+
+/* ─────────────────────────────────────────────────────────
+   BADGES, TAGS, CHIPS
+───────────────────────────────────────────────────────── */
+.badge{
+  display:inline-flex;align-items:center;gap:5px;
+  padding:3px 9px;border-radius:20px;font-size:10.5px;font-weight:600;
+  font-family:var(--mono);letter-spacing:.04em;
+}
+.b-dot{width:5px;height:5px;border-radius:50%;flex-shrink:0}
+.bg{background:rgba(80,200,136,.1);color:var(--green);border:1px solid rgba(80,200,136,.18)}
+.ba{background:var(--alo);color:var(--a);border:1px solid var(--amed)}
+.bb{background:rgba(90,154,224,.1);color:var(--blue);border:1px solid rgba(90,154,224,.18)}
+.br{background:rgba(224,96,106,.1);color:var(--red);border:1px solid rgba(224,96,106,.18)}
+.bp{background:rgba(155,114,224,.1);color:var(--purple);border:1px solid rgba(155,114,224,.18)}
+
+.tag{
+  display:inline-flex;align-items:center;gap:6px;
+  padding:4px 10px;border-radius:6px;font-size:11.5px;font-weight:500;
+  font-family:var(--mono);background:var(--bg3);color:var(--text1);
+  border:1px solid var(--line);cursor:default;transition:all .15s;user-select:none;
+}
+.tag:hover{background:var(--bg4);color:var(--text0)}
+.tag-x{
+  width:13px;height:13px;border-radius:50%;background:var(--text2);color:var(--bg0);
+  font-size:8px;display:grid;place-items:center;cursor:pointer;transition:background .15s;
+}
+.tag-x:hover{background:var(--red)}
+
+.chip-group{display:flex;gap:7px;flex-wrap:wrap}
+.chip{
+  padding:6px 14px;border-radius:20px;font-size:12.5px;font-weight:500;
+  cursor:pointer;transition:all .2s;border:1px solid var(--line);
+  background:var(--bg2);color:var(--text1);user-select:none;
+}
+.chip:hover{border-color:var(--line2);color:var(--text0)}
+.chip.on{border-color:var(--a);background:var(--alo);color:var(--a)}
+
+/* ─────────────────────────────────────────────────────────
+   ALERTS
+───────────────────────────────────────────────────────── */
+.alert{display:flex;gap:12px;padding:13px 16px;border-radius:10px;font-size:13px}
+.alert-icon{font-size:15px;flex-shrink:0;margin-top:1px}
+.alert-body{flex:1}
+.alert-title{font-weight:600;margin-bottom:2px}
+.alert-msg{font-size:11.5px;opacity:.8;font-family:var(--mono);line-height:1.45}
+.ai{background:rgba(90,154,224,.08);border:1px solid rgba(90,154,224,.18);color:var(--blue)}
+.aw{background:rgba(212,168,83,.08);border:1px solid var(--amed);color:var(--a)}
+.ae{background:rgba(224,96,106,.08);border:1px solid rgba(224,96,106,.18);color:var(--red)}
+.as{background:rgba(80,200,136,.08);border:1px solid rgba(80,200,136,.18);color:var(--green)}
+
+/* ─────────────────────────────────────────────────────────
+   TABLE
+───────────────────────────────────────────────────────── */
+.tbl{width:100%;border-collapse:collapse;font-size:13px}
+.tbl th{
+  text-align:left;padding:10px 16px;
+  font-size:9.5px;font-weight:700;letter-spacing:.15em;text-transform:uppercase;
+  color:var(--text2);font-family:var(--mono);border-bottom:1px solid var(--line);
+}
+.tbl td{
+  padding:12px 16px;border-bottom:1px solid var(--line);
+  color:var(--text1);transition:background .15s;
+}
+.tbl tr:last-child td{border-bottom:none}
+.tbl tbody tr:hover td{background:var(--bg2);color:var(--text0)}
+.tbl td:first-child{color:var(--text0);font-weight:500}
+.tbl .mono{font-family:var(--mono);font-size:11.5px;color:var(--text2)}
+
+/* ─────────────────────────────────────────────────────────
+   DROPDOWN
+───────────────────────────────────────────────────────── */
+.dd-wrap{position:relative;display:inline-block}
+.dd-menu{
+  position:absolute;top:calc(100% + 6px);left:0;
+  background:var(--bg2);border:1px solid var(--line2);
+  border-radius:12px;padding:6px;min-width:185px;z-index:50;
+  box-shadow:0 20px 60px rgba(0,0,0,.55),0 4px 12px rgba(0,0,0,.3);
+  opacity:0;transform:translateY(-6px) scale(.97);pointer-events:none;
+  transition:opacity .18s var(--out),transform .18s var(--out);
+  overflow:hidden;
+}
+.dd-wrap.open .dd-menu{opacity:1;transform:translateY(0) scale(1);pointer-events:all}
+.dd-item{
+  padding:8px 12px;border-radius:7px;font-size:13px;color:var(--text1);
+  cursor:pointer;transition:background .15s,color .15s;
+  display:flex;align-items:center;gap:9px;
+}
+.dd-item:hover{background:var(--bg4);color:var(--text0)}
+.dd-item.danger{color:var(--red)}
+.dd-item.danger:hover{background:rgba(224,96,106,.1)}
+.dd-divider{height:1px;background:var(--line);margin:4px 0}
+
+/* Tooltip */
+.tt{position:relative;display:inline-flex}
+.tt::after{
+  content:attr(data-tip);position:absolute;bottom:calc(100% + 8px);
+  left:50%;transform:translateX(-50%) translateY(4px);
+  background:var(--bg4);color:var(--text0);font-size:11.5px;font-family:var(--mono);
+  padding:6px 10px;border-radius:7px;white-space:nowrap;
+  pointer-events:none;opacity:0;transition:opacity .15s,transform .15s;
+  border:1px solid var(--line2);z-index:100;box-shadow:0 4px 16px rgba(0,0,0,.4);
+}
+.tt:hover::after{opacity:1;transform:translateX(-50%) translateY(0)}
+
+/* ─────────────────────────────────────────────────────────
+   UPLOAD ZONE
+───────────────────────────────────────────────────────── */
+.upload-zone{
+  border:2px dashed var(--line2);border-radius:12px;
+  padding:36px 24px;text-align:center;cursor:pointer;
+  transition:border-color .2s,background .2s;
+  display:flex;flex-direction:column;align-items:center;gap:10px;
+}
+.upload-zone:hover,.upload-zone.drag{border-color:var(--a);background:var(--alo)}
+.upload-icon{font-size:28px;opacity:.5}
+.upload-title{font-size:13.5px;font-weight:600;color:var(--text0)}
+.upload-sub{font-size:12px;color:var(--text2);font-family:var(--mono)}
+
+/* ─────────────────────────────────────────────────────────
+   CODE BLOCK
+───────────────────────────────────────────────────────── */
+.code-wrap{position:relative}
+.code-block{
+  background:var(--bg0);border:1px solid var(--line);border-radius:10px;
+  padding:16px 20px;font-family:var(--mono);font-size:12px;
+  color:var(--text1);line-height:1.65;overflow-x:auto;
+}
+.code-block .kw{color:var(--purple)}
+.code-block .str{color:var(--green)}
+.code-block .num{color:var(--a)}
+.code-block .fn{color:var(--blue)}
+.code-block .cmt{color:var(--text3);font-style:italic}
+.code-block .type{color:var(--cyan)}
+.copy-btn{
+  position:absolute;top:10px;right:10px;
+  padding:4px 10px;border-radius:6px;font-size:10.5px;
+  font-family:var(--mono);background:var(--bg3);border:1px solid var(--line2);
+  color:var(--text2);cursor:pointer;transition:all .15s;
+}
+.copy-btn:hover{background:var(--bg4);color:var(--text0)}
+
+/* ─────────────────────────────────────────────────────────
+   KBD
+───────────────────────────────────────────────────────── */
+kbd{
+  display:inline-flex;align-items:center;justify-content:center;
+  padding:2px 7px;background:var(--bg3);border:1px solid var(--line2);
+  border-bottom-width:2px;border-radius:5px;
+  font-family:var(--mono);font-size:10.5px;color:var(--text1);line-height:1.6;
+}
+
+/* ─────────────────────────────────────────────────────────
+   STEP PROGRESS
+───────────────────────────────────────────────────────── */
+.steps{display:flex;align-items:center;gap:0}
+.step{display:flex;align-items:center;gap:0;flex:1}
+.step-dot{
+  width:28px;height:28px;border-radius:50%;
+  display:grid;place-items:center;font-size:11px;font-weight:700;
+  font-family:var(--mono);flex-shrink:0;transition:all .2s;border:2px solid var(--bg4);
+  background:var(--bg2);color:var(--text2);
+}
+.step.done .step-dot{background:var(--a);border-color:var(--a);color:var(--bg0);box-shadow:0 0 14px var(--aglow)}
+.step.active .step-dot{border-color:var(--a);color:var(--a);background:var(--alo)}
+.step-line{flex:1;height:2px;background:var(--bg4);margin:0 -1px;transition:background .4s}
+.step.done+.step .step-line,.step.done .step-line{background:var(--a)}
+
+/* ─────────────────────────────────────────────────────────
+   COMMAND PALETTE
+───────────────────────────────────────────────────────── */
+.cmd-overlay{
+  position:fixed;inset:0;z-index:200;
+  background:rgba(7,7,10,.75);
+  backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+  display:flex;align-items:flex-start;justify-content:center;
+  padding-top:15vh;
+  opacity:0;pointer-events:none;transition:opacity .2s;
+}
+.cmd-overlay.open{opacity:1;pointer-events:all}
+
+.cmd-box{
+  width:min(560px,90vw);
+  background:var(--bg2);border:1px solid var(--line3);
+  border-radius:16px;overflow:hidden;
+  box-shadow:0 32px 80px rgba(0,0,0,.7),0 0 0 1px rgba(255,255,255,.04);
+  transform:translateY(-16px) scale(.97);
+  transition:transform .22s var(--out);
+}
+.cmd-overlay.open .cmd-box{transform:translateY(0) scale(1)}
+
+.cmd-input-row{
+  display:flex;align-items:center;gap:12px;
+  padding:16px 18px;border-bottom:1px solid var(--line);
+}
+.cmd-search-icon{color:var(--text2);flex-shrink:0}
+.cmd-input{
+  flex:1;background:transparent;border:none;outline:none;
+  font-family:var(--font);font-size:15px;color:var(--text0);
+}
+.cmd-input::placeholder{color:var(--text3)}
+.cmd-esc{font-size:10px;font-family:var(--mono);color:var(--text2);background:var(--bg3);border:1px solid var(--line2);padding:2px 7px;border-radius:4px;cursor:pointer;flex-shrink:0}
+
+.cmd-results{max-height:380px;overflow-y:auto;padding:6px;scrollbar-width:none}
+.cmd-results::-webkit-scrollbar{display:none}
+
+.cmd-category{
+  font-size:9px;font-weight:700;letter-spacing:.2em;text-transform:uppercase;
+  color:var(--text3);font-family:var(--mono);padding:8px 12px 4px;
+}
+.cmd-result{
+  display:flex;align-items:center;gap:12px;
+  padding:9px 12px;border-radius:9px;cursor:pointer;
+  transition:background .1s;
+  font-size:13.5px;color:var(--text1);
+}
+.cmd-result:hover,.cmd-result.hi{background:var(--bg4);color:var(--text0)}
+.cmd-result.hi{background:var(--alo);color:var(--a)}
+.cmd-result-icon{
+  width:28px;height:28px;border-radius:7px;background:var(--bg3);
+  display:grid;place-items:center;flex-shrink:0;font-size:12px;
+  border:1px solid var(--line);
+}
+.cmd-result.hi .cmd-result-icon{background:var(--amed);border-color:var(--a)}
+.cmd-result-label{flex:1;font-weight:500}
+.cmd-result-kbd{font-size:10px;font-family:var(--mono);color:var(--text2);display:flex;gap:3px}
+.cmd-footer{
+  padding:10px 16px;border-top:1px solid var(--line);
+  display:flex;gap:14px;
+}
+.cmd-hint{font-size:10.5px;font-family:var(--mono);color:var(--text2);display:flex;align-items:center;gap:5px}
+
+/* ─────────────────────────────────────────────────────────
+   TOAST SNACKBAR
+───────────────────────────────────────────────────────── */
+#toast{
+  position:fixed;bottom:24px;left:50%;z-index:300;
+  transform:translateX(-50%) translateY(16px);
+  background:var(--bg3);border:1px solid var(--line2);
+  border-radius:12px;padding:11px 18px;
+  font-size:13px;color:var(--text0);
+  box-shadow:0 12px 40px rgba(0,0,0,.55);
+  display:flex;align-items:center;gap:9px;
+  opacity:0;pointer-events:none;
+  transition:all .28s var(--out);white-space:nowrap;
+  backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+#toast-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+
+/* ─────────────────────────────────────────────────────────
+   DASHBOARD AMBIENT
+───────────────────────────────────────────────────────── */
+.ambient{
+  position:absolute;inset:0;pointer-events:none;z-index:0;overflow:hidden;
+}
+.orb{
+  position:absolute;border-radius:50%;filter:blur(80px);opacity:0;
+  animation:orb-in 2s var(--out) forwards;
+}
+.o1{width:400px;height:400px;background:var(--aglow);top:-100px;right:-80px;animation-delay:.1s}
+.o2{width:280px;height:280px;background:rgba(90,154,224,.12);bottom:-60px;left:5%;animation-delay:.3s}
+.o3{width:200px;height:200px;background:rgba(155,114,224,.08);top:40%;right:20%;animation-delay:.5s}
+@keyframes orb-in{to{opacity:1}}
+
+.dash-content{position:relative;z-index:1}
+
+/* ─────────────────────────────────────────────────────────
+   MISC
+───────────────────────────────────────────────────────── */
+.mono{font-family:var(--mono)}
+.text2{color:var(--text2)}
+.text0{color:var(--text0)}
+.subtext{font-size:12px;color:var(--text2);font-family:var(--mono);line-height:1.5}
+
+/* Swatch */
+.swatch-row{display:flex;gap:8px;flex-wrap:wrap}
+.sw{
+  width:38px;height:38px;border-radius:9px;cursor:pointer;
+  transition:transform .15s var(--spring),box-shadow .15s;
+  border:2px solid transparent;position:relative;
+}
+.sw:hover{transform:scale(1.15) translateY(-2px)}
+.sw.picked{border-color:rgba(255,255,255,.5);box-shadow:0 0 14px rgba(255,255,255,.2)}
+.sw::after{content:'✓';position:absolute;inset:0;display:grid;place-items:center;font-size:15px;color:white;opacity:0;transition:opacity .15s;text-shadow:0 1px 3px rgba(0,0,0,.5)}
+.sw.picked::after{opacity:1}
+
+/* Settings section divider */
+.settings-section{margin-bottom:4px}
+.settings-section-title{font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--text2);font-family:var(--mono);margin-bottom:12px}
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════
+     COMMAND PALETTE
+════════════════════════════════════════════════════════ -->
+<div class="cmd-overlay" id="cmdOverlay">
+  <div class="cmd-box">
+    <div class="cmd-input-row">
+      <svg class="cmd-search-icon" width="16" height="16" viewBox="0 0 16 16" fill="none">
+        <circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.5"/>
+        <path d="M11 11l3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+      </svg>
+      <input class="cmd-input" id="cmdInput" placeholder="Search commands…" oninput="filterCmd(this.value)" autocomplete="off"/>
+      <span class="cmd-esc" onclick="closeCmd()">esc</span>
+    </div>
+    <div class="cmd-results" id="cmdResults"></div>
+    <div class="cmd-footer">
+      <span class="cmd-hint"><kbd>↑↓</kbd> Navigate</span>
+      <span class="cmd-hint"><kbd>↵</kbd> Select</span>
+      <span class="cmd-hint"><kbd>esc</kbd> Close</span>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════
+     SHELL
+════════════════════════════════════════════════════════ -->
+<div class="shell">
+
+<!-- ─── SIDEBAR ─────────────────────────────────────── -->
+<aside class="sidebar" id="sidebar">
+  <div class="sb-logo">
+    <div class="logo-gem">
+      <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
+        <rect x="1" y="1" width="5.5" height="5.5" rx="1.5" fill="currentColor"/>
+        <rect x="8.5" y="1" width="5.5" height="5.5" rx="1.5" fill="currentColor" opacity=".7"/>
+        <rect x="1" y="8.5" width="5.5" height="5.5" rx="1.5" fill="currentColor" opacity=".7"/>
+        <rect x="8.5" y="8.5" width="5.5" height="5.5" rx="1.5" fill="currentColor" opacity=".35"/>
+      </svg>
+    </div>
+    <div class="logo-text-wrap">
+      <div class="logo-name">Obsidian</div>
+      <div class="logo-ver">UI System v2</div>
+    </div>
+    <button class="collapse-btn" onclick="toggleSidebar()" title="Collapse sidebar">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+        <path d="M9 2L4 7l5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </button>
+  </div>
+
+  <div class="sb-search">
+    <div class="sb-search-inner" onclick="openCmd()">
+      <svg class="sb-search-icon" width="13" height="13" viewBox="0 0 13 13" fill="none">
+        <circle cx="6" cy="6" r="4.5" stroke="currentColor" stroke-width="1.3"/>
+        <path d="M9.5 9.5l2 2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+      </svg>
+      <span class="sb-search-text">Search…</span>
+      <kbd class="sb-search-kbd">⌘K</kbd>
+    </div>
+  </div>
+
+  <nav class="sb-nav">
+    <div class="sb-section">Overview</div>
+    <div class="nav-item active" data-tab="dashboard" onclick="switchTab(this)">
+      <span class="nav-icon">
+        <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
+          <rect x="1.5" y="1.5" width="5" height="5" rx="1.5" stroke="currentColor" stroke-width="1.3"/>
+          <rect x="8.5" y="1.5" width="5" height="5" rx="1.5" stroke="currentColor" stroke-width="1.3"/>
+          <rect x="1.5" y="8.5" width="5" height="5" rx="1.5" stroke="currentColor" stroke-width="1.3"/>
+          <rect x="8.5" y="8.5" width="5" height="5" rx="1.5" stroke="currentColor" stroke-width="1.3"/>
+        </svg>
+      </span>
+      <span class="nav-label">Dashboard</span>
+    </div>
+
+    <div class="sb-section">Components</div>
+
+    <div class="nav-item" data-tab="buttons" onclick="switchTab(this)">
+      <span class="nav-icon">
+        <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
+          <rect x="1.5" y="4.5" width="12" height="6" rx="2" stroke="currentColor" stroke-width="1.3"/>
+          <line x1="4.5" y1="7.5" x2="10.5" y2="7.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+        </svg>
+      </span>
+      <span class="nav-label">Buttons</span>
+      <span class="nav-pill">14</span>
+    </div>
+
+    <div class="nav-item" data-tab="inputs" onclick="switchTab(this)">
+      <span class="nav-icon">
+        <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
+          <rect x="1.5" y="4" width="12" height="7" rx="2" stroke="currentColor" stroke-width="1.3"/>
+          <line x1="3.5" y1="7.5" x2="5.5" y2="7.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+        </svg>
+      </span>
+      <span class="nav-label">Inputs</span>
+    </div>
+
+    <div class="nav-item" data-tab="controls" onclick="switchTab(this)">
+      <span class="nav-icon">
+        <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
+          <circle cx="7.5" cy="7.5" r="2" stroke="currentColor" stroke-width="1.3"/>
+          <path d="M7.5 1.5v2M7.5 11.5v2M1.5 7.5h2M11.5 7.5h2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+        </svg>
+      </span>
+      <span class="nav-label">Controls</span>
+    </div>
+
+    <div class="nav-item" data-tab="feedback" onclick="switchTab(this)">
+      <span class="nav-icon">
+        <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
+          <path d="M7.5 1.5a6 6 0 100 12 6 6 0 000-12z" stroke="currentColor" stroke-width="1.3"/>
+          <path d="M7.5 5.5v3.5M7.5 10.5v.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+        </svg>
+      </span>
+      <span class="nav-label">Feedback</span>
+      <span class="nav-pill">3</span>
+    </div>
+
+    <div class="nav-item" data-tab="data" onclick="switchTab(this)">
+      <span class="nav-icon">
+        <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
+          <rect x="1.5" y="3" width="12" height="9" rx="1.5" stroke="currentColor" stroke-width="1.3"/>
+          <line x1="1.5" y1="6.5" x2="13.5" y2="6.5" stroke="currentColor" stroke-width="1.3"/>
+          <line x1="6" y1="6.5" x2="6" y2="12" stroke="currentColor" stroke-width="1.3"/>
+        </svg>
+      </span>
+      <span class="nav-label">Data &amp; Tables</span>
+    </div>
+
+    <div class="sb-section">Account</div>
+
+    <div class="nav-item" data-tab="settings" onclick="switchTab(this)">
+      <span class="nav-icon">
+        <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
+          <circle cx="7.5" cy="7.5" r="2" stroke="currentColor" stroke-width="1.3"/>
+          <path d="M7.5 1.5v1.2M7.5 12.3v1.2M1.5 7.5h1.2M12.3 7.5h1.2M3.5 3.5l.85.85M10.65 10.65l.85.85M3.5 11.5l.85-.85M10.65 4.35l.85-.85" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+        </svg>
+      </span>
+      <span class="nav-label">Settings</span>
+    </div>
+  </nav>
+
+  <div class="sb-footer">
+    <div class="sb-footer-top">
+      <div class="sb-avatar">JL</div>
+      <div class="sb-user">
+        <div class="sb-name">Jane Lowe</div>
+        <div class="sb-role">UI Designer</div>
+      </div>
+      <div class="sb-actions">
+        <button class="ib" onclick="toast('Profile opened','blue')" title="Profile">
+          <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><circle cx="6.5" cy="4" r="2.5" stroke="currentColor" stroke-width="1.3"/><path d="M1 12c0-3.314 2.462-5.5 5.5-5.5S12 8.686 12 12" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+        </button>
+        <button class="ib" onclick="toast('Logged out','red')" title="Log out">
+          <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M5 2H2.5A1.5 1.5 0 001 3.5v6A1.5 1.5 0 002.5 11H5M9 9.5l3-3-3-3M12 6.5H5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+      </div>
+    </div>
+    <div class="accent-row">
+      <div class="accent-dot active" style="background:#d4a853;color:#d4a853" data-color="#d4a853,#b8893a,rgba(212,168,83,.10),rgba(212,168,83,.20),rgba(212,168,83,.28)" onclick="setAccent(this)" title="Amber"></div>
+      <div class="accent-dot" style="background:#5a9ae0" data-color="#5a9ae0,#3a70c0,rgba(90,154,224,.10),rgba(90,154,224,.20),rgba(90,154,224,.28)" onclick="setAccent(this)" title="Cobalt"></div>
+      <div class="accent-dot" style="background:#50c888" data-color="#50c888,#3da46b,rgba(80,200,136,.10),rgba(80,200,136,.20),rgba(80,200,136,.28)" onclick="setAccent(this)" title="Emerald"></div>
+      <div class="accent-dot" style="background:#9b72e0" data-color="#9b72e0,#7255bf,rgba(155,114,224,.10),rgba(155,114,224,.20),rgba(155,114,224,.28)" onclick="setAccent(this)" title="Violet"></div>
+      <div class="accent-dot" style="background:#e05a77" data-color="#e05a77,#c03a58,rgba(224,90,119,.10),rgba(224,90,119,.20),rgba(224,90,119,.28)" onclick="setAccent(this)" title="Rose"></div>
+    </div>
+  </div>
+</aside>
+
+<!-- ─── MAIN ─────────────────────────────────────────── -->
+<main class="main">
+
+  <!-- Topbar -->
+  <div class="topbar">
+    <div class="breadcrumb">
+      <span class="breadcrumb-root" onclick="toast('Home')">Obsidian</span>
+      <span class="breadcrumb-sep">›</span>
+      <span class="breadcrumb-cur" id="bcCur">Dashboard</span>
+      <span class="page-chip" id="bcChip">Live</span>
+    </div>
+    <div class="topbar-right">
+      <div class="cmd-btn" onclick="openCmd()">
+        <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><circle cx="6" cy="6" r="4" stroke="currentColor" stroke-width="1.3"/><path d="M9 9l2.5 2.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+        Command
+        <kbd>⌘K</kbd>
+      </div>
+      <div style="position:relative">
+        <div class="notif-btn" id="notifBtn" onclick="toggleNotif()">
+          <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
+            <path d="M7.5 1.5C5.015 1.5 3 3.515 3 6v3L1.5 11h12L12 9V6c0-2.485-2.015-4.5-4.5-4.5z" stroke="currentColor" stroke-width="1.3"/>
+            <path d="M6 11.5a1.5 1.5 0 003 0" stroke="currentColor" stroke-width="1.3"/>
+          </svg>
+          <span class="notif-badge" id="notifBadge">3</span>
+        </div>
+        <!-- Notification Popover -->
+        <div class="notif-popover" id="notifPopover">
+          <div class="notif-head">
+            <span class="notif-head-title">Notifications</span>
+            <span class="mark-read" onclick="clearNotifs()">Mark all read</span>
+          </div>
+          <div class="notif-list">
+            <div class="notif-item unread">
+              <div class="notif-icon ni-green">✓</div>
+              <div class="notif-body">
+                <div class="notif-title">Deployment succeeded</div>
+                <div class="notif-sub">api-gateway · production · just now</div>
+              </div>
+            </div>
+            <div class="notif-item unread">
+              <div class="notif-icon ni-red">✕</div>
+              <div class="notif-body">
+                <div class="notif-title">Build failed on worker-queue</div>
+                <div class="notif-sub">Exit code 1 · staging · 12m ago</div>
+              </div>
+            </div>
+            <div class="notif-item unread">
+              <div class="notif-icon ni-gold">⚠</div>
+              <div class="notif-body">
+                <div class="notif-title">API quota at 89%</div>
+                <div class="notif-sub">Current cycle ends in 4 days · 1h ago</div>
+              </div>
+            </div>
+            <div class="notif-item">
+              <div class="notif-icon ni-blue">↑</div>
+              <div class="notif-body">
+                <div class="notif-title">New version available — v3.2.1</div>
+                <div class="notif-sub">Changelog ready · yesterday</div>
+              </div>
+            </div>
+            <div class="notif-item">
+              <div class="notif-icon ni-green">★</div>
+              <div class="notif-body">
+                <div class="notif-title">Monthly digest is ready</div>
+                <div class="notif-sub">May 2026 report · 2 days ago</div>
+              </div>
+            </div>
+          </div>
+          <div class="notif-footer"><a onclick="toast('All notifications');toggleNotif()">View all notifications</a></div>
+        </div>
+      </div>
+      <button class="btn btn-primary btn-sm" id="topbarAction" onclick="toast('Action triggered!','green')">Deploy</button>
+    </div>
+  </div>
+
+  <!-- Content Scroll -->
+  <div class="content-scroll">
+
+  <!-- ══════════════════ DASHBOARD ══════════════════ -->
+  <div class="tab-panel active" id="tab-dashboard">
+    <div style="position:relative">
+      <div class="ambient">
+        <div class="orb o1"></div>
+        <div class="orb o2"></div>
+        <div class="orb o3"></div>
+      </div>
+      <div class="dash-content">
+        <div class="page-body">
+          <!-- Stat Cards -->
+          <div class="section-label">Key Metrics</div>
+          <div class="g4 stagger" style="margin-bottom:20px" id="statGrid">
+            <div class="stat-card">
+              <div class="stat-lbl">Revenue</div>
+              <div class="stat-num" data-target="84200" data-prefix="$" data-suffix="k" data-divisor="1000">$0k</div>
+              <div class="stat-delta up">↑ 12.4% vs last month</div>
+              <svg class="stat-spark" viewBox="0 0 120 36" preserveAspectRatio="none">
+                <defs><linearGradient id="sg1" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="var(--a)" stop-opacity=".3"/><stop offset="100%" stop-color="var(--a)" stop-opacity="0"/></linearGradient></defs>
+                <path d="M0 28 L10 24 L22 26 L34 18 L46 20 L58 14 L70 16 L82 10 L94 8 L106 4 L120 2" fill="none" stroke="var(--a)" stroke-width="1.8" stroke-linecap="round" opacity=".8"/>
+                <path d="M0 28 L10 24 L22 26 L34 18 L46 20 L58 14 L70 16 L82 10 L94 8 L106 4 L120 2 L120 36 L0 36Z" fill="url(#sg1)"/>
+              </svg>
+            </div>
+            <div class="stat-card">
+              <div class="stat-lbl">Active Users</div>
+              <div class="stat-num" data-target="3481" data-prefix="" data-suffix="">0</div>
+              <div class="stat-delta up">↑ 8.1% this week</div>
+              <svg class="stat-spark" viewBox="0 0 120 36" preserveAspectRatio="none">
+                <defs><linearGradient id="sg2" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="var(--blue)" stop-opacity=".3"/><stop offset="100%" stop-color="var(--blue)" stop-opacity="0"/></linearGradient></defs>
+                <path d="M0 30 L10 26 L22 28 L34 22 L46 24 L58 18 L70 22 L82 14 L94 10 L106 6 L120 4" fill="none" stroke="var(--blue)" stroke-width="1.8" stroke-linecap="round" opacity=".8"/>
+                <path d="M0 30 L10 26 L22 28 L34 22 L46 24 L58 18 L70 22 L82 14 L94 10 L106 6 L120 4 L120 36 L0 36Z" fill="url(#sg2)"/>
+              </svg>
+            </div>
+            <div class="stat-card">
+              <div class="stat-lbl">Churn Rate</div>
+              <div class="stat-num" data-target="23" data-prefix="" data-suffix="%" data-divisor="10">0%</div>
+              <div class="stat-delta down">↑ 0.4% this month</div>
+              <svg class="stat-spark" viewBox="0 0 120 36" preserveAspectRatio="none">
+                <defs><linearGradient id="sg3" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="var(--red)" stop-opacity=".3"/><stop offset="100%" stop-color="var(--red)" stop-opacity="0"/></linearGradient></defs>
+                <path d="M0 8 L10 12 L22 10 L34 16 L46 14 L58 18 L70 16 L82 22 L94 20 L106 24 L120 28" fill="none" stroke="var(--red)" stroke-width="1.8" stroke-linecap="round" opacity=".8"/>
+                <path d="M0 8 L10 12 L22 10 L34 16 L46 14 L58 18 L70 16 L82 22 L94 20 L106 24 L120 28 L120 36 L0 36Z" fill="url(#sg3)"/>
+              </svg>
+            </div>
+            <div class="stat-card">
+              <div class="stat-lbl">Uptime</div>
+              <div class="stat-num" data-target="9998" data-prefix="" data-suffix="%" data-divisor="100">0%</div>
+              <div class="stat-delta up">↑ 0.02% this quarter</div>
+              <svg class="stat-spark" viewBox="0 0 120 36" preserveAspectRatio="none">
+                <defs><linearGradient id="sg4" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="var(--green)" stop-opacity=".3"/><stop offset="100%" stop-color="var(--green)" stop-opacity="0"/></linearGradient></defs>
+                <path d="M0 12 L10 10 L22 8 L34 6 L46 8 L58 4 L70 5 L82 3 L94 2 L106 2 L120 1" fill="none" stroke="var(--green)" stroke-width="1.8" stroke-linecap="round" opacity=".8"/>
+                <path d="M0 12 L10 10 L22 8 L34 6 L46 8 L58 4 L70 5 L82 3 L94 2 L106 2 L120 1 L120 36 L0 36Z" fill="url(#sg4)"/>
+              </svg>
+            </div>
+          </div>
+
+          <!-- Chart + Activity -->
+          <div class="stagger" style="display:grid;grid-template-columns:1fr 340px;gap:16px;margin-bottom:20px">
+            <div class="card">
+              <div class="card-h">Revenue Overview</div>
+              <div class="card-s">Monthly revenue — last 12 months</div>
+              <div class="chart-wrap">
+                <svg class="chart-svg" viewBox="0 0 600 160" preserveAspectRatio="none">
+                  <defs>
+                    <linearGradient id="areaGrad" x1="0" x2="0" y1="0" y2="1">
+                      <stop offset="0%" stop-color="var(--a)" stop-opacity=".4"/>
+                      <stop offset="100%" stop-color="var(--a)" stop-opacity="0"/>
+                    </linearGradient>
+                  </defs>
+                  <!-- Grid lines -->
+                  <line x1="0" y1="40" x2="600" y2="40" stroke="var(--line)" stroke-width="1"/>
+                  <line x1="0" y1="80" x2="600" y2="80" stroke="var(--line)" stroke-width="1"/>
+                  <line x1="0" y1="120" x2="600" y2="120" stroke="var(--line)" stroke-width="1"/>
+                  <!-- Area fill -->
+                  <path class="chart-area" d="M0 130 C20 120 30 100 55 90 C80 80 90 110 110 95 C135 78 145 60 165 55 C188 48 200 70 220 60 C244 48 256 30 275 28 C298 24 310 55 330 48 C352 40 362 20 385 14 C408 8 420 22 440 18 C462 14 470 5 495 3 C515 1 530 8 550 6 L550 160 L0 160Z"/>
+                  <!-- Line -->
+                  <path class="chart-line" d="M0 130 C20 120 30 100 55 90 C80 80 90 110 110 95 C135 78 145 60 165 55 C188 48 200 70 220 60 C244 48 256 30 275 28 C298 24 310 55 330 48 C352 40 362 20 385 14 C408 8 420 22 440 18 C462 14 470 5 495 3 C515 1 530 8 550 6"/>
+                </svg>
+                <div class="chart-x-labels">
+                  <span>Jun</span><span>Jul</span><span>Aug</span><span>Sep</span><span>Oct</span>
+                  <span>Nov</span><span>Dec</span><span>Jan</span><span>Feb</span><span>Mar</span>
+                  <span>Apr</span><span>May</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="card" style="display:flex;flex-direction:column">
+              <div class="card-h">Recent Activity</div>
+              <div class="card-s">Live event stream</div>
+              <div style="flex:1">
+                <div class="feed-item">
+                  <div class="feed-dot fd-green">✓</div>
+                  <div class="feed-body">
+                    <div class="feed-msg"><b>api-gateway</b> deployed to production</div>
+                    <div class="feed-time">2m ago · by Jane Lowe</div>
+                  </div>
+                </div>
+                <div class="feed-item">
+                  <div class="feed-dot fd-red">✕</div>
+                  <div class="feed-body">
+                    <div class="feed-msg"><b>worker-queue</b> build failed on staging</div>
+                    <div class="feed-time">12m ago · auto-triggered</div>
+                  </div>
+                </div>
+                <div class="feed-item">
+                  <div class="feed-dot fd-blue">⬆</div>
+                  <div class="feed-body">
+                    <div class="feed-msg"><b>3 users</b> joined the workspace</div>
+                    <div class="feed-time">45m ago</div>
+                  </div>
+                </div>
+                <div class="feed-item">
+                  <div class="feed-dot fd-gold">⚙</div>
+                  <div class="feed-body">
+                    <div class="feed-msg"><b>Rate limit</b> config updated by Tom</div>
+                    <div class="feed-time">2h ago</div>
+                  </div>
+                </div>
+                <div class="feed-item">
+                  <div class="feed-dot fd-purple">★</div>
+                  <div class="feed-body">
+                    <div class="feed-msg"><b>Enterprise plan</b> activated</div>
+                    <div class="feed-time">Yesterday</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Rings + Progress + Actions -->
+          <div class="stagger" style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+            <div class="card">
+              <div class="card-h">System Health</div>
+              <div class="card-s">Ring gauges update every 30s</div>
+              <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:0">
+                <div class="ring-card">
+                  <svg class="ring-svg" viewBox="0 0 80 80">
+                    <circle class="ring-bg" cx="40" cy="40" r="30"/>
+                    <circle class="ring-fill" cx="40" cy="40" r="30" stroke="var(--blue)" stroke-dasharray="188.5" stroke-dashoffset="52.7" style="stroke-dashoffset:52.7"/>
+                  </svg>
+                  <div class="ring-label">CPU</div>
+                  <div class="ring-val">72%</div>
+                </div>
+                <div class="ring-card">
+                  <svg class="ring-svg" viewBox="0 0 80 80">
+                    <circle class="ring-bg" cx="40" cy="40" r="30"/>
+                    <circle class="ring-fill" cx="40" cy="40" r="30" stroke="var(--a)" stroke-dasharray="188.5" stroke-dashoffset="97.7"/>
+                  </svg>
+                  <div class="ring-label">Memory</div>
+                  <div class="ring-val">48%</div>
+                </div>
+                <div class="ring-card">
+                  <svg class="ring-svg" viewBox="0 0 80 80">
+                    <circle class="ring-bg" cx="40" cy="40" r="30"/>
+                    <circle class="ring-fill" cx="40" cy="40" r="30" stroke="var(--green)" stroke-dasharray="188.5" stroke-dashoffset="129.6"/>
+                  </svg>
+                  <div class="ring-label">Storage</div>
+                  <div class="ring-val">31%</div>
+                </div>
+                <div class="ring-card">
+                  <svg class="ring-svg" viewBox="0 0 80 80">
+                    <circle class="ring-bg" cx="40" cy="40" r="30"/>
+                    <circle class="ring-fill" cx="40" cy="40" r="30" stroke="var(--red)" stroke-dasharray="188.5" stroke-dashoffset="22.6"/>
+                  </svg>
+                  <div class="ring-label">Network</div>
+                  <div class="ring-val">88%</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-h">Quick Actions</div>
+              <div class="card-s">Frequent operations</div>
+              <div class="col" style="gap:9px">
+                <div class="row">
+                  <button class="btn btn-primary" style="flex:1" onclick="loadingDemo(this,'Deploy','green')">
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 1v6M3 4l3-3 3 3M1 10h10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    Deploy
+                  </button>
+                  <button class="btn btn-secondary" style="flex:1" onclick="loadingDemo(this,'Sync','blue')">
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M10 6A4 4 0 012 6M2 6L1 3M2 6l3 1M2 6a4 4 0 018 0M10 6l1 3M10 6l-3-1" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    Sync
+                  </button>
+                </div>
+                <button class="btn btn-secondary" onclick="toast('Rollback initiated','amber')">Rollback to last stable</button>
+                <button class="btn btn-ghost" onclick="toast('Logs opened')">View System Logs</button>
+                <button class="btn btn-danger btn-sm" onclick="toast('Service stopped!','red')">Stop All Services</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════ BUTTONS ══════════════════ -->
+  <div class="tab-panel" id="tab-buttons">
+    <div class="page-body">
+      <div class="section-label">Button System</div>
+      <div class="col stagger" style="gap:16px">
+
+        <div class="card">
+          <div class="card-h">Variants</div>
+          <div class="card-s">Core button styles with shimmer & spring physics</div>
+          <div class="row">
+            <button class="btn btn-primary"   onclick="toast('Primary!','green')">Primary</button>
+            <button class="btn btn-secondary" onclick="toast('Secondary')">Secondary</button>
+            <button class="btn btn-ghost"     onclick="toast('Ghost')">Ghost</button>
+            <button class="btn btn-danger"    onclick="toast('Danger!','red')">Danger</button>
+            <button class="btn btn-success"   onclick="toast('Success!','green')">Success</button>
+          </div>
+        </div>
+
+        <div class="g2">
+          <div class="card">
+            <div class="card-h">Sizes</div>
+            <div class="card-s">sm · md · lg</div>
+            <div class="row" style="align-items:flex-end">
+              <button class="btn btn-primary btn-sm" onclick="toast('Small')">Small</button>
+              <button class="btn btn-primary"         onclick="toast('Medium')">Medium</button>
+              <button class="btn btn-primary btn-lg"  onclick="toast('Large')">Large</button>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-h">Loading States</div>
+            <div class="card-s">Async feedback with transition</div>
+            <div class="row">
+              <button class="btn btn-primary" onclick="loadingDemo(this,'Processing','green')">Click to Load</button>
+              <button class="btn btn-secondary" disabled>Disabled</button>
+              <button class="btn btn-ghost" disabled>Muted</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-h">With Icons</div>
+          <div class="card-s">Leading and trailing compositions</div>
+          <div class="row">
+            <button class="btn btn-primary" onclick="toast('Saved!','green')">
+              <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M2 7L5.5 10.5 11 3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              Save Changes
+            </button>
+            <button class="btn btn-secondary" onclick="toast('Uploaded!','blue')">
+              Upload
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 1v7M3 4l3-3 3 3M1 10h10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+            <div class="tt" data-tip="Share with team">
+              <button class="btn btn-ghost" onclick="toast('Link copied!','green')">
+                <svg width="13" height="13" viewBox="0 0 13 13" fill="none"><circle cx="10" cy="2.5" r="1.8" stroke="currentColor" stroke-width="1.2"/><circle cx="10" cy="10.5" r="1.8" stroke="currentColor" stroke-width="1.2"/><circle cx="3" cy="6.5" r="1.8" stroke="currentColor" stroke-width="1.2"/><path d="M8.3 3.4L4.7 5.6M8.3 9.6L4.7 7.4" stroke="currentColor" stroke-width="1.2"/></svg>
+                Share
+              </button>
+            </div>
+            <div class="tt" data-tip="Open settings panel">
+              <button class="btn btn-secondary btn-icon" onclick="toast('Settings opened')">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="2" stroke="currentColor" stroke-width="1.3"/><path d="M7 1.5v1.2M7 11.3v1.2M1.5 7h1.2M11.3 7h1.2M3.3 3.3l.85.85M9.85 9.85l.85.85M3.3 10.7l.85-.85M9.85 4.15l.85-.85" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-h">Dropdown Menus</div>
+          <div class="card-s">Animated with spring easing</div>
+          <div class="row">
+            <div class="dd-wrap" id="dd1">
+              <button class="btn btn-secondary" onclick="toggleDD('dd1')">
+                Actions
+                <svg width="10" height="6" viewBox="0 0 10 6" fill="none"><path d="M1 1l4 4 4-4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+              <div class="dd-menu">
+                <div class="dd-item" onclick="toast('Edited','blue');closeDD('dd1')">
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M8.5 1.5l2 2-6 6H2.5v-2l6-6z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>Edit
+                </div>
+                <div class="dd-item" onclick="toast('Duplicated','green');closeDD('dd1')">
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><rect x="4" y="4" width="6.5" height="6.5" rx="1.5" stroke="currentColor" stroke-width="1.2"/><path d="M2 8V2h6" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>Duplicate
+                </div>
+                <div class="dd-item" onclick="toast('Moved');closeDD('dd1')">
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 1L11 6 6 11M1 6h10" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>Move to
+                </div>
+                <div class="dd-divider"></div>
+                <div class="dd-item danger" onclick="toast('Deleted!','red');closeDD('dd1')">
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 3.5h8M4.5 3.5V2h3v1.5M5 5.5v3.5M7 5.5v3.5M2.5 3.5l.5 7h6l.5-7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>Delete
+                </div>
+              </div>
+            </div>
+            <div class="dd-wrap" id="dd2">
+              <button class="btn btn-ghost" onclick="toggleDD('dd2')">
+                Export as ↓
+              </button>
+              <div class="dd-menu">
+                <div class="dd-item" onclick="toast('PNG exported!','green');closeDD('dd2')">PNG Image</div>
+                <div class="dd-item" onclick="toast('SVG exported!','blue');closeDD('dd2')">SVG Vector</div>
+                <div class="dd-item" onclick="toast('PDF exported!','amber');closeDD('dd2')">PDF Document</div>
+                <div class="dd-item" onclick="toast('JSON exported!');closeDD('dd2')">JSON Data</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-h">Badges &amp; Tags</div>
+          <div class="card-s">Status indicators, pill labels, dismissible tags</div>
+          <div class="col" style="gap:14px">
+            <div class="row">
+              <span class="badge bg"><span class="b-dot" style="background:var(--green)"></span>Live</span>
+              <span class="badge ba"><span class="b-dot" style="background:var(--a)"></span>Pending</span>
+              <span class="badge br"><span class="b-dot" style="background:var(--red)"></span>Failed</span>
+              <span class="badge bb"><span class="b-dot" style="background:var(--blue)"></span>Building</span>
+              <span class="badge bp">Pro</span>
+            </div>
+            <div class="row">
+              <span class="tag">design <span class="tag-x" onclick="this.parentElement.remove()">✕</span></span>
+              <span class="tag">typescript <span class="tag-x" onclick="this.parentElement.remove()">✕</span></span>
+              <span class="tag">ui-kit <span class="tag-x" onclick="this.parentElement.remove()">✕</span></span>
+              <span class="tag">v2.1 <span class="tag-x" onclick="this.parentElement.remove()">✕</span></span>
+              <span class="tag">dark-mode</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════ INPUTS ══════════════════ -->
+  <div class="tab-panel" id="tab-inputs">
+    <div class="page-body">
+      <div class="section-label">Form Elements</div>
+      <div class="col stagger" style="gap:16px">
+
+        <div class="g2">
+          <div class="card">
+            <div class="card-h">Text Fields</div>
+            <div class="card-s">Focus glow, validation states</div>
+            <div class="col">
+              <div class="inp-group">
+                <div class="inp-label">Full Name</div>
+                <input class="inp" type="text" placeholder="Jane Lowe"/>
+              </div>
+              <div class="inp-group">
+                <div class="inp-label">Email</div>
+                <input class="inp" type="email" placeholder="jane@studio.io"/>
+              </div>
+              <div class="inp-group">
+                <div class="inp-label">Endpoint</div>
+                <div class="inp-row">
+                  <span class="inp-prefix">https://</span>
+                  <input type="text" placeholder="api.example.com/v1"/>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-h">Selection</div>
+            <div class="card-s">Custom styled selects</div>
+            <div class="col">
+              <div class="inp-group">
+                <div class="inp-label">Region</div>
+                <select class="inp">
+                  <option>US East (N. Virginia)</option>
+                  <option>US West (Oregon)</option>
+                  <option>EU West (Ireland)</option>
+                  <option>AP Southeast (Singapore)</option>
+                </select>
+              </div>
+              <div class="inp-group">
+                <div class="inp-label">Instance Type</div>
+                <select class="inp">
+                  <option>t3.micro — 1 vCPU, 1 GB</option>
+                  <option>t3.small — 2 vCPU, 2 GB</option>
+                  <option>m5.large — 2 vCPU, 8 GB</option>
+                  <option>c5.2xlarge — 8 vCPU, 16 GB</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="g2">
+          <div class="card">
+            <div class="card-h">Multi-line</div>
+            <div class="card-s">Resizable textarea</div>
+            <div class="inp-group">
+              <div class="inp-label">System Prompt</div>
+              <textarea class="inp" placeholder="You are a helpful assistant…"></textarea>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-h">Radio Selection</div>
+            <div class="card-s">Single-choice with descriptions</div>
+            <div class="radio-group" id="rg1">
+              <div class="radio-item sel" onclick="selectRadio(this,'rg1')">
+                <div class="radio-dot"></div>
+                <div><div class="radio-name">Starter</div><div class="radio-desc">For individuals</div></div>
+                <span class="badge bg" style="margin-left:auto">Free</span>
+              </div>
+              <div class="radio-item" onclick="selectRadio(this,'rg1')">
+                <div class="radio-dot"></div>
+                <div><div class="radio-name">Pro</div><div class="radio-desc">Teams up to 20</div></div>
+                <span class="badge ba" style="margin-left:auto">$19/mo</span>
+              </div>
+              <div class="radio-item" onclick="selectRadio(this,'rg1')">
+                <div class="radio-dot"></div>
+                <div><div class="radio-name">Enterprise</div><div class="radio-desc">Unlimited scale</div></div>
+                <span class="badge bp" style="margin-left:auto">Custom</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-h">Chip Selector</div>
+          <div class="card-s">Multi-select tags</div>
+          <div class="chip-group">
+            <div class="chip on" onclick="this.classList.toggle('on')">React</div>
+            <div class="chip on" onclick="this.classList.toggle('on')">TypeScript</div>
+            <div class="chip" onclick="this.classList.toggle('on')">Vue</div>
+            <div class="chip" onclick="this.classList.toggle('on')">Svelte</div>
+            <div class="chip" onclick="this.classList.toggle('on')">Next.js</div>
+            <div class="chip" onclick="this.classList.toggle('on')">Astro</div>
+            <div class="chip on" onclick="this.classList.toggle('on')">Tailwind</div>
+            <div class="chip" onclick="this.classList.toggle('on')">Remix</div>
+            <div class="chip" onclick="this.classList.toggle('on')">SolidJS</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-h">File Upload</div>
+          <div class="card-s">Drop zone with drag &amp; drop support</div>
+          <div class="upload-zone" id="dropzone" onclick="toast('File picker opened','blue')"
+            ondragover="event.preventDefault();this.classList.add('drag')"
+            ondragleave="this.classList.remove('drag')"
+            ondrop="event.preventDefault();this.classList.remove('drag');toast('File dropped!','green')">
+            <div class="upload-icon">⬆</div>
+            <div class="upload-title">Drop files here, or click to browse</div>
+            <div class="upload-sub">PNG, SVG, PDF up to 50 MB</div>
+            <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();toast('Browsing…','blue')">Choose Files</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-h">Code Block</div>
+          <div class="card-s">Syntax highlighted with copy button</div>
+          <div class="code-wrap">
+            <div class="code-block">
+<span class="kw">const</span> <span class="fn">fetchUser</span> = <span class="kw">async</span> (<span class="type">id</span>: <span class="type">string</span>): <span class="type">Promise</span>&lt;<span class="type">User</span>&gt; => {<br>
+&nbsp; <span class="kw">const</span> res = <span class="kw">await</span> <span class="fn">fetch</span>(<span class="str">`/api/users/<span class="kw">${</span>id<span class="kw">}</span>`</span>, {<br>
+&nbsp;&nbsp;&nbsp; headers: { <span class="str">'Authorization'</span>: <span class="str">`Bearer <span class="kw">${</span>token<span class="kw">}</span>`</span> }<br>
+&nbsp; });<br>
+&nbsp; <span class="cmt">// Handle auth errors gracefully</span><br>
+&nbsp; <span class="kw">if</span> (!res.<span class="fn">ok</span>) <span class="kw">throw new</span> Error(<span class="str">'Unauthorized'</span>);<br>
+&nbsp; <span class="kw">return</span> res.<span class="fn">json</span>();<br>
+};
+            </div>
+            <div class="copy-btn" onclick="toast('Copied to clipboard!','green')">Copy</div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════ CONTROLS ══════════════════ -->
+  <div class="tab-panel" id="tab-controls">
+    <div class="page-body">
+      <div class="section-label">Interactive Controls</div>
+      <div class="col stagger" style="gap:16px">
+
+        <div class="g2">
+          <div class="card">
+            <div class="card-h">Toggles</div>
+            <div class="card-s">Spring-animated on/off switches</div>
+            <div>
+              <div class="toggle-row">
+                <div class="toggle-info"><div class="toggle-name">Push Notifications</div><div class="toggle-desc">Receive alerts in real time</div></div>
+                <input type="checkbox" class="toggle" checked onchange="toast(this.checked?'Notifications on':'Notifications off')"/>
+              </div>
+              <div class="toggle-row">
+                <div class="toggle-info"><div class="toggle-name">Dark Mode Override</div><div class="toggle-desc">Force dark across all views</div></div>
+                <input type="checkbox" class="toggle" onchange="toast(this.checked?'Dark mode on':'Light mode')"/>
+              </div>
+              <div class="toggle-row">
+                <div class="toggle-info"><div class="toggle-name">Analytics Collection</div><div class="toggle-desc">Help us improve the product</div></div>
+                <input type="checkbox" class="toggle" checked onchange="toast(this.checked?'Analytics on':'Analytics off')"/>
+              </div>
+              <div class="toggle-row">
+                <div class="toggle-info"><div class="toggle-name">Beta Features</div><div class="toggle-desc">Experimental — may break things</div></div>
+                <input type="checkbox" class="toggle" onchange="toast(this.checked?'⚠ Beta enabled':'Beta disabled','amber')"/>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-h">Checkboxes</div>
+            <div class="card-s">Multi-select with glow on check</div>
+            <div class="col" style="gap:13px">
+              <label class="cb-wrap"><input type="checkbox" class="cb" checked/><span class="cb-label">Enable two-factor authentication</span></label>
+              <label class="cb-wrap"><input type="checkbox" class="cb" checked/><span class="cb-label">Send weekly digest emails</span></label>
+              <label class="cb-wrap"><input type="checkbox" class="cb"/><span class="cb-label">Allow third-party integrations</span></label>
+              <label class="cb-wrap"><input type="checkbox" class="cb"/><span class="cb-label">Public profile visibility</span></label>
+              <label class="cb-wrap"><input type="checkbox" class="cb" checked/><span class="cb-label">Automatic dependency updates</span></label>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-h">Range Sliders</div>
+          <div class="card-s">Gradient track fills, spring thumb physics</div>
+          <div class="g2" style="gap:20px 32px">
+            <div class="slider-wrap">
+              <div class="slider-head"><span class="slider-name">Opacity</span><span class="slider-val" id="sv1">75%</span></div>
+              <input type="range" min="0" max="100" value="75" oninput="document.getElementById('sv1').textContent=this.value+'%';updateSlider(this)"/>
+            </div>
+            <div class="slider-wrap">
+              <div class="slider-head"><span class="slider-name">Scale</span><span class="slider-val" id="sv2">1.4×</span></div>
+              <input type="range" min="0.5" max="3" step="0.1" value="1.4" oninput="document.getElementById('sv2').textContent=parseFloat(this.value).toFixed(1)+'×';updateSlider(this)"/>
+            </div>
+            <div class="slider-wrap">
+              <div class="slider-head"><span class="slider-name">Blur</span><span class="slider-val" id="sv3">12px</span></div>
+              <input type="range" min="0" max="40" value="12" oninput="document.getElementById('sv3').textContent=this.value+'px';updateSlider(this)"/>
+            </div>
+            <div class="slider-wrap">
+              <div class="slider-head"><span class="slider-name">Token Limit</span><span class="slider-val" id="sv4">4k</span></div>
+              <input type="range" min="1" max="128" value="4" oninput="document.getElementById('sv4').textContent=this.value+'k';updateSlider(this)"/>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-h">Step Progress</div>
+          <div class="card-s">Click steps to advance</div>
+          <div class="steps" id="stepsEl">
+            <div class="step done" data-step="1">
+              <div class="step-dot">✓</div>
+            </div>
+            <div class="step-line"></div>
+            <div class="step done" data-step="2">
+              <div class="step-dot">✓</div>
+            </div>
+            <div class="step-line"></div>
+            <div class="step active" data-step="3">
+              <div class="step-dot">3</div>
+            </div>
+            <div class="step-line"></div>
+            <div class="step" data-step="4">
+              <div class="step-dot">4</div>
+            </div>
+            <div class="step-line"></div>
+            <div class="step" data-step="5">
+              <div class="step-dot">5</div>
+            </div>
+          </div>
+          <div class="row" style="margin-top:16px">
+            <button class="btn btn-secondary btn-sm" onclick="prevStep()">← Back</button>
+            <button class="btn btn-primary btn-sm" onclick="nextStep()">Continue →</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-h">Color Swatches</div>
+          <div class="card-s">Click to select — works as theme picker</div>
+          <div class="swatch-row">
+            <div class="sw picked" style="background:#d4a853" onclick="pickSwatch(this)"></div>
+            <div class="sw" style="background:#5a9ae0" onclick="pickSwatch(this)"></div>
+            <div class="sw" style="background:#50c888" onclick="pickSwatch(this)"></div>
+            <div class="sw" style="background:#e05a77" onclick="pickSwatch(this)"></div>
+            <div class="sw" style="background:#9b72e0" onclick="pickSwatch(this)"></div>
+            <div class="sw" style="background:#e08a5a" onclick="pickSwatch(this)"></div>
+            <div class="sw" style="background:#50c8c8" onclick="pickSwatch(this)"></div>
+            <div class="sw" style="background:#c8d45a" onclick="pickSwatch(this)"></div>
+            <div class="sw" style="background:#1e1e23;border:1px solid var(--line2)" onclick="pickSwatch(this)"></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-h">Keyboard Shortcuts</div>
+          <div class="card-s">Common bindings reference</div>
+          <div class="col" style="gap:9px">
+            <div class="row" style="justify-content:space-between"><span style="font-size:13px;color:var(--text1)">Save</span><div class="row" style="gap:4px"><kbd>⌘</kbd><kbd>S</kbd></div></div>
+            <div class="divider"></div>
+            <div class="row" style="justify-content:space-between"><span style="font-size:13px;color:var(--text1)">Command Palette</span><div class="row" style="gap:4px"><kbd>⌘</kbd><kbd>K</kbd></div></div>
+            <div class="divider"></div>
+            <div class="row" style="justify-content:space-between"><span style="font-size:13px;color:var(--text1)">Undo</span><div class="row" style="gap:4px"><kbd>⌘</kbd><kbd>Z</kbd></div></div>
+            <div class="divider"></div>
+            <div class="row" style="justify-content:space-between"><span style="font-size:13px;color:var(--text1)">Find &amp; Replace</span><div class="row" style="gap:4px"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>H</kbd></div></div>
+            <div class="divider"></div>
+            <div class="row" style="justify-content:space-between"><span style="font-size:13px;color:var(--text1)">Close tab</span><div class="row" style="gap:4px"><kbd>⌘</kbd><kbd>W</kbd></div></div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════ FEEDBACK ══════════════════ -->
+  <div class="tab-panel" id="tab-feedback">
+    <div class="page-body">
+      <div class="section-label">Feedback Patterns</div>
+      <div class="col stagger" style="gap:16px">
+
+        <div class="card">
+          <div class="card-h">Alert Banners</div>
+          <div class="card-s">Inline status messages with semantic color</div>
+          <div class="col" style="gap:10px">
+            <div class="alert ai"><span class="alert-icon">ℹ</span><div class="alert-body"><div class="alert-title">Heads up</div><div class="alert-msg">Your trial ends in 7 days — upgrade to keep access.</div></div></div>
+            <div class="alert aw"><span class="alert-icon">⚠</span><div class="alert-body"><div class="alert-title">Rate Limit Warning</div><div class="alert-msg">You've used 89% of your monthly API quota.</div></div></div>
+            <div class="alert ae"><span class="alert-icon">✕</span><div class="alert-body"><div class="alert-title">Deployment Failed</div><div class="alert-msg">Build exited with code 1. Check configuration.</div></div></div>
+            <div class="alert as"><span class="alert-icon">✓</span><div class="alert-body"><div class="alert-title">Changes Published</div><div class="alert-msg">Your site is live at obsidian-ui.io — CDN propagation 1m.</div></div></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-h">Toast Notifications</div>
+          <div class="card-s">Click to fire each variant — stacks gracefully</div>
+          <div class="row">
+            <button class="btn btn-success btn-sm" onclick="toast('✓ Changes saved','green')">Success</button>
+            <button class="btn btn-secondary btn-sm" onclick="toast('ℹ Update v3.2.1 available','blue')">Info</button>
+            <button class="btn btn-secondary btn-sm" onclick="toast('⚠ Slow network detected','amber')">Warning</button>
+            <button class="btn btn-danger btn-sm" onclick="toast('✕ Auth failed — retry','red')">Error</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-h">Progress Bars</div>
+          <div class="card-s">Gradient fills with shimmer trail</div>
+          <div class="col" style="gap:16px">
+            <div class="pbar-wrap">
+              <div class="pbar-head"><span class="pbar-name">CPU</span><span class="pbar-val mono">72%</span></div>
+              <div class="pbar-bg"><div class="pbar-fill pf-blue" style="width:72%"></div></div>
+            </div>
+            <div class="pbar-wrap">
+              <div class="pbar-head"><span class="pbar-name">Memory</span><span class="pbar-val mono">48%</span></div>
+              <div class="pbar-bg"><div class="pbar-fill pf-gold" style="width:48%"></div></div>
+            </div>
+            <div class="pbar-wrap">
+              <div class="pbar-head"><span class="pbar-name">Storage</span><span class="pbar-val mono">31%</span></div>
+              <div class="pbar-bg"><div class="pbar-fill pf-green" style="width:31%"></div></div>
+            </div>
+            <div class="pbar-wrap">
+              <div class="pbar-head"><span class="pbar-name">Network I/O</span><span class="pbar-val mono" style="color:var(--red)">89%</span></div>
+              <div class="pbar-bg"><div class="pbar-fill pf-red" style="width:89%"></div></div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════ DATA ══════════════════ -->
+  <div class="tab-panel" id="tab-data">
+    <div class="page-body">
+      <div class="section-label">Data &amp; Tables</div>
+      <div class="col stagger" style="gap:16px">
+        <div class="row" style="justify-content:space-between;margin-bottom:4px">
+          <div class="inp-row" style="max-width:260px">
+            <span class="inp-prefix">
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><circle cx="5.5" cy="5.5" r="4" stroke="currentColor" stroke-width="1.2"/><path d="M9 9l2 2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+            </span>
+            <input type="text" placeholder="Filter deployments…" oninput="filterTable(this.value)"/>
+          </div>
+          <div class="row">
+            <button class="btn btn-secondary btn-sm" onclick="toast('Filters panel open')">Filter</button>
+            <button class="btn btn-primary btn-sm" onclick="toast('CSV downloaded!','green')">Export CSV</button>
+          </div>
+        </div>
+        <div class="card" style="padding:0;overflow:hidden">
+          <table class="tbl" id="mainTable">
+            <thead>
+              <tr>
+                <th>Service</th>
+                <th>Status</th>
+                <th>Environment</th>
+                <th>Triggered by</th>
+                <th>Time</th>
+                <th>Duration</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="tableBody">
+              <tr>
+                <td>api-gateway</td>
+                <td><span class="badge bg"><span class="b-dot" style="background:var(--green)"></span>Live</span></td>
+                <td><span class="badge bp">production</span></td>
+                <td class="mono">jane@studio.io</td>
+                <td class="mono">2m ago</td>
+                <td class="mono">1m 24s</td>
+                <td><button class="btn btn-ghost btn-sm" onclick="toast('Viewing logs…')">Logs</button></td>
+              </tr>
+              <tr>
+                <td>web-frontend</td>
+                <td><span class="badge bg"><span class="b-dot" style="background:var(--green)"></span>Live</span></td>
+                <td><span class="badge bp">production</span></td>
+                <td class="mono">CI/CD pipeline</td>
+                <td class="mono">18m ago</td>
+                <td class="mono">2m 07s</td>
+                <td><button class="btn btn-ghost btn-sm" onclick="toast('Viewing logs…')">Logs</button></td>
+              </tr>
+              <tr>
+                <td>ml-inference</td>
+                <td><span class="badge ba"><span class="b-dot" style="background:var(--a)"></span>Building</span></td>
+                <td><span class="badge bb">staging</span></td>
+                <td class="mono">tom@studio.io</td>
+                <td class="mono">Just now</td>
+                <td class="mono">—</td>
+                <td><button class="btn btn-ghost btn-sm" onclick="toast('Viewing logs…')">Logs</button></td>
+              </tr>
+              <tr>
+                <td>worker-queue</td>
+                <td><span class="badge br"><span class="b-dot" style="background:var(--red)"></span>Failed</span></td>
+                <td><span class="badge bb">staging</span></td>
+                <td class="mono">CI/CD pipeline</td>
+                <td class="mono">1h ago</td>
+                <td class="mono">0m 43s</td>
+                <td><button class="btn btn-danger btn-sm" onclick="loadingDemo(this,'Retrying','green')">Retry</button></td>
+              </tr>
+              <tr>
+                <td>auth-service</td>
+                <td><span class="badge bg"><span class="b-dot" style="background:var(--green)"></span>Live</span></td>
+                <td><span class="badge bp">production</span></td>
+                <td class="mono">jane@studio.io</td>
+                <td class="mono">3h ago</td>
+                <td class="mono">1m 55s</td>
+                <td><button class="btn btn-ghost btn-sm" onclick="toast('Viewing logs…')">Logs</button></td>
+              </tr>
+              <tr>
+                <td>cdn-edge</td>
+                <td><span class="badge bg"><span class="b-dot" style="background:var(--green)"></span>Live</span></td>
+                <td><span class="badge bp">production</span></td>
+                <td class="mono">auto-deploy</td>
+                <td class="mono">6h ago</td>
+                <td class="mono">3m 12s</td>
+                <td><button class="btn btn-ghost btn-sm" onclick="toast('Viewing logs…')">Logs</button></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="row" style="justify-content:space-between;color:var(--text2);font-size:12px;font-family:var(--mono)">
+          <span>Showing 6 of 48 deployments</span>
+          <div class="row" style="gap:6px">
+            <button class="btn btn-secondary btn-sm" onclick="toast('Previous page')">← Prev</button>
+            <button class="btn btn-primary btn-sm" onclick="toast('Next page')">Next →</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════ SETTINGS ══════════════════ -->
+  <div class="tab-panel" id="tab-settings">
+    <div class="page-body">
+      <div class="section-label">Account &amp; Preferences</div>
+      <div class="col stagger" style="gap:16px">
+
+        <div class="g2">
+          <div class="card">
+            <div class="card-h">Profile</div>
+            <div class="card-s">Your public-facing identity</div>
+            <div class="col">
+              <div class="inp-group"><div class="inp-label">Display Name</div><input class="inp" type="text" value="Jane Lowe"/></div>
+              <div class="inp-group"><div class="inp-label">Username</div><div class="inp-row"><span class="inp-prefix">@</span><input type="text" value="janelowe"/></div></div>
+              <div class="inp-group"><div class="inp-label">Bio</div><textarea class="inp" style="min-height:60px">Designer & creative technologist building UI systems.</textarea></div>
+              <button class="btn btn-primary btn-sm" onclick="toast('Profile saved!','green')">Save Profile</button>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-h">Security</div>
+            <div class="card-s">Password &amp; access control</div>
+            <div class="col">
+              <div class="inp-group"><div class="inp-label">Current Password</div><input class="inp" type="password" value="hunter2"/></div>
+              <div class="inp-group"><div class="inp-label">New Password</div><input class="inp" type="password" placeholder="8+ characters"/></div>
+              <div class="col" style="gap:11px;margin-top:4px">
+                <label class="cb-wrap"><input type="checkbox" class="cb" checked/><span class="cb-label">Require 2FA on login</span></label>
+                <label class="cb-wrap"><input type="checkbox" class="cb"/><span class="cb-label">Log out all other sessions</span></label>
+              </div>
+              <button class="btn btn-secondary btn-sm" onclick="toast('Password updated','green')">Update Password</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-h">Notifications</div>
+          <div class="card-s">Choose when and how you're notified</div>
+          <div class="toggle-row">
+            <div class="toggle-info"><div class="toggle-name">Deployment alerts</div><div class="toggle-desc">Success, failure, and rollback events</div></div>
+            <input type="checkbox" class="toggle" checked/>
+          </div>
+          <div class="toggle-row">
+            <div class="toggle-info"><div class="toggle-name">Team mentions</div><div class="toggle-desc">When someone @-mentions you in comments</div></div>
+            <input type="checkbox" class="toggle" checked/>
+          </div>
+          <div class="toggle-row">
+            <div class="toggle-info"><div class="toggle-name">Weekly digest</div><div class="toggle-desc">Summary of activity every Monday</div></div>
+            <input type="checkbox" class="toggle"/>
+          </div>
+          <div class="toggle-row">
+            <div class="toggle-info"><div class="toggle-name">Marketing emails</div><div class="toggle-desc">Product updates and announcements</div></div>
+            <input type="checkbox" class="toggle"/>
+          </div>
+        </div>
+
+        <div class="card" style="border-color:rgba(224,96,106,.2)">
+          <div class="card-h" style="color:var(--red)">Danger Zone</div>
+          <div class="card-s">Irreversible — proceed with caution</div>
+          <div class="row">
+            <button class="btn btn-danger" onclick="toast('Export requested — check email','amber')">Export All Data</button>
+            <button class="btn btn-danger" onclick="toast('Confirmation email sent','red')">Delete Account</button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  </div><!-- /content-scroll -->
+</main>
+</div><!-- /shell -->
+
+<!-- Toast -->
+<div id="toast">
+  <span id="toast-dot"></span>
+  <span id="toast-msg">Done</span>
+</div>
+
+<script>
+/* ═══════════════════════════════════════════════
+   TABS
+═══════════════════════════════════════════════ */
+const tabMeta = {
+  dashboard:{ label:'Dashboard',  chip:'Live',     action:'Deploy'   },
+  buttons:  { label:'Buttons',    chip:'14 types', action:'Copy CSS' },
+  inputs:   { label:'Inputs',     chip:'Forms',    action:'Download' },
+  controls: { label:'Controls',   chip:'Interactive', action:'Export'},
+  feedback: { label:'Feedback',   chip:'Alerts',   action:'Preview'  },
+  data:     { label:'Data',       chip:'Tables',   action:'Export CSV'},
+  settings: { label:'Settings',   chip:'Account',  action:'Save'     },
+};
+
+function switchTab(el){
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  el.classList.add('active');
+  const tab=el.dataset.tab;
+  document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
+  const panel=document.getElementById('tab-'+tab);
+  if(panel){
+    panel.classList.add('active');
+    // re-trigger stagger
+    panel.querySelectorAll('.stagger').forEach(s=>{
+      s.querySelectorAll(':scope>*').forEach(c=>{
+        c.style.animation='none';
+        c.offsetHeight;
+        c.style.animation='';
+      });
+    });
+  }
+  const meta=tabMeta[tab]||{};
+  document.getElementById('bcCur').textContent=meta.label||tab;
+  document.getElementById('bcChip').textContent=meta.chip||'';
+  document.getElementById('topbarAction').textContent=meta.action||'Action';
+  if(tab==='dashboard') animateCounters();
+}
+
+/* ═══════════════════════════════════════════════
+   SIDEBAR
+═══════════════════════════════════════════════ */
+function toggleSidebar(){
+  document.getElementById('sidebar').classList.toggle('collapsed');
+}
+
+/* ═══════════════════════════════════════════════
+   NOTIFICATIONS
+═══════════════════════════════════════════════ */
+function toggleNotif(){
+  document.getElementById('notifPopover').classList.toggle('open');
+}
+function clearNotifs(){
+  document.querySelectorAll('.notif-item.unread').forEach(el=>el.classList.remove('unread'));
+  const badge=document.getElementById('notifBadge');
+  badge.textContent='0';
+  badge.style.opacity='0';
+  toast('All notifications marked as read','green');
+}
+document.addEventListener('click',e=>{
+  if(!e.target.closest('#notifBtn')&&!e.target.closest('#notifPopover')){
+    document.getElementById('notifPopover').classList.remove('open');
+  }
+  if(!e.target.closest('.dd-wrap')){
+    document.querySelectorAll('.dd-wrap.open').forEach(d=>d.classList.remove('open'));
+  }
+});
+
+/* ═══════════════════════════════════════════════
+   DROPDOWNS
+═══════════════════════════════════════════════ */
+function toggleDD(id){
+  const el=document.getElementById(id);
+  const was=el.classList.contains('open');
+  document.querySelectorAll('.dd-wrap.open').forEach(d=>d.classList.remove('open'));
+  if(!was) el.classList.add('open');
+}
+function closeDD(id){document.getElementById(id).classList.remove('open')}
+
+/* ═══════════════════════════════════════════════
+   RADIO
+═══════════════════════════════════════════════ */
+function selectRadio(el,group){
+  document.getElementById(group).querySelectorAll('.radio-item').forEach(r=>r.classList.remove('sel'));
+  el.classList.add('sel');
+}
+
+/* ═══════════════════════════════════════════════
+   SLIDERS
+═══════════════════════════════════════════════ */
+function updateSlider(input){
+  const pct=((input.value-input.min)/(input.max-input.min))*100;
+  input.style.background=`linear-gradient(to right,var(--a) ${pct}%,var(--bg4) ${pct}%)`;
+}
+document.querySelectorAll('input[type=range]').forEach(updateSlider);
+
+/* ═══════════════════════════════════════════════
+   STEPS
+═══════════════════════════════════════════════ */
+let curStep=3;
+const maxStep=5;
+function renderSteps(){
+  document.querySelectorAll('#stepsEl .step').forEach(s=>{
+    const n=parseInt(s.dataset.step);
+    s.classList.remove('done','active');
+    if(n<curStep) s.classList.add('done');
+    else if(n===curStep) s.classList.add('active');
+    s.querySelector('.step-dot').textContent=n<curStep?'✓':n;
+  });
+  document.querySelectorAll('#stepsEl .step-line').forEach((l,i)=>{
+    l.style.background=i<curStep-1?'var(--a)':'var(--bg4)';
+  });
+}
+function nextStep(){if(curStep<maxStep){curStep++;renderSteps();toast(`Step ${curStep} of ${maxStep}`)}}
+function prevStep(){if(curStep>1){curStep--;renderSteps();toast(`Back to step ${curStep}`)}}
+
+/* ═══════════════════════════════════════════════
+   SWATCH
+═══════════════════════════════════════════════ */
+function pickSwatch(el){
+  el.closest('.swatch-row').querySelectorAll('.sw').forEach(s=>s.classList.remove('picked'));
+  el.classList.add('picked');
+  toast('Color selected','green');
+}
+
+/* ═══════════════════════════════════════════════
+   LOADING BUTTON
+═══════════════════════════════════════════════ */
+function loadingDemo(btn,label='Done',c='green'){
+  if(btn._loading) return;
+  btn._loading=true;
+  const orig=btn.innerHTML;
+  const origCls=btn.className;
+  btn.innerHTML='<span class="spinner"></span> Loading…';
+  btn.disabled=true;
+  setTimeout(()=>{
+    btn.innerHTML=`<svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M2 7L5.5 10.5 11 3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg> ${label}!`;
+    btn.className=origCls.replace('btn-primary','btn-success').replace('btn-danger','btn-success').replace('btn-secondary','btn-success');
+    toast(`${label} complete!`,c);
+    setTimeout(()=>{btn.innerHTML=orig;btn.className=origCls;btn.disabled=false;btn._loading=false;},1800);
+  },1500);
+}
+
+/* ═══════════════════════════════════════════════
+   ACCENT COLOR SWITCHER
+═══════════════════════════════════════════════ */
+function setAccent(el){
+  document.querySelectorAll('.accent-dot').forEach(d=>d.classList.remove('active'));
+  el.classList.add('active');
+  const [a,a2,alo,amed,aglow]=el.dataset.color.split(',');
+  const root=document.documentElement;
+  root.style.setProperty('--a',a);
+  root.style.setProperty('--a2',a2);
+  root.style.setProperty('--a3',a2);
+  root.style.setProperty('--alo',alo);
+  root.style.setProperty('--amed',amed);
+  root.style.setProperty('--aglow',aglow);
+  document.querySelectorAll('input[type=range]').forEach(updateSlider);
+  toast('Accent color updated','green');
+}
+
+/* ═══════════════════════════════════════════════
+   ANIMATED COUNTERS
+═══════════════════════════════════════════════ */
+function animateCounters(){
+  document.querySelectorAll('.stat-num[data-target]').forEach(el=>{
+    const target=parseInt(el.dataset.target);
+    const prefix=el.dataset.prefix||'';
+    const suffix=el.dataset.suffix||'';
+    const divisor=parseFloat(el.dataset.divisor)||1;
+    let start=null;
+    const dur=1200;
+    function step(ts){
+      if(!start) start=ts;
+      const prog=Math.min((ts-start)/dur,1);
+      const ease=1-Math.pow(1-prog,4);
+      const val=(target*ease)/divisor;
+      el.textContent=prefix+(divisor===1?Math.round(val):val.toFixed(divisor<1?2:divisor===10?1:2))+suffix;
+      if(prog<1) requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+  });
+}
+
+/* ═══════════════════════════════════════════════
+   TABLE FILTER
+═══════════════════════════════════════════════ */
+function filterTable(q){
+  document.querySelectorAll('#tableBody tr').forEach(row=>{
+    row.style.display=row.textContent.toLowerCase().includes(q.toLowerCase())?'':'none';
+  });
+}
+
+/* ═══════════════════════════════════════════════
+   TOAST
+═══════════════════════════════════════════════ */
+const colorMap={green:'var(--green)',blue:'var(--blue)',amber:'var(--a)',red:'var(--red)'};
+let toastTimer;
+function toast(msg,color){
+  const t=document.getElementById('toast');
+  const dot=document.getElementById('toast-dot');
+  document.getElementById('toast-msg').textContent=msg;
+  dot.style.background=colorMap[color]||'var(--a)';
+  dot.style.boxShadow=`0 0 8px ${colorMap[color]||'var(--aglow)'}`;
+  clearTimeout(toastTimer);
+  t.classList.add('show');
+  toastTimer=setTimeout(()=>t.classList.remove('show'),2600);
+}
+
+/* ═══════════════════════════════════════════════
+   COMMAND PALETTE
+═══════════════════════════════════════════════ */
+const commands=[
+  {cat:'Pages',    icon:'⊞', label:'Dashboard',   hint:'',       action:()=>doTabSwitch('dashboard')},
+  {cat:'Pages',    icon:'⬡', label:'Buttons',      hint:'',       action:()=>doTabSwitch('buttons')},
+  {cat:'Pages',    icon:'⌨', label:'Inputs',       hint:'',       action:()=>doTabSwitch('inputs')},
+  {cat:'Pages',    icon:'⚙', label:'Controls',     hint:'',       action:()=>doTabSwitch('controls')},
+  {cat:'Pages',    icon:'🔔', label:'Feedback',     hint:'',       action:()=>doTabSwitch('feedback')},
+  {cat:'Pages',    icon:'📋', label:'Data & Tables', hint:'',      action:()=>doTabSwitch('data')},
+  {cat:'Pages',    icon:'👤', label:'Settings',     hint:'',       action:()=>doTabSwitch('settings')},
+  {cat:'Actions',  icon:'↑', label:'Deploy',        hint:'⌘D',    action:()=>toast('Deploying…','green')},
+  {cat:'Actions',  icon:'↩', label:'Rollback',      hint:'',       action:()=>toast('Rollback initiated','amber')},
+  {cat:'Actions',  icon:'↓', label:'Export CSV',    hint:'',       action:()=>toast('Exporting…','blue')},
+  {cat:'Actions',  icon:'🔔', label:'Clear notifications', hint:'', action:clearNotifs},
+  {cat:'Theme',    icon:'●', label:'Accent: Amber', hint:'',       action:()=>setAccent(document.querySelectorAll('.accent-dot')[0])},
+  {cat:'Theme',    icon:'●', label:'Accent: Cobalt',hint:'',       action:()=>setAccent(document.querySelectorAll('.accent-dot')[1])},
+  {cat:'Theme',    icon:'●', label:'Accent: Emerald',hint:'',      action:()=>setAccent(document.querySelectorAll('.accent-dot')[2])},
+  {cat:'Theme',    icon:'●', label:'Accent: Violet',hint:'',       action:()=>setAccent(document.querySelectorAll('.accent-dot')[3])},
+  {cat:'Theme',    icon:'●', label:'Accent: Rose',  hint:'',       action:()=>setAccent(document.querySelectorAll('.accent-dot')[4])},
+  {cat:'UI',       icon:'⟺', label:'Toggle Sidebar',hint:'',      action:()=>{toggleSidebar();toast('Sidebar toggled')}},
+];
+
+function doTabSwitch(tab){
+  const el=document.querySelector(`.nav-item[data-tab="${tab}"]`);
+  if(el) switchTab(el);
+}
+
+let cmdIdx=0;
+let filteredCmds=[];
+
+function openCmd(){
+  document.getElementById('cmdOverlay').classList.add('open');
+  document.getElementById('cmdInput').value='';
+  filterCmd('');
+  document.getElementById('cmdInput').focus();
+}
+function closeCmd(){document.getElementById('cmdOverlay').classList.remove('open')}
+
+function filterCmd(q){
+  const ql=q.toLowerCase();
+  filteredCmds=commands.filter(c=>c.label.toLowerCase().includes(ql)||c.cat.toLowerCase().includes(ql));
+  cmdIdx=0;
+  renderCmd();
+}
+
+function renderCmd(){
+  const r=document.getElementById('cmdResults');
+  if(!filteredCmds.length){r.innerHTML='<div style="padding:28px;text-align:center;color:var(--text2);font-size:13px;font-family:var(--mono)">No results</div>';return}
+  let cats=[...new Set(filteredCmds.map(c=>c.cat))];
+  let html='';let idx=0;
+  cats.forEach(cat=>{
+    html+=`<div class="cmd-category">${cat}</div>`;
+    filteredCmds.filter(c=>c.cat===cat).forEach(c=>{
+      const i=filteredCmds.indexOf(c);
+      html+=`<div class="cmd-result${i===cmdIdx?' hi':''}" data-idx="${i}" onclick="execCmd(${i})">
+        <div class="cmd-result-icon">${c.icon}</div>
+        <span class="cmd-result-label">${c.label}</span>
+        ${c.hint?`<div class="cmd-result-kbd"><kbd>${c.hint}</kbd></div>`:''}
+      </div>`;
+    });
+  });
+  r.innerHTML=html;
+  r.querySelectorAll('.cmd-result').forEach(el=>{
+    el.addEventListener('mouseover',()=>{
+      cmdIdx=parseInt(el.dataset.idx);
+      r.querySelectorAll('.cmd-result').forEach(e=>e.classList.remove('hi'));
+      el.classList.add('hi');
+    });
+  });
+}
+
+function execCmd(i){
+  if(filteredCmds[i]) filteredCmds[i].action();
+  closeCmd();
+}
+
+document.getElementById('cmdInput').addEventListener('keydown',e=>{
+  if(e.key==='ArrowDown'){e.preventDefault();cmdIdx=Math.min(cmdIdx+1,filteredCmds.length-1);renderCmd()}
+  else if(e.key==='ArrowUp'){e.preventDefault();cmdIdx=Math.max(cmdIdx-1,0);renderCmd()}
+  else if(e.key==='Enter'){e.preventDefault();execCmd(cmdIdx)}
+  else if(e.key==='Escape') closeCmd();
+});
+document.getElementById('cmdOverlay').addEventListener('click',e=>{if(e.target===e.currentTarget) closeCmd()});
+
+/* Global shortcuts */
+document.addEventListener('keydown',e=>{
+  if((e.metaKey||e.ctrlKey)&&e.key==='k'){e.preventDefault();openCmd()}
+});
+
+/* ═══════════════════════════════════════════════
+   INIT
+═══════════════════════════════════════════════ */
+setTimeout(animateCounters,100);
+</script>
+</body>
+</html>
