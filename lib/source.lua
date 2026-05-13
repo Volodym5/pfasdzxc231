@@ -82,17 +82,18 @@ function Library.CreateWindow(config)
     self.ScreenGui.Parent = config.Parent or CoreGui
     self.ScreenGui.ResetOnSpawn = false
     
-    -- Create the main container
+    -- Create the main container (1.5x bigger: 825x600)
     self.MainFrame = Instance.new("Frame")
     self.MainFrame.Name = "MainFrame"
-    self.MainFrame.Size = UDim2.new(0, 550, 0, 400)
-    self.MainFrame.Position = UDim2.new(0.5, -275, 0.5, -200)
+    self.MainFrame.Size = UDim2.new(0, 825, 0, 600) -- Was 550x400
+    self.MainFrame.Position = UDim2.new(0.5, -412, 0.5, -300) -- Centered
     self.MainFrame.BackgroundColor3 = Colors.WindowBackground
     self.MainFrame.BackgroundTransparency = 0
     self.MainFrame.Parent = self.ScreenGui
     self.MainFrame.ZIndex = 1
+    self.MainFrame.ClipsDescendants = true -- Keeps everything inside
     
-    applyRoundedCorners(self.MainFrame, 10)
+    applyRoundedCorners(self.MainFrame, 15) -- Slightly bigger radius for bigger window
     applyShadow(self.MainFrame)
     
     -- Make the window draggable
@@ -100,76 +101,85 @@ function Library.CreateWindow(config)
     self.DragStart = nil
     self.StartPos = nil
     
-    -- Create the title bar
+    -- Create the title bar (taller for bigger window)
     self.TitleBar = Instance.new("Frame")
     self.TitleBar.Name = "TitleBar"
-    self.TitleBar.Size = UDim2.new(1, 0, 0, 40)
+    self.TitleBar.Size = UDim2.new(1, 0, 0, 50) -- Was 40
     self.TitleBar.Position = UDim2.new(0, 0, 0, 0)
-    self.TitleBar.BackgroundColor3 = Colors.TabBar
+    self.TitleBar.BackgroundColor3 = Colors.TitleBar or Color3.fromRGB(30, 30, 35)
     self.TitleBar.BackgroundTransparency = 0
     self.TitleBar.Parent = self.MainFrame
-    self.TitleBar.ZIndex = 2
-    
-    applyRoundedCorners(self.TitleBar, 10)
+    self.TitleBar.ZIndex = 10
     
     -- Title text
     self.TitleLabel = Instance.new("TextLabel")
     self.TitleLabel.Name = "Title"
-    self.TitleLabel.Size = UDim2.new(0.7, 0, 1, 0)
-    self.TitleLabel.Position = UDim2.new(0, 15, 0, 0)
+    self.TitleLabel.Size = UDim2.new(1, -20, 1, 0)
+    self.TitleLabel.Position = UDim2.new(0, 20, 0, 0)
     self.TitleLabel.BackgroundTransparency = 1
     self.TitleLabel.Text = self.Title
     self.TitleLabel.TextColor3 = Colors.Text
-    self.TitleLabel.TextSize = 18
+    self.TitleLabel.TextSize = 22 -- Bigger text
     self.TitleLabel.Font = Enum.Font.GothamBold
     self.TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
     self.TitleLabel.Parent = self.TitleBar
-    self.TitleLabel.ZIndex = 3
+    self.TitleLabel.ZIndex = 11
     
-    -- Create the tab bar (below title bar)
+    -- Create the main content container (holds both tab bar and content)
+    self.ContentContainer = Instance.new("Frame")
+    self.ContentContainer.Name = "ContentContainer"
+    self.ContentContainer.Size = UDim2.new(1, -15, 1, -65) -- Full width minus padding, full height minus title
+    self.ContentContainer.Position = UDim2.new(0, 7, 0, 55) -- Below title bar with padding
+    self.ContentContainer.BackgroundTransparency = 1
+    self.ContentContainer.Parent = self.MainFrame
+    self.ContentContainer.ZIndex = 5
+    
+    -- Create the tab bar (now properly inside the window, left side)
     self.TabBar = Instance.new("Frame")
     self.TabBar.Name = "TabBar"
-    self.TabBar.Size = UDim2.new(0, 120, 1, -40)
-    self.TabBar.Position = UDim2.new(0, 0, 0, 40)
+    self.TabBar.Size = UDim2.new(0, 180, 1, 0) -- Wider tabs: 180px (was 120)
+    self.TabBar.Position = UDim2.new(0, 0, 0, 0)
     self.TabBar.BackgroundColor3 = Colors.TabBar
     self.TabBar.BackgroundTransparency = 0
-    self.TabBar.Parent = self.MainFrame
-    self.TabBar.ZIndex = 2
+    self.TabBar.Parent = self.ContentContainer
+    self.TabBar.ZIndex = 6
     
-    -- Create the tab buttons container
+    applyRoundedCorners(self.TabBar, 10)
+    
+    -- Create the tab buttons container (inside tab bar with padding)
     self.TabButtons = Instance.new("ScrollingFrame")
     self.TabButtons.Name = "TabButtons"
-    self.TabButtons.Size = UDim2.new(1, -10, 1, -10)
-    self.TabButtons.Position = UDim2.new(0, 5, 0, 5)
+    self.TabButtons.Size = UDim2.new(1, -20, 1, -20)
+    self.TabButtons.Position = UDim2.new(0, 10, 0, 10)
     self.TabButtons.BackgroundTransparency = 1
     self.TabButtons.ScrollBarThickness = 0
     self.TabButtons.CanvasSize = UDim2.new(0, 0, 0, 0)
     self.TabButtons.Parent = self.TabBar
-    self.TabButtons.ZIndex = 3
+    self.TabButtons.ZIndex = 7
     
     local tabListLayout = Instance.new("UIListLayout")
     tabListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-    tabListLayout.Padding = UDim.new(0, 5)
+    tabListLayout.Padding = UDim.new(0, 8) -- More spacing
     tabListLayout.Parent = self.TabButtons
     
-    -- Create the content area
+    -- Create the content area (right side, properly spaced)
     self.ContentArea = Instance.new("Frame")
     self.ContentArea.Name = "ContentArea"
-    self.ContentArea.Size = UDim2.new(1, -130, 1, -50)
-    self.ContentArea.Position = UDim2.new(0, 125, 0, 45)
+    self.ContentArea.Size = UDim2.new(1, -190, 1, 0) -- Accounts for tab bar width + gap
+    self.ContentArea.Position = UDim2.new(0, 190, 0, 0) -- 180px tab bar + 10px gap
     self.ContentArea.BackgroundColor3 = Colors.ContentBackground
     self.ContentArea.BackgroundTransparency = 0
-    self.ContentArea.Parent = self.MainFrame
-    self.ContentArea.ZIndex = 2
+    self.ContentArea.Parent = self.ContentContainer
+    self.ContentArea.ZIndex = 6
     
-    applyRoundedCorners(self.ContentArea, 8)
+    applyRoundedCorners(self.ContentArea, 10)
     
-    -- Create pages container (holds content for each tab)
+    -- Create pages container
     self.Pages = Instance.new("Folder")
     self.Pages.Name = "Pages"
     self.Pages.Parent = self.ContentArea
     
-    -- Dragging functionality
+    -- Dragging functionality (restrict to title bar only)
     self.TitleBar.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 then
             self.IsDragging = true
@@ -210,44 +220,44 @@ function Library:CreateTab(name, icon)
         Active = false
     }
     
-    -- Create the tab button
+    -- Create the tab button (bigger)
     tab.Button = Instance.new("TextButton")
     tab.Button.Name = name
-    tab.Button.Size = UDim2.new(1, 0, 0, 35)
+    tab.Button.Size = UDim2.new(1, 0, 0, 45) -- Was 35
     tab.Button.BackgroundColor3 = Colors.TabInactive
     tab.Button.Text = (icon and icon.."  " or "")..name
     tab.Button.TextColor3 = Colors.TextSecondary
-    tab.Button.TextSize = 14
+    tab.Button.TextSize = 16 -- Was 14
     tab.Button.Font = Enum.Font.GothamSemibold
     tab.Button.TextXAlignment = Enum.TextXAlignment.Left
     tab.Button.TextTruncate = Enum.TextTruncate.AtEnd
     tab.Button.Parent = self.TabButtons
-    tab.Button.ZIndex = 3
+    tab.Button.ZIndex = 7
     tab.Button.LayoutOrder = #self.Tabs + 1
     
-    applyRoundedCorners(tab.Button, 6)
+    applyRoundedCorners(tab.Button, 8) -- Bigger radius
     
-    -- Create the content page
+    -- Create the content page (with padding)
     tab.Page = Instance.new("ScrollingFrame")
     tab.Page.Name = name.."_Page"
-    tab.Page.Size = UDim2.new(1, -20, 1, -20)
-    tab.Page.Position = UDim2.new(0, 10, 0, 10)
+    tab.Page.Size = UDim2.new(1, -30, 1, -30) -- More padding
+    tab.Page.Position = UDim2.new(0, 15, 0, 15)
     tab.Page.BackgroundTransparency = 1
-    tab.Page.ScrollBarThickness = 4
+    tab.Page.ScrollBarThickness = 5
     tab.Page.ScrollBarImageColor3 = Colors.Accent
     tab.Page.CanvasSize = UDim2.new(0, 0, 0, 0)
     tab.Page.Visible = false
     tab.Page.Parent = self.Pages
-    tab.Page.ZIndex = 3
+    tab.Page.ZIndex = 7
     
     local pageListLayout = Instance.new("UIListLayout")
     pageListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-    pageListLayout.Padding = UDim.new(0, 10)
+    pageListLayout.Padding = UDim.new(0, 12) -- More spacing between elements
     pageListLayout.Parent = tab.Page
     
     -- Update canvas size when content changes
     pageListLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-        tab.Page.CanvasSize = UDim2.new(0, 0, 0, pageListLayout.AbsoluteContentSize.Y + 10)
+        tab.Page.CanvasSize = UDim2.new(0, 0, 0, pageListLayout.AbsoluteContentSize.Y + 15)
     end)
     
     -- Tab click handler
@@ -263,7 +273,7 @@ function Library:CreateTab(name, icon)
     end
     
     -- Update canvas size
-    self.TabButtons.CanvasSize = UDim2.new(0, 0, 0, #self.Tabs * 40)
+    self.TabButtons.CanvasSize = UDim2.new(0, 0, 0, #self.Tabs * 53) -- Account for padding
     
     return tab
 end
