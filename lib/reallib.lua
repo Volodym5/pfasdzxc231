@@ -1831,6 +1831,8 @@ function Library:AddContextMenu(
             AutomaticCanvasSize = List == 2 and Enum.AutomaticSize.Y or Enum.AutomaticSize.None,
             AutomaticSize = List == 1 and Enum.AutomaticSize.Y or Enum.AutomaticSize.None,
             BackgroundColor3 = "BackgroundColor",
+            BackgroundTransparency = 1,
+            ClipsDescendants = true,
             BottomImage = "rbxasset://textures/ui/Scroll/scroll-middle.png",
             CanvasSize = UDim2.fromOffset(0, 0),
             ScrollBarImageColor3 = "OutlineColor",
@@ -1844,6 +1846,8 @@ function Library:AddContextMenu(
     else
         Menu = New("Frame", {
             BackgroundColor3 = "BackgroundColor",
+            BackgroundTransparency = 1,
+            ClipsDescendants = true,
             Size = typeof(Size) == "function" and Size() or Size,
             Visible = false,
             ZIndex = Library.ZIndex.Menu,
@@ -1888,6 +1892,20 @@ function Library:AddContextMenu(
         })
     end
 
+    local function GetMenuPosition()
+        if typeof(Offset) == "function" then
+            local Position = Offset()
+            return UDim2.fromOffset(
+                math.floor(Holder.AbsolutePosition.X + Position[1]),
+                math.floor(Holder.AbsolutePosition.Y + Position[2])
+            )
+        end
+        return UDim2.fromOffset(
+            math.floor(Holder.AbsolutePosition.X + Offset[1]),
+            math.floor(Holder.AbsolutePosition.Y + Offset[2])
+        )
+    end
+
     function Table:Open()
         if CurrentMenu == Table then
             return
@@ -1898,37 +1916,28 @@ function Library:AddContextMenu(
         CurrentMenu = Table
         Table.Active = true
 
-        if typeof(Offset) == "function" then
-            Menu.Position = UDim2.fromOffset(
-                math.floor(Holder.AbsolutePosition.X + Offset()[1]),
-                math.floor(Holder.AbsolutePosition.Y + Offset()[2])
-            )
-        else
-            Menu.Position = UDim2.fromOffset(
-                math.floor(Holder.AbsolutePosition.X + Offset[1]),
-                math.floor(Holder.AbsolutePosition.Y + Offset[2])
-            )
-        end
+        local TargetPosition = GetMenuPosition()
+        local StartPosition = UDim2.fromOffset(TargetPosition.X.Offset, TargetPosition.Y.Offset - 10)
+
         Menu.Size = typeof(Table.Size) == "function" and Table.Size() or Table.Size
+        Menu.Position = StartPosition
+        Menu.BackgroundTransparency = 1
+        Menu.ZIndex = Library.ZIndex.Overlay
+        Menu.Visible = true
+
         if typeof(ActiveCallback) == "function" then
             Library:SafeCallback(ActiveCallback, true)
         end
 
-        Menu.ZIndex = Library.ZIndex.Overlay
-        Menu.Visible = true
+        StopTween(Table.CloseTween)
+        Table.OpenTween = PlayTween(Table.OpenTween, Menu, Library.TweenInfo, {
+            BackgroundTransparency = 0,
+            Position = TargetPosition,
+        })
 
         Table.Signal = Holder:GetPropertyChangedSignal("AbsolutePosition"):Connect(function()
-            if typeof(Offset) == "function" then
-                Menu.Position = UDim2.fromOffset(
-                    math.floor(Holder.AbsolutePosition.X + Offset()[1]),
-                    math.floor(Holder.AbsolutePosition.Y + Offset()[2])
-                )
-            else
-                Menu.Position = UDim2.fromOffset(
-                    math.floor(Holder.AbsolutePosition.X + Offset[1]),
-                    math.floor(Holder.AbsolutePosition.Y + Offset[2])
-                )
-            end
+            local NewPosition = GetMenuPosition()
+            Menu.Position = NewPosition
         end)
     end
 
@@ -1936,17 +1945,29 @@ function Library:AddContextMenu(
         if CurrentMenu ~= Table then
             return
         end
-        Menu.Visible = false
 
         if Table.Signal then
             Table.Signal:Disconnect()
             Table.Signal = nil
         end
+
         Table.Active = false
         CurrentMenu = nil
         if typeof(ActiveCallback) == "function" then
             Library:SafeCallback(ActiveCallback, false)
         end
+
+        StopTween(Table.OpenTween)
+        local CurrentPosition = Menu.Position
+        Table.CloseTween = PlayTween(Table.CloseTween, Menu, Library.TweenInfo, {
+            BackgroundTransparency = 1,
+            Position = UDim2.fromOffset(CurrentPosition.X.Offset, CurrentPosition.Y.Offset - 10),
+        })
+        Table.CloseTween.Completed:Connect(function(State)
+            if State == Enum.PlaybackState.Completed and Menu then
+                Menu.Visible = false
+            end
+        end)
     end
 
     function Table:Toggle()
@@ -5083,6 +5104,38 @@ do
                     PaddingRight = UDim.new(0, 7),
                     Parent = Button,
                 })
+
+                local function UpdateDropdownEntry(Hover)
+                    if IsDisabled then
+                        Container.BackgroundTransparency = 1
+                        Button.TextTransparency = 0.8
+                        if Image then
+                            Image.ImageTransparency = 0.8
+                        end
+                        return
+                    end
+
+                    if Selected then
+                        Container.BackgroundTransparency = 0
+                        Button.TextTransparency = 0
+                        if Image then
+                            Image.ImageTransparency = 0
+                        end
+                    else
+                        Container.BackgroundTransparency = Hover and 0.9 or 1
+                        Button.TextTransparency = Hover and 0.25 or 0.5
+                        if Image then
+                            Image.ImageTransparency = Hover and 0.25 or 0.5
+                        end
+                    end
+                end
+
+                Button.MouseEnter:Connect(function()
+                    UpdateDropdownEntry(true)
+                end)
+                Button.MouseLeave:Connect(function()
+                    UpdateDropdownEntry(false)
+                end)
 
                 local Selected
                 if Info.Multi then
