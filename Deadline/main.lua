@@ -16,11 +16,11 @@ local settings = {
     FillTransparency    = 0.75,
     OutlineTransparency = 0.5,
     NightVision         = false,
-    -- Aimbot settings
+    -- Aimbot settings (now silent aim)
     AimbotEnabled       = false,
     AimbotFOV           = 180,
-    AimbotSmoothness    = 0.18,
-    AimbotShowFOV       = true,
+    AimbotSmoothness    = 0.18,  -- unused by silent aim, kept for UI compat
+    AimbotShowFOV       = false,  -- no visual circle needed
     AimbotFOVColor      = Color3.fromRGB(255, 255, 255),
     AimbotFOVTransparency = 0.5,
     AimbotTargetPart    = "Head",
@@ -34,27 +34,11 @@ local cleaned          = false
 local teamTypeCache    = {}
 local ConfirmedEnemies = {}
 
--- Aim variables
-local aimConnection  = nil
-local fovCircle      = nil
-local predictionData = {}
-local intentData     = {
-    smoothedDelta = Vector2.zero,
-    currentTarget = nil,
-    lastMousePos  = Vector2.zero,
-}
-
--- Constants
-local RETENTION_BONUS   = 0.25
-local SWITCH_THRESHOLD  = 0.4
-local INTENT_SMOOTH     = 0.15
-local NEAR_THRESHOLD    = 20
-
-local VISIBILITY_POINTS = {
-    { part = "head",               weight = 0.4 },
-    { part = "torso",              weight = 0.35 },
-    { part = "humanoid_root_part", weight = 0.25 },
-}
+-- Silent aim variables
+local firingRemote     = nil  -- the remote that fires bullets
+local firingHooked     = false
+local predictionData   = {}
+local NEAR_THRESHOLD   = 20
 
 -- ===== HIGHLIGHT CREATION =====
 local function createCham(model)
@@ -145,96 +129,6 @@ local function checkVisibility(model)
     return false
 end
 
--- ===== PARTIAL VISIBILITY =====
-local function getPartialVisibility(model)
-    local myChar = LocalPlayer.Character
-    local ignoreList = myChar and {model, myChar} or {model}
-    
-    local origin = Camera.CFrame.Position
-    local totalVis = 0
-    
-    for _, entry in ipairs(VISIBILITY_POINTS) do
-        local targetPart = model:FindFirstChild(entry.part)
-        if targetPart then
-            local params = RaycastParams.new()
-            params.FilterType = Enum.RaycastFilterType.Exclude
-            params.FilterDescendantsInstances = ignoreList
-            params.IgnoreWater = true
-            
-            local direction = targetPart.Position - origin
-            local result = Workspace:Raycast(origin, direction, params)
-            
-            if not result then
-                totalVis = totalVis + entry.weight
-            elseif result.Instance.Transparency ~= 0 then
-                totalVis = totalVis + entry.weight * 0.5
-            end
-        end
-    end
-    
-    return totalVis
-end
-
--- ===== DISTANCE-BASED STRENGTH =====
-local function getAssistStrength(worldPos)
-    local worldDist = (worldPos - Camera.CFrame.Position).Magnitude
-    local screenRadius = (Camera.ViewportSize.Y / (2 * math.tan(math.rad(Camera.FieldOfView / 2)))) * (2 / worldDist)
-    local maxScreenRadius = 80
-    return math.clamp(1 - (screenRadius / maxScreenRadius), 0.1, 1.0)
-end
-
--- ===== INTENT DETECTION =====
-local function updateIntent(mouseDelta, candidates, mousePos)
-    intentData.smoothedDelta = intentData.smoothedDelta:Lerp(mouseDelta, INTENT_SMOOTH)
-    local cursorDir = intentData.smoothedDelta.Unit
-    
-    local bestTarget = nil
-    local bestScore = -math.huge
-    local curTargetScore = -math.huge
-    
-    for _, candidate in ipairs(candidates) do
-        local screenPos = candidate.screenPos
-        local toTarget = (screenPos - mousePos).Unit
-        
-        local intentScore = 0
-        if cursorDir == cursorDir then
-            intentScore = cursorDir:Dot(toTarget)
-        end
-        
-        local proximityScore = 1 - math.clamp(candidate.dist / settings.AimbotFOV, 0, 1)
-        local score = intentScore * 0.6 + proximityScore * 0.4
-        
-        if candidate.model == intentData.currentTarget then
-            score = score + RETENTION_BONUS
-            curTargetScore = score
-        end
-        
-        if score > bestScore then
-            bestScore = score
-            bestTarget = candidate.model
-        end
-    end
-    
-    if bestTarget and bestTarget ~= intentData.currentTarget then
-        if bestScore - curTargetScore > SWITCH_THRESHOLD then
-            intentData.currentTarget = bestTarget
-        end
-    end
-    
-    local assistMultiplier = 1.0
-    if intentData.currentTarget then
-        local root = intentData.currentTarget:FindFirstChild("humanoid_root_part")
-        if root then
-            local targetScreenPos = Camera:WorldToViewportPoint(root.Position)
-            local awayDir = (Vector2.new(targetScreenPos.X, targetScreenPos.Y) - mousePos).Unit
-            local awayScore = cursorDir ~= cursorDir and 0 or cursorDir:Dot(awayDir)
-            assistMultiplier = math.clamp((awayScore + 0.5) / 1.5, 0.1, 1.0)
-        end
-    end
-    
-    return intentData.currentTarget, assistMultiplier
-end
-
 -- ===== PREDICTION =====
 local function getPredictedPosition(model, part, smoothness)
     local data = predictionData[model]
@@ -279,7 +173,7 @@ local function getPredictedPosition(model, part, smoothness)
     return aimPos
 end
 
--- ===== TARGET SELECTION =====
+-- ===== TARGET SELECTION FOR SILENT AIM =====
 local function getAimPart(model)
     if settings.AimbotTargetPart == "Head" then
         return model:FindFirstChild("head")
@@ -290,123 +184,120 @@ local function getAimPart(model)
     end
 end
 
-local function getAssistTarget()
-    local mousePos = UIS:GetMouseLocation()
-    local candidates = {}
-    
+local function getBestTarget()
+    local camPos = Camera.CFrame.Position
+    local camDir = Camera.CFrame.LookVector
+
+    local bestTarget = nil
+    local bestAngle  = math.rad(settings.AimbotFOV)
+
     for model in pairs(highlightCache) do
         if not model.Parent then continue end
         if not ConfirmedEnemies[model] then continue end
-        
+
+        if settings.AimbotVisCheck then
+            local visible = checkVisibility(model)
+            if not visible then continue end
+        end
+
         local part = getAimPart(model)
         if not part then continue end
-        
+
         local aimPos
         if settings.AimbotPrediction then
             aimPos = getPredictedPosition(model, part, settings.AimbotSmoothness)
         else
             aimPos = part.Position
         end
-        
-        local screenPos, onScreen = Camera:WorldToViewportPoint(aimPos)
-        if not onScreen or screenPos.Z <= 0 then continue end
-        
-        local screenPoint = Vector2.new(screenPos.X, screenPos.Y)
-        local dist = (screenPoint - mousePos).Magnitude
-        
-        if dist < settings.AimbotFOV then
-            table.insert(candidates, {
-                model     = model,
-                part      = part,
-                screenPos = screenPoint,
-                dist      = dist,
-                aimPos    = aimPos,
-            })
+
+        local dirToTarget = (aimPos - camPos).Unit
+        local angle = math.acos(math.clamp(camDir:Dot(dirToTarget), -1, 1))
+
+        if angle < bestAngle then
+            bestAngle = angle
+            bestTarget = aimPos
         end
     end
-    
-    if #candidates == 0 then
-        intentData.currentTarget = nil
-        return nil
-    end
-    
-    local mouseDelta = mousePos - intentData.lastMousePos
-    intentData.lastMousePos = mousePos
-    
-    local targetModel, intentMult = updateIntent(mouseDelta, candidates, mousePos)
-    
-    if not targetModel then return nil end
-    
-    for _, c in ipairs(candidates) do
-        if c.model == targetModel then
-            local assistStr = getAssistStrength(c.aimPos)
-            local visibility = settings.AimbotVisCheck and getPartialVisibility(targetModel) or 1.0
-            
-            return {
-                screenPos = c.screenPos,
-                strength  = assistStr * visibility * intentMult,
-            }
-        end
-    end
-    
-    return nil
+
+    return bestTarget
 end
 
--- ===== FOV CIRCLE =====
-local function updateFOVCircle()
-    if fovCircle then
-        fovCircle.Visible = settings.AimbotShowFOV and settings.AimbotEnabled
-        fovCircle.Radius = settings.AimbotFOV
-        fovCircle.Color = settings.AimbotFOVColor
-        fovCircle.Transparency = settings.AimbotFOVTransparency
-        fovCircle.Position = UIS:GetMouseLocation()
-    end
-end
+-- ===== SILENT AIM HOOK SETUP =====
+local function hookFiringRemote(remote)
+    if firingHooked then return end
+    firingHooked = true
+    firingRemote = remote
 
--- ===== START / STOP =====
-local function startAimbot()
-    if aimConnection then aimConnection:Disconnect() end
-    
-    fovCircle = Drawing.new("Circle")
-    fovCircle.Thickness = 1.5
-    fovCircle.Filled = false
-    fovCircle.NumSides = 100
-    updateFOVCircle()
-    
-    aimConnection = RunService.RenderStepped:Connect(function()
-        if cleaned or not settings.AimbotEnabled then
-            if fovCircle then fovCircle.Visible = false end
-            return
+    local oldFireServer = remote.FireServer
+    local function newFireServer(self, ...)
+        if not settings.AimbotEnabled then
+            return oldFireServer(self, ...)
         end
-        
-        updateFOVCircle()
-        
-        if not UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then
-            intentData.currentTarget = nil
-            return
-        end
-        
-        local target = getAssistTarget()
-        if not target then return end
-        
-        local mousePos = UIS:GetMouseLocation()
-        local delta = target.screenPos - mousePos
-        local finalStrength = target.strength * settings.AimbotSmoothness
-        
-        pcall(function()
-            if mousemoverel then
-                mousemoverel(delta.X * finalStrength, delta.Y * finalStrength)
+
+        local args = {...}
+        -- Expected: Vector3 pos, Vector3 dir, string GUID
+        if #args >= 3 and typeof(args[1]) == "Vector3" and typeof(args[2]) == "Vector3" and type(args[3]) == "string" then
+            local targetPos = getBestTarget()
+            if targetPos then
+                local newDir = (targetPos - Camera.CFrame.Position).Unit
+                return oldFireServer(self, args[1], newDir, args[3])
             end
-        end)
-    end)
+        end
+
+        return oldFireServer(self, ...)
+    end
+
+    remote.FireServer = newFireServer
+    print("[SilentAim] Firing remote hooked:", remote:GetFullName())
 end
 
-local function stopAimbot()
-    if aimConnection then aimConnection:Disconnect(); aimConnection = nil end
-    if fovCircle then fovCircle:Remove(); fovCircle = nil end
-    predictionData = {}
-    intentData.currentTarget = nil
+-- Scan _NetManaged for the firing remote and hook it when first fired
+local function scanForFiringRemote()
+    local netFolder = game:GetService("ReplicatedStorage")
+        :FindFirstChild("include")
+        :FindFirstChild("node_modules")
+        :FindFirstChild("@rbxts")
+        :FindFirstChild("net")
+        :FindFirstChild("out")
+        :FindFirstChild("_NetManaged")
+
+    if not netFolder then
+        warn("[SilentAim] _NetManaged not found")
+        return
+    end
+
+    -- Hook all RemoteEvents to detect firing pattern
+    local hookedRemotes = {}
+    for _, obj in ipairs(netFolder:GetChildren()) do
+        if obj:IsA("RemoteEvent") then
+            local oldFireServer = obj.FireServer
+            local function detectionHook(self, ...)
+                local args = {...}
+                if #args >= 3 and typeof(args[1]) == "Vector3" and typeof(args[2]) == "Vector3" and type(args[3]) == "string" then
+                    -- Found the firing remote
+                    hookFiringRemote(self)
+                    -- Restore original for all other hooked remotes (optional cleanup)
+                    for _, h in pairs(hookedRemotes) do
+                        if h.remote ~= self then
+                            h.remote.FireServer = h.original
+                        end
+                    end
+                    hookedRemotes = {}
+                    -- Now call the new hooked version
+                    return self.FireServer(self, ...)
+                end
+                return oldFireServer(self, ...)
+            end
+            hookedRemotes[obj] = {remote = obj, original = oldFireServer}
+            obj.FireServer = detectionHook
+        end
+    end
+
+    print("[SilentAim] Monitoring " .. #hookedRemotes .. " remotes for firing pattern...")
 end
+
+-- Call immediately
+scanForFiringRemote()
 
 -- ===== TOGGLE / CLEANUP =====
 local function toggleChams(enabled)
@@ -423,7 +314,11 @@ end
 local function fullCleanup()
     if cleaned then return end
     cleaned = true
-    stopAimbot()
+    -- Restore firing remote if hooked
+    if firingRemote and firingHooked then
+        -- We can't easily restore, but we just disable by setting AimbotEnabled=false
+        settings.AimbotEnabled = false
+    end
     for _, h in pairs(highlightCache) do pcall(function() h:Destroy() end) end
     for _, c in ipairs(connections) do pcall(function() c:Disconnect() end) end
 end
@@ -670,7 +565,4 @@ _G.ChamsState = {
     suppressionKiller = suppressionKiller,
     explosionKiller   = explosionKiller,
     waterKiller    = waterKiller,
-    startAimbot    = startAimbot,
-    stopAimbot     = stopAimbot,
-    updateFOVCircle = updateFOVCircle,
 }
