@@ -16,16 +16,12 @@ local settings = {
     FillTransparency    = 0.75,
     OutlineTransparency = 0.5,
     NightVision         = false,
-    -- Aimbot settings (now silent aim)
-    AimbotEnabled       = false,
-    AimbotFOV           = 180,
-    AimbotSmoothness    = 0.18,  -- unused by silent aim, kept for UI compat
-    AimbotShowFOV       = false,  -- no visual circle needed
-    AimbotFOVColor      = Color3.fromRGB(255, 255, 255),
-    AimbotFOVTransparency = 0.5,
-    AimbotTargetPart    = "Head",
-    AimbotVisCheck      = false,
-    AimbotPrediction    = true,
+    -- Silent Aim settings
+    SilentAimEnabled    = false,
+    SilentAimFOV        = 180,
+    SilentAimTargetPart = "Head",
+    SilentAimVisCheck   = false,
+    SilentAimPrediction = true,
 }
 
 local highlightCache   = {}
@@ -35,7 +31,7 @@ local teamTypeCache    = {}
 local ConfirmedEnemies = {}
 
 -- Silent aim variables
-local firingRemote     = nil  -- the remote that fires bullets
+local firingRemote     = nil
 local firingHooked     = false
 local predictionData   = {}
 local NEAR_THRESHOLD   = 20
@@ -130,7 +126,7 @@ local function checkVisibility(model)
 end
 
 -- ===== PREDICTION =====
-local function getPredictedPosition(model, part, smoothness)
+local function getPredictedPosition(model, part)
     local data = predictionData[model]
     local root = model:FindFirstChild("humanoid_root_part")
     local currentPos = root and root.Position or part.Position
@@ -139,7 +135,6 @@ local function getPredictedPosition(model, part, smoothness)
         predictionData[model] = {
             lastPos     = currentPos,
             velocity    = Vector3.zero,
-            smoothedPos = currentPos,
             lastTime    = tick()
         }
         return currentPos
@@ -152,20 +147,13 @@ local function getPredictedPosition(model, part, smoothness)
     local velAlpha    = math.clamp(timeDelta / 0.05, 0, 1)
     data.velocity     = data.velocity:Lerp(rawVelocity, velAlpha)
 
-    local logTerm    = math.log(1 - smoothness)
-    local decayRate  = -logTerm * 60
-    local frameAlpha = 1 - math.exp(-decayRate * timeDelta)
-
-    data.smoothedPos = data.smoothedPos:Lerp(currentPos, frameAlpha)
-
-    local filterLag  = 1 / decayRate
     local networkLag = 0.1
-    local totalLag   = filterLag + networkLag + 0.025
+    local totalLag   = networkLag + 0.025
 
     local distance     = (currentPos - Camera.CFrame.Position).Magnitude
     local distanceDamp = math.clamp(distance / NEAR_THRESHOLD, 0.5, 1.0)
 
-    local aimPos = data.smoothedPos + data.velocity * totalLag * distanceDamp
+    local aimPos = currentPos + data.velocity * totalLag * distanceDamp
 
     data.lastPos  = currentPos
     data.lastTime = now
@@ -175,9 +163,9 @@ end
 
 -- ===== TARGET SELECTION FOR SILENT AIM =====
 local function getAimPart(model)
-    if settings.AimbotTargetPart == "Head" then
+    if settings.SilentAimTargetPart == "Head" then
         return model:FindFirstChild("head")
-    elseif settings.AimbotTargetPart == "Torso" then
+    elseif settings.SilentAimTargetPart == "Torso" then
         return model:FindFirstChild("torso")
     else
         return model:FindFirstChild("humanoid_root_part")
@@ -189,13 +177,13 @@ local function getBestTarget()
     local camDir = Camera.CFrame.LookVector
 
     local bestTarget = nil
-    local bestAngle  = math.rad(settings.AimbotFOV)
+    local bestAngle  = math.rad(settings.SilentAimFOV)
 
     for model in pairs(highlightCache) do
         if not model.Parent then continue end
         if not ConfirmedEnemies[model] then continue end
 
-        if settings.AimbotVisCheck then
+        if settings.SilentAimVisCheck then
             local visible = checkVisibility(model)
             if not visible then continue end
         end
@@ -204,8 +192,8 @@ local function getBestTarget()
         if not part then continue end
 
         local aimPos
-        if settings.AimbotPrediction then
-            aimPos = getPredictedPosition(model, part, settings.AimbotSmoothness)
+        if settings.SilentAimPrediction then
+            aimPos = getPredictedPosition(model, part)
         else
             aimPos = part.Position
         end
@@ -228,14 +216,13 @@ local function hookFiringRemote(remote)
     firingHooked = true
     firingRemote = remote
 
-    local oldFireServer = remote.FireServer
-    local function newFireServer(self, ...)
-        if not settings.AimbotEnabled then
+    local oldFireServer
+    oldFireServer = hookfunction(remote.FireServer, function(self, ...)
+        if not settings.SilentAimEnabled then
             return oldFireServer(self, ...)
         end
 
         local args = {...}
-        -- Expected: Vector3 pos, Vector3 dir, string GUID
         if #args >= 3 and typeof(args[1]) == "Vector3" and typeof(args[2]) == "Vector3" and type(args[3]) == "string" then
             local targetPos = getBestTarget()
             if targetPos then
@@ -245,13 +232,9 @@ local function hookFiringRemote(remote)
         end
 
         return oldFireServer(self, ...)
-    end
-
-    remote.FireServer = newFireServer
-    print("[SilentAim] Firing remote hooked:", remote:GetFullName())
+    end)
 end
 
--- Scan _NetManaged for the firing remote and hook it when first fired
 local function scanForFiringRemote()
     local netFolder = game:GetService("ReplicatedStorage")
         :FindFirstChild("include")
@@ -266,7 +249,6 @@ local function scanForFiringRemote()
         return
     end
 
-    -- Collect ALL RemoteEvents recursively
     local allRemotes = {}
     local function collectRemotes(parent)
         for _, child in ipairs(parent:GetChildren()) do
@@ -280,37 +262,27 @@ local function scanForFiringRemote()
     end
     collectRemotes(netFolder)
 
-    print("[SilentAim] Found " .. #allRemotes .. " RemoteEvents in _NetManaged")
-
-    -- Hook each one temporarily to detect the firing pattern
     local hookedRemotes = {}
     for _, remote in ipairs(allRemotes) do
-        local oldFireServer = remote.FireServer
-        local function detectionHook(self, ...)
+        local oldFireServer
+        oldFireServer = hookfunction(remote.FireServer, function(self, ...)
             local args = {...}
             if #args >= 3 and typeof(args[1]) == "Vector3" and typeof(args[2]) == "Vector3" and type(args[3]) == "string" then
-                -- Found the firing remote
                 hookFiringRemote(self)
-                -- Restore all other detection hooks
-                for _, h in ipairs(hookedRemotes) do
+                for _, h in pairs(hookedRemotes) do
                     if h.remote ~= self then
                         h.remote.FireServer = h.original
                     end
                 end
                 hookedRemotes = {}
-                -- Call the newly hooked version
                 return self.FireServer(self, ...)
             end
             return oldFireServer(self, ...)
-        end
+        end)
         hookedRemotes[remote] = {remote = remote, original = oldFireServer}
-        remote.FireServer = detectionHook
     end
-
-    print("[SilentAim] Monitoring " .. #hookedRemotes .. " remotes for firing pattern...")
 end
 
--- Call immediately
 scanForFiringRemote()
 
 -- ===== TOGGLE / CLEANUP =====
@@ -328,11 +300,7 @@ end
 local function fullCleanup()
     if cleaned then return end
     cleaned = true
-    -- Restore firing remote if hooked
-    if firingRemote and firingHooked then
-        -- We can't easily restore, but we just disable by setting AimbotEnabled=false
-        settings.AimbotEnabled = false
-    end
+    settings.SilentAimEnabled = false
     for _, h in pairs(highlightCache) do pcall(function() h:Destroy() end) end
     for _, c in ipairs(connections) do pcall(function() c:Disconnect() end) end
 end
