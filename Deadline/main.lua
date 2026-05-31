@@ -326,7 +326,6 @@ local function hookFiringRemote(remote)
             local targetPos = getBestTarget()
             if targetPos then
                 local newDir = (targetPos - Camera.CFrame.Position).Unit
-                -- Build new args with modified direction
                 local newArgs = {args[1], newDir}
                 for i = 3, #args do
                     newArgs[i] = args[i]
@@ -339,63 +338,37 @@ local function hookFiringRemote(remote)
     end)
 end
 
--- Hook __namecall to intercept all FireServer calls
--- Hook __namecall by finding remotes first, then hooking each one
+-- Hook __namecall by unlocking the metatable first
 local function scanForFiringRemote()
-    -- Collect ALL RemoteEvents from everywhere
-    local allRemotes = {}
+    local mt = getrawmetatable(game)
+    setreadonly(mt, false)  -- bypass the lock
     
-    -- Check _NetManaged
-    local netFolder = game:GetService("ReplicatedStorage")
-        :FindFirstChild("include")
-        :FindFirstChild("node_modules")
-        :FindFirstChild("@rbxts")
-        :FindFirstChild("net")
-        :FindFirstChild("out")
-        :FindFirstChild("_NetManaged")
+    local originalNamecall = mt.__namecall
     
-    if netFolder then
-        local function collectRemotes(parent)
-            for _, child in ipairs(parent:GetChildren()) do
-                if child:IsA("RemoteEvent") then
-                    table.insert(allRemotes, child)
-                end
-                if child:IsA("Folder") or child:IsA("Configuration") then
-                    collectRemotes(child)
-                end
+    mt.__namecall = newcclosure(function(self, ...)
+        local method = getnamecallmethod()
+        
+        if method == "FireServer" and not firingHooked then
+            local args = {...}
+            if #args >= 2 and typeof(args[1]) == "Vector3" and typeof(args[2]) == "Vector3" then
+                hookFiringRemote(self)
             end
         end
-        collectRemotes(netFolder)
-    end
-    
-    -- Also check nil instances
-    pcall(function()
-        for _, obj in ipairs(getnilinstances()) do
-            if obj:IsA("RemoteEvent") then
-                table.insert(allRemotes, obj)
-            end
-        end
+        
+        return originalNamecall(self, ...)
     end)
     
-    print("[SilentAim] Found " .. #allRemotes .. " RemoteEvents to monitor")
+    setreadonly(mt, true)  -- re-lock
     
-    -- Hook each remote's FireServer
-    for _, remote in ipairs(allRemotes) do
+    table.insert(connections, function()
         pcall(function()
-            local oldFireServer = remote.FireServer
-            local function detectionHook(...)
-                local args = {...}
-                if not firingHooked and #args >= 2 and typeof(args[1]) == "Vector3" and typeof(args[2]) == "Vector3" then
-                    hookFiringRemote(remote)
-                    -- Call the newly hooked version
-                    return remote.FireServer(remote, ...)
-                end
-                return oldFireServer(remote, ...)
-            end
-            remote.FireServer = detectionHook
+            setreadonly(mt, false)
+            mt.__namecall = originalNamecall
+            setreadonly(mt, true)
         end)
-    end
+    end)
 end
+
 scanForFiringRemote()
 
 -- ===== DEBUG RENDER LOOP =====
