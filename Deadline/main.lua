@@ -41,6 +41,7 @@ local predictionData   = {}
 local NEAR_THRESHOLD   = 20
 local fovCircle        = nil
 local debugLines       = {}
+local _lastDebugPrint  = 0
 
 -- ===== HIGHLIGHT CREATION =====
 local function createCham(model)
@@ -175,11 +176,12 @@ local function updateFOVCircle()
         fovCircle.Filled = false
         fovCircle.NumSides = 100
     end
+    local center = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
     fovCircle.Visible = settings.SilentAimShowFOV and settings.SilentAimEnabled
     fovCircle.Radius = settings.SilentAimFOV
     fovCircle.Color = settings.SilentAimFOVColor
     fovCircle.Transparency = settings.SilentAimFOVTransparency
-    fovCircle.Position = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+    fovCircle.Position = center
 end
 
 local function clearDebugLines()
@@ -189,18 +191,28 @@ local function clearDebugLines()
     debugLines = {}
 end
 
-local function drawDebugLine(worldPos, color)
-    local screenPos, onScreen = Camera:WorldToViewportPoint(worldPos)
-    if onScreen then
-        local line = Drawing.new("Line")
-        line.From = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
-        line.To = Vector2.new(screenPos.X, screenPos.Y)
-        line.Color = color or Color3.fromRGB(255, 0, 0)
-        line.Thickness = 1
-        line.Transparency = 0.5
-        line.Visible = true
-        table.insert(debugLines, line)
-    end
+local function drawDebugLine(from, to, color)
+    local line = Drawing.new("Line")
+    line.From = from
+    line.To = to
+    line.Color = color or Color3.fromRGB(255, 0, 0)
+    line.Thickness = 1
+    line.Transparency = 0.5
+    line.Visible = true
+    table.insert(debugLines, line)
+end
+
+local function drawDebugCircle(position, radius, color)
+    local circle = Drawing.new("Circle")
+    circle.Position = position
+    circle.Radius = radius or 5
+    circle.Color = color or Color3.fromRGB(255, 0, 0)
+    circle.Thickness = 1
+    circle.Filled = true
+    circle.Transparency = 0.3
+    circle.NumSides = 16
+    circle.Visible = true
+    table.insert(debugLines, circle)
 end
 
 -- ===== TARGET SELECTION FOR SILENT AIM =====
@@ -217,10 +229,12 @@ end
 local function getBestTarget()
     local camPos = Camera.CFrame.Position
     local camDir = Camera.CFrame.LookVector
+    local center = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
 
     local bestTarget = nil
     local bestAngle  = math.rad(settings.SilentAimFOV)
     local bestModel  = nil
+    local targetsInFOV = 0
 
     clearDebugLines()
 
@@ -246,24 +260,49 @@ local function getBestTarget()
         local dirToTarget = (aimPos - camPos).Unit
         local angle = math.acos(math.clamp(camDir:Dot(dirToTarget), -1, 1))
 
-        -- Debug: draw lines to all targets in FOV
-        if settings.SilentAimDebug and angle < math.rad(settings.SilentAimFOV) then
-            drawDebugLine(aimPos, Color3.fromRGB(255, 255, 0))
-        end
+        if angle < math.rad(settings.SilentAimFOV) then
+            targetsInFOV = targetsInFOV + 1
+            
+            local screenPos, onScreen = Camera:WorldToViewportPoint(aimPos)
+            if onScreen then
+                local screenPoint = Vector2.new(screenPos.X, screenPos.Y)
+                
+                if settings.SilentAimDebug then
+                    drawDebugLine(center, screenPoint, Color3.fromRGB(100, 100, 100))
+                    drawDebugCircle(screenPoint, 5, Color3.fromRGB(100, 100, 100))
+                end
+            end
 
-        if angle < bestAngle then
-            bestAngle = angle
-            bestTarget = aimPos
-            bestModel = model
+            if angle < bestAngle then
+                bestAngle = angle
+                bestTarget = aimPos
+                bestModel = model
+            end
         end
     end
 
-    -- Debug: draw red line to best target
     if settings.SilentAimDebug and bestTarget then
-        drawDebugLine(bestTarget, Color3.fromRGB(255, 0, 0))
-        print("[Debug] Locked: " .. (bestModel and bestModel.Name or "nil") .. " | Angle: " .. string.format("%.2f", math.deg(bestAngle)))
-    elseif settings.SilentAimDebug then
-        print("[Debug] No target in FOV")
+        local screenPos, onScreen = Camera:WorldToViewportPoint(bestTarget)
+        if onScreen then
+            local screenPoint = Vector2.new(screenPos.X, screenPos.Y)
+            drawDebugLine(center, screenPoint, Color3.fromRGB(255, 0, 0))
+            drawDebugCircle(screenPoint, 8, Color3.fromRGB(255, 0, 0))
+        end
+    end
+
+    if settings.SilentAimDebug then
+        local now = tick()
+        if now - _lastDebugPrint > 1 then
+            _lastDebugPrint = now
+            if targetsInFOV > 0 then
+                print(string.format("[SilentAim] Targets in FOV: %d | Best: %s (%.1f deg)", 
+                    targetsInFOV, 
+                    bestModel and bestModel.Name or "none",
+                    math.deg(bestAngle)))
+            else
+                print("[SilentAim] No targets in FOV")
+            end
+        end
     end
 
     return bestTarget
@@ -274,6 +313,7 @@ local function hookFiringRemote(remote)
     if firingHooked then return end
     firingHooked = true
     firingRemote = remote
+    print("[SilentAim] Firing remote hooked")
 
     local oldFireServer
     oldFireServer = hookfunction(remote.FireServer, function(self, ...)
@@ -344,7 +384,7 @@ end
 
 scanForFiringRemote()
 
--- ===== DEBUG RENDER LOOP (runs every frame) =====
+-- ===== DEBUG RENDER LOOP =====
 table.insert(connections, RunService.RenderStepped:Connect(function()
     if cleaned then return end
     if not settings.SilentAimEnabled or not settings.SilentAimDebug then
@@ -475,7 +515,6 @@ table.insert(connections, RunService.Heartbeat:Connect(function()
     if cleaned then return end
     local now = tick()
 
-    -- Update FOV circle when silent aim is enabled but debug is off
     if settings.SilentAimEnabled and not settings.SilentAimDebug then
         updateFOVCircle()
     elseif not settings.SilentAimEnabled then
