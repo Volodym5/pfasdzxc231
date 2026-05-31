@@ -313,7 +313,7 @@ local function hookFiringRemote(remote)
     if firingHooked then return end
     firingHooked = true
     firingRemote = remote
-    print("[SilentAim] Firing remote hooked")
+    print("[SilentAim] Firing remote hooked: " .. tostring(remote) .. " | " .. remote:GetFullName())
 
     local oldFireServer
     oldFireServer = hookfunction(remote.FireServer, function(self, ...)
@@ -322,11 +322,16 @@ local function hookFiringRemote(remote)
         end
 
         local args = {...}
-        if #args >= 3 and typeof(args[1]) == "Vector3" and typeof(args[2]) == "Vector3" and type(args[3]) == "string" then
+        if #args >= 2 and typeof(args[1]) == "Vector3" and typeof(args[2]) == "Vector3" then
             local targetPos = getBestTarget()
             if targetPos then
                 local newDir = (targetPos - Camera.CFrame.Position).Unit
-                return oldFireServer(self, args[1], newDir, args[3])
+                -- Build new args with modified direction
+                local newArgs = {args[1], newDir}
+                for i = 3, #args do
+                    newArgs[i] = args[i]
+                end
+                return oldFireServer(self, unpack(newArgs, 1, #newArgs))
             end
         end
 
@@ -334,52 +339,33 @@ local function hookFiringRemote(remote)
     end)
 end
 
+-- Hook __namecall to intercept all FireServer calls
 local function scanForFiringRemote()
-    local netFolder = game:GetService("ReplicatedStorage")
-        :FindFirstChild("include")
-        :FindFirstChild("node_modules")
-        :FindFirstChild("@rbxts")
-        :FindFirstChild("net")
-        :FindFirstChild("out")
-        :FindFirstChild("_NetManaged")
-
-    if not netFolder then
-        warn("[SilentAim] _NetManaged not found")
-        return
-    end
-
-    local allRemotes = {}
-    local function collectRemotes(parent)
-        for _, child in ipairs(parent:GetChildren()) do
-            if child:IsA("RemoteEvent") then
-                table.insert(allRemotes, child)
-            end
-            if child:IsA("Folder") or child:IsA("Configuration") then
-                collectRemotes(child)
-            end
+    local mt = getrawmetatable(game)
+    local oldNamecall = mt.__namecall
+    
+    mt.__namecall = newcclosure(function(self, ...)
+        local method = getnamecallmethod()
+        local args = {...}
+        
+        -- Check if this looks like a firing call: Vector3, Vector3, ...
+        if method == "FireServer" 
+            and not firingHooked 
+            and #args >= 2 
+            and typeof(args[1]) == "Vector3" 
+            and typeof(args[2]) == "Vector3" then
+            
+            hookFiringRemote(self)
         end
-    end
-    collectRemotes(netFolder)
-
-    local hookedRemotes = {}
-    for _, remote in ipairs(allRemotes) do
-        local oldFireServer
-        oldFireServer = hookfunction(remote.FireServer, function(self, ...)
-            local args = {...}
-            if #args >= 3 and typeof(args[1]) == "Vector3" and typeof(args[2]) == "Vector3" and type(args[3]) == "string" then
-                hookFiringRemote(self)
-                for _, h in pairs(hookedRemotes) do
-                    if h.remote ~= self then
-                        h.remote.FireServer = h.original
-                    end
-                end
-                hookedRemotes = {}
-                return self.FireServer(self, ...)
-            end
-            return oldFireServer(self, ...)
+        
+        return oldNamecall(self, ...)
+    end)
+    
+    table.insert(connections, function()
+        pcall(function()
+            mt.__namecall = oldNamecall
         end)
-        hookedRemotes[remote] = {remote = remote, original = oldFireServer}
-    end
+    end)
 end
 
 scanForFiringRemote()
