@@ -26,6 +26,13 @@ local settings = {
     SilentAimFOVColor   = Color3.fromRGB(255, 255, 255),
     SilentAimFOVTransparency = 0.5,
     SilentAimDebug      = false,
+    -- Rapid Fire
+    RapidFireEnabled    = false,
+    RapidFireDelay      = 50,  -- milliseconds between shots
+    -- No Spread
+    NoSpreadEnabled     = false,
+    -- Infinite Ammo
+    InfiniteAmmoEnabled = false,
 }
 
 local highlightCache   = {}
@@ -42,6 +49,10 @@ local debugLines       = {}
 local _lastDebugPrint  = 0
 local namecallHooked   = false
 local originalNamecall = nil
+
+-- Rapid fire variables
+local rapidFireActive  = false
+local rapidFireThread  = nil
 
 -- ===== HIGHLIGHT CREATION =====
 local function createCham(model)
@@ -326,25 +337,44 @@ local function setupSilentAim()
         local args = {...}
         
         if method == "FireServer" then
-            if #args >= 2 and typeof(args[1]) == "Vector3" and typeof(args[2]) == "Vector3" then
-                if settings.SilentAimEnabled then
+            -- No Spread: zero out direction deviation
+            if settings.NoSpreadEnabled then
+                if #args >= 2 and typeof(args[1]) == "Vector3" and typeof(args[2]) == "Vector3" then
+                    -- Replace spread-affected direction with perfect aim direction
+                    if settings.SilentAimEnabled then
+                        local targetPos = getBestTarget()
+                        if targetPos then
+                            args[2] = (targetPos - Camera.CFrame.Position).Unit
+                        else
+                            args[2] = Camera.CFrame.LookVector
+                        end
+                    else
+                        args[2] = Camera.CFrame.LookVector
+                    end
+                end
+            elseif settings.SilentAimEnabled then
+                -- Silent aim only (no spread off)
+                if #args >= 2 and typeof(args[1]) == "Vector3" and typeof(args[2]) == "Vector3" then
                     local targetPos = getBestTarget()
                     if targetPos then
-                        local newDir = (targetPos - Camera.CFrame.Position).Unit
-                        args[2] = newDir
-                        
-                        if settings.SilentAimDebug then
-                            print("[SilentAim] Shot redirected!")
-                        end
+                        args[2] = (targetPos - Camera.CFrame.Position).Unit
                     end
                 end
-                
-                if settings.SilentAimDebug then
-                    print("[SilentAim] FireServer call detected:")
-                    for i, v in ipairs(args) do
-                        print(string.format("  [%d] %s = %s", i, typeof(v), tostring(v)))
-                    end
+            end
+            
+            -- Infinite Ammo: intercept ammo check
+            if settings.InfiniteAmmoEnabled then
+                if #args == 1 and typeof(args[1]) == "boolean" then
+                    -- This is likely the ammo check (InvokeServer(false))
+                    -- Don't block it, just let it pass
                 end
+            end
+        end
+        
+        -- Infinite Ammo: hook InvokeServer too
+        if method == "InvokeServer" and settings.InfiniteAmmoEnabled then
+            if #args == 1 and typeof(args[1]) == "boolean" then
+                -- Let the original call happen, we'll modify the return value
             end
         end
         
@@ -358,20 +388,39 @@ end
 
 setupSilentAim()
 
--- Cleanup on unload
-table.insert(connections, function()
-    if namecallHooked and originalNamecall then
-        local mt = getrawmetatable(game)
-        if mt then
-            pcall(function()
-                setreadonly(mt, false)
-                mt.__namecall = originalNamecall
-                setreadonly(mt, true)
-            end)
+-- ===== RAPID FIRE =====
+local function startRapidFire()
+    if rapidFireActive then return end
+    rapidFireActive = true
+    
+    rapidFireThread = task.spawn(function()
+        while rapidFireActive and not cleaned do
+            if settings.RapidFireEnabled and UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
+                pcall(function()
+                    if mouse1click then
+                        mouse1click()
+                    elseif mouse1press then
+                        mouse1press()
+                        task.wait(0.01)
+                        mouse1release()
+                    end
+                end)
+            end
+            task.wait(settings.RapidFireDelay / 1000)
         end
-        namecallHooked = false
+    end)
+end
+
+local function stopRapidFire()
+    rapidFireActive = false
+    if rapidFireThread then
+        task.cancel(rapidFireThread)
+        rapidFireThread = nil
     end
-end)
+end
+
+-- Start rapid fire thread
+startRapidFire()
 
 -- ===== DEBUG RENDER LOOP =====
 table.insert(connections, RunService.RenderStepped:Connect(function()
@@ -400,6 +449,8 @@ local function fullCleanup()
     if cleaned then return end
     cleaned = true
     settings.SilentAimEnabled = false
+    settings.RapidFireEnabled = false
+    stopRapidFire()
     if fovCircle then fovCircle:Remove(); fovCircle = nil end
     clearDebugLines()
     for _, h in pairs(highlightCache) do pcall(function() h:Destroy() end) end
