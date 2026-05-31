@@ -190,7 +190,6 @@ local function clearDebugLines()
 end
 
 local function drawDebugLine(worldPos, color)
-    if not settings.SilentAimDebug then return end
     local screenPos, onScreen = Camera:WorldToViewportPoint(worldPos)
     if onScreen then
         local line = Drawing.new("Line")
@@ -263,6 +262,8 @@ local function getBestTarget()
     if settings.SilentAimDebug and bestTarget then
         drawDebugLine(bestTarget, Color3.fromRGB(255, 0, 0))
         print("[Debug] Locked: " .. (bestModel and bestModel.Name or "nil") .. " | Angle: " .. string.format("%.2f", math.deg(bestAngle)))
+    elseif settings.SilentAimDebug then
+        print("[Debug] No target in FOV")
     end
 
     return bestTarget
@@ -342,6 +343,17 @@ local function scanForFiringRemote()
 end
 
 scanForFiringRemote()
+
+-- ===== DEBUG RENDER LOOP (runs every frame) =====
+table.insert(connections, RunService.RenderStepped:Connect(function()
+    if cleaned then return end
+    if not settings.SilentAimEnabled or not settings.SilentAimDebug then
+        clearDebugLines()
+        return
+    end
+    updateFOVCircle()
+    getBestTarget()
+end))
 
 -- ===== TOGGLE / CLEANUP =====
 local function toggleChams(enabled)
@@ -463,12 +475,11 @@ table.insert(connections, RunService.Heartbeat:Connect(function()
     if cleaned then return end
     local now = tick()
 
-    -- Update FOV circle
-    if settings.SilentAimEnabled then
+    -- Update FOV circle when silent aim is enabled but debug is off
+    if settings.SilentAimEnabled and not settings.SilentAimDebug then
         updateFOVCircle()
-    else
+    elseif not settings.SilentAimEnabled then
         if fovCircle then fovCircle.Visible = false end
-        clearDebugLines()
     end
 
     if now - lastStateCheck >= 2 then
