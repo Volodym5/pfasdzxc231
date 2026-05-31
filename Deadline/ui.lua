@@ -170,6 +170,42 @@ SilentAimTab:CreateToggle({
     Callback     = function(v) settings.SilentAimDebug = v end,
 })
 
+-- ===== WEAPON TAB =====
+local WeaponTab = Window:CreateTab("Weapon", 4483362458)
+
+WeaponTab:CreateSection("Rapid Fire")
+WeaponTab:CreateToggle({
+    Name         = "Enable Rapid Fire",
+    CurrentValue = settings.RapidFireEnabled,
+    Flag         = "RapidFireEnabled",
+    Callback     = function(v) settings.RapidFireEnabled = v end,
+})
+
+WeaponTab:CreateSlider({
+    Name         = "Delay (ms)",
+    Range        = {10, 200},
+    Increment    = 5,
+    CurrentValue = settings.RapidFireDelay,
+    Flag         = "RapidFireDelay",
+    Callback     = function(v) settings.RapidFireDelay = v end,
+})
+
+WeaponTab:CreateSection("Accuracy")
+WeaponTab:CreateToggle({
+    Name         = "No Spread",
+    CurrentValue = settings.NoSpreadEnabled,
+    Flag         = "NoSpreadEnabled",
+    Callback     = function(v) settings.NoSpreadEnabled = v end,
+})
+
+WeaponTab:CreateSection("Ammo")
+WeaponTab:CreateToggle({
+    Name         = "Infinite Ammo",
+    CurrentValue = settings.InfiniteAmmoEnabled,
+    Flag         = "InfiniteAmmoEnabled",
+    Callback     = function(v) settings.InfiniteAmmoEnabled = v end,
+})
+
 -- ===== MISC TAB =====
 local MiscTab = Window:CreateTab("Misc", 4483362458)
 
