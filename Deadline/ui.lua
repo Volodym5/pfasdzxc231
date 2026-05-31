@@ -138,6 +138,38 @@ SilentAimTab:CreateSlider({
     Callback     = function(v) settings.SilentAimFOV = v end,
 })
 
+SilentAimTab:CreateSection("FOV Circle")
+SilentAimTab:CreateToggle({
+    Name         = "Show FOV Circle",
+    CurrentValue = settings.SilentAimShowFOV,
+    Flag         = "SilentAimShowFOV",
+    Callback     = function(v) settings.SilentAimShowFOV = v end,
+})
+
+SilentAimTab:CreateColorPicker({
+    Name     = "FOV Color",
+    Color    = settings.SilentAimFOVColor,
+    Flag     = "SilentAimFOVColor",
+    Callback = function(c) settings.SilentAimFOVColor = c end,
+})
+
+SilentAimTab:CreateSlider({
+    Name         = "FOV Transparency",
+    Range        = {0, 1},
+    Increment    = 0.05,
+    CurrentValue = settings.SilentAimFOVTransparency,
+    Flag         = "SilentAimFOVTrans",
+    Callback     = function(v) settings.SilentAimFOVTransparency = v end,
+})
+
+SilentAimTab:CreateSection("Debug")
+SilentAimTab:CreateToggle({
+    Name         = "Debug Mode",
+    CurrentValue = settings.SilentAimDebug,
+    Flag         = "SilentAimDebug",
+    Callback     = function(v) settings.SilentAimDebug = v end,
+})
+
 -- ===== MISC TAB =====
 local MiscTab = Window:CreateTab("Misc", 4483362458)
 
