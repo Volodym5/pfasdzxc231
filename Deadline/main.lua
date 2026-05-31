@@ -35,13 +35,13 @@ local teamTypeCache    = {}
 local ConfirmedEnemies = {}
 
 -- Silent aim variables
-local firingRemote     = nil
-local firingHooked     = false
 local predictionData   = {}
 local NEAR_THRESHOLD   = 20
 local fovCircle        = nil
 local debugLines       = {}
 local _lastDebugPrint  = 0
+local namecallHooked   = false
+local originalNamecall = nil
 
 -- ===== HIGHLIGHT CREATION =====
 local function createCham(model)
@@ -308,68 +308,70 @@ local function getBestTarget()
     return bestTarget
 end
 
--- ===== SILENT AIM HOOK SETUP =====
-local function hookFiringRemote(remote)
-    if firingHooked then return end
-    firingHooked = true
-    firingRemote = remote
-    print("[SilentAim] Firing remote hooked: " .. tostring(remote) .. " | " .. remote:GetFullName())
-
-    local oldFireServer
-    oldFireServer = hookfunction(remote.FireServer, function(self, ...)
-        if not settings.SilentAimEnabled then
-            return oldFireServer(self, ...)
-        end
-
-        local args = {...}
-        if #args >= 2 and typeof(args[1]) == "Vector3" and typeof(args[2]) == "Vector3" then
-            local targetPos = getBestTarget()
-            if targetPos then
-                local newDir = (targetPos - Camera.CFrame.Position).Unit
-                local newArgs = {args[1], newDir}
-                for i = 3, #args do
-                    newArgs[i] = args[i]
-                end
-                return oldFireServer(self, unpack(newArgs, 1, #newArgs))
-            end
-        end
-
-        return oldFireServer(self, ...)
-    end)
-end
-
--- Hook __namecall by unlocking the metatable first
-local function scanForFiringRemote()
-    local mt = getrawmetatable(game)
-    setreadonly(mt, false)  -- bypass the lock
+-- ===== SILENT AIM SETUP =====
+local function setupSilentAim()
+    if namecallHooked then return end
     
-    local originalNamecall = mt.__namecall
+    local mt = getrawmetatable(game)
+    if not mt then
+        warn("[SilentAim] Could not get game metatable")
+        return
+    end
+    
+    setreadonly(mt, false)
+    originalNamecall = mt.__namecall
     
     mt.__namecall = newcclosure(function(self, ...)
         local method = getnamecallmethod()
+        local args = {...}
         
-        if method == "FireServer" and not firingHooked then
-            local args = {...}
+        if method == "FireServer" then
             if #args >= 2 and typeof(args[1]) == "Vector3" and typeof(args[2]) == "Vector3" then
-                hookFiringRemote(self)
+                if settings.SilentAimEnabled then
+                    local targetPos = getBestTarget()
+                    if targetPos then
+                        local newDir = (targetPos - Camera.CFrame.Position).Unit
+                        args[2] = newDir
+                        
+                        if settings.SilentAimDebug then
+                            print("[SilentAim] Shot redirected!")
+                        end
+                    end
+                end
+                
+                if settings.SilentAimDebug then
+                    print("[SilentAim] FireServer call detected:")
+                    for i, v in ipairs(args) do
+                        print(string.format("  [%d] %s = %s", i, typeof(v), tostring(v)))
+                    end
+                end
             end
         end
         
-        return originalNamecall(self, ...)
+        return originalNamecall(self, unpack(args, 1, #args))
     end)
     
-    setreadonly(mt, true)  -- re-lock
-    
-    table.insert(connections, function()
-        pcall(function()
-            setreadonly(mt, false)
-            mt.__namecall = originalNamecall
-            setreadonly(mt, true)
-        end)
-    end)
+    setreadonly(mt, true)
+    namecallHooked = true
+    print("[SilentAim] Hook installed successfully")
 end
 
-scanForFiringRemote()
+setupSilentAim()
+
+-- Cleanup on unload
+table.insert(connections, function()
+    if namecallHooked and originalNamecall then
+        local mt = getrawmetatable(game)
+        if mt then
+            pcall(function()
+                setreadonly(mt, false)
+                mt.__namecall = originalNamecall
+                setreadonly(mt, true)
+            end)
+        end
+        namecallHooked = false
+    end
+end)
 
 -- ===== DEBUG RENDER LOOP =====
 table.insert(connections, RunService.RenderStepped:Connect(function()
