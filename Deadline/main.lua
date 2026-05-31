@@ -266,31 +266,45 @@ local function scanForFiringRemote()
         return
     end
 
-    -- Hook all RemoteEvents to detect firing pattern
-    local hookedRemotes = {}
-    for _, obj in ipairs(netFolder:GetChildren()) do
-        if obj:IsA("RemoteEvent") then
-            local oldFireServer = obj.FireServer
-            local function detectionHook(self, ...)
-                local args = {...}
-                if #args >= 3 and typeof(args[1]) == "Vector3" and typeof(args[2]) == "Vector3" and type(args[3]) == "string" then
-                    -- Found the firing remote
-                    hookFiringRemote(self)
-                    -- Restore original for all other hooked remotes (optional cleanup)
-                    for _, h in pairs(hookedRemotes) do
-                        if h.remote ~= self then
-                            h.remote.FireServer = h.original
-                        end
-                    end
-                    hookedRemotes = {}
-                    -- Now call the new hooked version
-                    return self.FireServer(self, ...)
-                end
-                return oldFireServer(self, ...)
+    -- Collect ALL RemoteEvents recursively
+    local allRemotes = {}
+    local function collectRemotes(parent)
+        for _, child in ipairs(parent:GetChildren()) do
+            if child:IsA("RemoteEvent") then
+                table.insert(allRemotes, child)
             end
-            hookedRemotes[obj] = {remote = obj, original = oldFireServer}
-            obj.FireServer = detectionHook
+            if child:IsA("Folder") or child:IsA("Configuration") then
+                collectRemotes(child)
+            end
         end
+    end
+    collectRemotes(netFolder)
+
+    print("[SilentAim] Found " .. #allRemotes .. " RemoteEvents in _NetManaged")
+
+    -- Hook each one temporarily to detect the firing pattern
+    local hookedRemotes = {}
+    for _, remote in ipairs(allRemotes) do
+        local oldFireServer = remote.FireServer
+        local function detectionHook(self, ...)
+            local args = {...}
+            if #args >= 3 and typeof(args[1]) == "Vector3" and typeof(args[2]) == "Vector3" and type(args[3]) == "string" then
+                -- Found the firing remote
+                hookFiringRemote(self)
+                -- Restore all other detection hooks
+                for _, h in ipairs(hookedRemotes) do
+                    if h.remote ~= self then
+                        h.remote.FireServer = h.original
+                    end
+                end
+                hookedRemotes = {}
+                -- Call the newly hooked version
+                return self.FireServer(self, ...)
+            end
+            return oldFireServer(self, ...)
+        end
+        hookedRemotes[remote] = {remote = remote, original = oldFireServer}
+        remote.FireServer = detectionHook
     end
 
     print("[SilentAim] Monitoring " .. #hookedRemotes .. " remotes for firing pattern...")
