@@ -22,6 +22,10 @@ local settings = {
     SilentAimTargetPart = "Head",
     SilentAimVisCheck   = false,
     SilentAimPrediction = true,
+    SilentAimShowFOV    = true,
+    SilentAimFOVColor   = Color3.fromRGB(255, 255, 255),
+    SilentAimFOVTransparency = 0.5,
+    SilentAimDebug      = false,
 }
 
 local highlightCache   = {}
@@ -35,6 +39,8 @@ local firingRemote     = nil
 local firingHooked     = false
 local predictionData   = {}
 local NEAR_THRESHOLD   = 20
+local fovCircle        = nil
+local debugLines       = {}
 
 -- ===== HIGHLIGHT CREATION =====
 local function createCham(model)
@@ -161,6 +167,43 @@ local function getPredictedPosition(model, part)
     return aimPos
 end
 
+-- ===== FOV CIRCLE & DEBUG =====
+local function updateFOVCircle()
+    if not fovCircle then
+        fovCircle = Drawing.new("Circle")
+        fovCircle.Thickness = 1.5
+        fovCircle.Filled = false
+        fovCircle.NumSides = 100
+    end
+    fovCircle.Visible = settings.SilentAimShowFOV and settings.SilentAimEnabled
+    fovCircle.Radius = settings.SilentAimFOV
+    fovCircle.Color = settings.SilentAimFOVColor
+    fovCircle.Transparency = settings.SilentAimFOVTransparency
+    fovCircle.Position = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+end
+
+local function clearDebugLines()
+    for _, line in ipairs(debugLines) do
+        if line then line:Remove() end
+    end
+    debugLines = {}
+end
+
+local function drawDebugLine(worldPos, color)
+    if not settings.SilentAimDebug then return end
+    local screenPos, onScreen = Camera:WorldToViewportPoint(worldPos)
+    if onScreen then
+        local line = Drawing.new("Line")
+        line.From = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+        line.To = Vector2.new(screenPos.X, screenPos.Y)
+        line.Color = color or Color3.fromRGB(255, 0, 0)
+        line.Thickness = 1
+        line.Transparency = 0.5
+        line.Visible = true
+        table.insert(debugLines, line)
+    end
+end
+
 -- ===== TARGET SELECTION FOR SILENT AIM =====
 local function getAimPart(model)
     if settings.SilentAimTargetPart == "Head" then
@@ -178,6 +221,9 @@ local function getBestTarget()
 
     local bestTarget = nil
     local bestAngle  = math.rad(settings.SilentAimFOV)
+    local bestModel  = nil
+
+    clearDebugLines()
 
     for model in pairs(highlightCache) do
         if not model.Parent then continue end
@@ -201,10 +247,22 @@ local function getBestTarget()
         local dirToTarget = (aimPos - camPos).Unit
         local angle = math.acos(math.clamp(camDir:Dot(dirToTarget), -1, 1))
 
+        -- Debug: draw lines to all targets in FOV
+        if settings.SilentAimDebug and angle < math.rad(settings.SilentAimFOV) then
+            drawDebugLine(aimPos, Color3.fromRGB(255, 255, 0))
+        end
+
         if angle < bestAngle then
             bestAngle = angle
             bestTarget = aimPos
+            bestModel = model
         end
+    end
+
+    -- Debug: draw red line to best target
+    if settings.SilentAimDebug and bestTarget then
+        drawDebugLine(bestTarget, Color3.fromRGB(255, 0, 0))
+        print("[Debug] Locked: " .. (bestModel and bestModel.Name or "nil") .. " | Angle: " .. string.format("%.2f", math.deg(bestAngle)))
     end
 
     return bestTarget
@@ -301,6 +359,8 @@ local function fullCleanup()
     if cleaned then return end
     cleaned = true
     settings.SilentAimEnabled = false
+    if fovCircle then fovCircle:Remove(); fovCircle = nil end
+    clearDebugLines()
     for _, h in pairs(highlightCache) do pcall(function() h:Destroy() end) end
     for _, c in ipairs(connections) do pcall(function() c:Disconnect() end) end
 end
@@ -402,6 +462,14 @@ local localTeam = nil
 table.insert(connections, RunService.Heartbeat:Connect(function()
     if cleaned then return end
     local now = tick()
+
+    -- Update FOV circle
+    if settings.SilentAimEnabled then
+        updateFOVCircle()
+    else
+        if fovCircle then fovCircle.Visible = false end
+        clearDebugLines()
+    end
 
     if now - lastStateCheck >= 2 then
         lastStateCheck = now
