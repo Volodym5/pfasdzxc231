@@ -19,7 +19,7 @@ local Window = Rayfield:CreateWindow({
     Name                   = "Deadline Xeno",
     Icon                   = 0,
     LoadingTitle           = "Deadline Xeno",
-    LoadingSubtitle        = "Chams & Silent Aim",
+    LoadingSubtitle        = "Chams & Misc",
     Theme                  = "Default",
     DisableRayfieldPrompts = false,
     DisableBuildWarnings   = false,
@@ -92,118 +92,6 @@ VisualsTab:CreateSlider({
         settings.OutlineTransparency = v
         for _, h in pairs(highlightCache) do h.OutlineTransparency = v end
     end,
-})
-
--- ===== SILENT AIM TAB =====
-local SilentAimTab = Window:CreateTab("Silent Aim", 4483362458)
-
-SilentAimTab:CreateSection("Main")
-SilentAimTab:CreateToggle({
-    Name         = "Enable Silent Aim",
-    CurrentValue = settings.SilentAimEnabled,
-    Flag         = "SilentAimEnabled",
-    Callback     = function(v) settings.SilentAimEnabled = v end,
-})
-
-SilentAimTab:CreateSection("Targeting")
-SilentAimTab:CreateDropdown({
-    Name          = "Target Part",
-    Options       = {"Head", "Torso", "Root"},
-    CurrentOption = settings.SilentAimTargetPart,
-    Flag          = "SilentAimTargetPart",
-    Callback      = function(v) settings.SilentAimTargetPart = v end,
-})
-
-SilentAimTab:CreateToggle({
-    Name         = "Visibility Check",
-    CurrentValue = settings.SilentAimVisCheck,
-    Flag         = "SilentAimVisCheck",
-    Callback     = function(v) settings.SilentAimVisCheck = v end,
-})
-
-SilentAimTab:CreateToggle({
-    Name         = "Dynamic Prediction",
-    CurrentValue = settings.SilentAimPrediction,
-    Flag         = "SilentAimPrediction",
-    Callback     = function(v) settings.SilentAimPrediction = v end,
-})
-
-SilentAimTab:CreateSection("FOV")
-SilentAimTab:CreateSlider({
-    Name         = "FOV",
-    Range        = {10, 360},
-    Increment    = 5,
-    CurrentValue = settings.SilentAimFOV,
-    Flag         = "SilentAimFOV",
-    Callback     = function(v) settings.SilentAimFOV = v end,
-})
-
-SilentAimTab:CreateSection("FOV Circle")
-SilentAimTab:CreateToggle({
-    Name         = "Show FOV Circle",
-    CurrentValue = settings.SilentAimShowFOV,
-    Flag         = "SilentAimShowFOV",
-    Callback     = function(v) settings.SilentAimShowFOV = v end,
-})
-
-SilentAimTab:CreateColorPicker({
-    Name     = "FOV Color",
-    Color    = settings.SilentAimFOVColor,
-    Flag     = "SilentAimFOVColor",
-    Callback = function(c) settings.SilentAimFOVColor = c end,
-})
-
-SilentAimTab:CreateSlider({
-    Name         = "FOV Transparency",
-    Range        = {0, 1},
-    Increment    = 0.05,
-    CurrentValue = settings.SilentAimFOVTransparency,
-    Flag         = "SilentAimFOVTrans",
-    Callback     = function(v) settings.SilentAimFOVTransparency = v end,
-})
-
-SilentAimTab:CreateSection("Debug")
-SilentAimTab:CreateToggle({
-    Name         = "Debug Mode",
-    CurrentValue = settings.SilentAimDebug,
-    Flag         = "SilentAimDebug",
-    Callback     = function(v) settings.SilentAimDebug = v end,
-})
-
--- ===== WEAPON TAB =====
-local WeaponTab = Window:CreateTab("Weapon", 4483362458)
-
-WeaponTab:CreateSection("Rapid Fire")
-WeaponTab:CreateToggle({
-    Name         = "Enable Rapid Fire",
-    CurrentValue = settings.RapidFireEnabled,
-    Flag         = "RapidFireEnabled",
-    Callback     = function(v) settings.RapidFireEnabled = v end,
-})
-
-WeaponTab:CreateSlider({
-    Name         = "Delay (ms)",
-    Range        = {10, 200},
-    Increment    = 5,
-    CurrentValue = settings.RapidFireDelay,
-    Flag         = "RapidFireDelay",
-    Callback     = function(v) settings.RapidFireDelay = v end,
-})
-
-WeaponTab:CreateSection("Accuracy")
-WeaponTab:CreateToggle({
-    Name         = "No Spread",
-    CurrentValue = settings.NoSpreadEnabled,
-    Flag         = "NoSpreadEnabled",
-    Callback     = function(v) settings.NoSpreadEnabled = v end,
-})
-
-WeaponTab:CreateSection("Ammo")
-WeaponTab:CreateToggle({
-    Name         = "Infinite Ammo",
-    CurrentValue = settings.InfiniteAmmoEnabled,
-    Flag         = "InfiniteAmmoEnabled",
-    Callback     = function(v) settings.InfiniteAmmoEnabled = v end,
 })
 
 -- ===== MISC TAB =====
