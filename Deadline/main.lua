@@ -1,4 +1,4 @@
--- ===== UI.LUA — backend systems =====
+-- ===== MAIN.LUA — backend systems =====
 local Workspace  = workspace
 local Camera     = Workspace.CurrentCamera
 local Lighting   = game:GetService("Lighting")
@@ -16,23 +16,6 @@ local settings = {
     FillTransparency    = 0.75,
     OutlineTransparency = 0.5,
     NightVision         = false,
-    -- Silent Aim settings
-    SilentAimEnabled    = false,
-    SilentAimFOV        = 180,
-    SilentAimTargetPart = "Head",
-    SilentAimVisCheck   = false,
-    SilentAimPrediction = true,
-    SilentAimShowFOV    = true,
-    SilentAimFOVColor   = Color3.fromRGB(255, 255, 255),
-    SilentAimFOVTransparency = 0.5,
-    SilentAimDebug      = false,
-    -- Rapid Fire
-    RapidFireEnabled    = false,
-    RapidFireDelay      = 50,  -- milliseconds between shots
-    -- No Spread
-    NoSpreadEnabled     = false,
-    -- Infinite Ammo
-    InfiniteAmmoEnabled = false,
 }
 
 local highlightCache   = {}
@@ -40,19 +23,6 @@ local connections      = {}
 local cleaned          = false
 local teamTypeCache    = {}
 local ConfirmedEnemies = {}
-
--- Silent aim variables
-local predictionData   = {}
-local NEAR_THRESHOLD   = 20
-local fovCircle        = nil
-local debugLines       = {}
-local _lastDebugPrint  = 0
-local namecallHooked   = false
-local originalNamecall = nil
-
--- Rapid fire variables
-local rapidFireActive  = false
-local rapidFireThread  = nil
 
 -- ===== HIGHLIGHT CREATION =====
 local function createCham(model)
@@ -143,296 +113,6 @@ local function checkVisibility(model)
     return false
 end
 
--- ===== PREDICTION =====
-local function getPredictedPosition(model, part)
-    local data = predictionData[model]
-    local root = model:FindFirstChild("humanoid_root_part")
-    local currentPos = root and root.Position or part.Position
-
-    if not data then
-        predictionData[model] = {
-            lastPos     = currentPos,
-            velocity    = Vector3.zero,
-            lastTime    = tick()
-        }
-        return currentPos
-    end
-
-    local now       = tick()
-    local timeDelta = math.clamp(now - data.lastTime, 1e-6, 0.1)
-
-    local rawVelocity = (currentPos - data.lastPos) / timeDelta
-    local velAlpha    = math.clamp(timeDelta / 0.05, 0, 1)
-    data.velocity     = data.velocity:Lerp(rawVelocity, velAlpha)
-
-    local networkLag = 0.1
-    local totalLag   = networkLag + 0.025
-
-    local distance     = (currentPos - Camera.CFrame.Position).Magnitude
-    local distanceDamp = math.clamp(distance / NEAR_THRESHOLD, 0.5, 1.0)
-
-    local aimPos = currentPos + data.velocity * totalLag * distanceDamp
-
-    data.lastPos  = currentPos
-    data.lastTime = now
-
-    return aimPos
-end
-
--- ===== FOV CIRCLE & DEBUG =====
-local function updateFOVCircle()
-    if not fovCircle then
-        fovCircle = Drawing.new("Circle")
-        fovCircle.Thickness = 1.5
-        fovCircle.Filled = false
-        fovCircle.NumSides = 100
-    end
-    local center = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
-    fovCircle.Visible = settings.SilentAimShowFOV and settings.SilentAimEnabled
-    fovCircle.Radius = settings.SilentAimFOV
-    fovCircle.Color = settings.SilentAimFOVColor
-    fovCircle.Transparency = settings.SilentAimFOVTransparency
-    fovCircle.Position = center
-end
-
-local function clearDebugLines()
-    for _, line in ipairs(debugLines) do
-        if line then line:Remove() end
-    end
-    debugLines = {}
-end
-
-local function drawDebugLine(from, to, color)
-    local line = Drawing.new("Line")
-    line.From = from
-    line.To = to
-    line.Color = color or Color3.fromRGB(255, 0, 0)
-    line.Thickness = 1
-    line.Transparency = 0.5
-    line.Visible = true
-    table.insert(debugLines, line)
-end
-
-local function drawDebugCircle(position, radius, color)
-    local circle = Drawing.new("Circle")
-    circle.Position = position
-    circle.Radius = radius or 5
-    circle.Color = color or Color3.fromRGB(255, 0, 0)
-    circle.Thickness = 1
-    circle.Filled = true
-    circle.Transparency = 0.3
-    circle.NumSides = 16
-    circle.Visible = true
-    table.insert(debugLines, circle)
-end
-
--- ===== TARGET SELECTION FOR SILENT AIM =====
-local function getAimPart(model)
-    if settings.SilentAimTargetPart == "Head" then
-        return model:FindFirstChild("head")
-    elseif settings.SilentAimTargetPart == "Torso" then
-        return model:FindFirstChild("torso")
-    else
-        return model:FindFirstChild("humanoid_root_part")
-    end
-end
-
-local function getBestTarget()
-    local camPos = Camera.CFrame.Position
-    local camDir = Camera.CFrame.LookVector
-    local center = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
-
-    local bestTarget = nil
-    local bestAngle  = math.rad(settings.SilentAimFOV)
-    local bestModel  = nil
-    local targetsInFOV = 0
-
-    clearDebugLines()
-
-    for model in pairs(highlightCache) do
-        if not model.Parent then continue end
-        if not ConfirmedEnemies[model] then continue end
-
-        if settings.SilentAimVisCheck then
-            local visible = checkVisibility(model)
-            if not visible then continue end
-        end
-
-        local part = getAimPart(model)
-        if not part then continue end
-
-        local aimPos
-        if settings.SilentAimPrediction then
-            aimPos = getPredictedPosition(model, part)
-        else
-            aimPos = part.Position
-        end
-
-        local dirToTarget = (aimPos - camPos).Unit
-        local angle = math.acos(math.clamp(camDir:Dot(dirToTarget), -1, 1))
-
-        if angle < math.rad(settings.SilentAimFOV) then
-            targetsInFOV = targetsInFOV + 1
-            
-            local screenPos, onScreen = Camera:WorldToViewportPoint(aimPos)
-            if onScreen then
-                local screenPoint = Vector2.new(screenPos.X, screenPos.Y)
-                
-                if settings.SilentAimDebug then
-                    drawDebugLine(center, screenPoint, Color3.fromRGB(100, 100, 100))
-                    drawDebugCircle(screenPoint, 5, Color3.fromRGB(100, 100, 100))
-                end
-            end
-
-            if angle < bestAngle then
-                bestAngle = angle
-                bestTarget = aimPos
-                bestModel = model
-            end
-        end
-    end
-
-    if settings.SilentAimDebug and bestTarget then
-        local screenPos, onScreen = Camera:WorldToViewportPoint(bestTarget)
-        if onScreen then
-            local screenPoint = Vector2.new(screenPos.X, screenPos.Y)
-            drawDebugLine(center, screenPoint, Color3.fromRGB(255, 0, 0))
-            drawDebugCircle(screenPoint, 8, Color3.fromRGB(255, 0, 0))
-        end
-    end
-
-    if settings.SilentAimDebug then
-        local now = tick()
-        if now - _lastDebugPrint > 1 then
-            _lastDebugPrint = now
-            if targetsInFOV > 0 then
-                print(string.format("[SilentAim] Targets in FOV: %d | Best: %s (%.1f deg)", 
-                    targetsInFOV, 
-                    bestModel and bestModel.Name or "none",
-                    math.deg(bestAngle)))
-            else
-                print("[SilentAim] No targets in FOV")
-            end
-        end
-    end
-
-    return bestTarget
-end
-
--- ===== SILENT AIM SETUP =====
-local function setupSilentAim()
-    if namecallHooked then return end
-    
-    local mt = getrawmetatable(game)
-    if not mt then
-        warn("[SilentAim] Could not get game metatable")
-        return
-    end
-    
-    setreadonly(mt, false)
-    originalNamecall = mt.__namecall
-    
-    mt.__namecall = newcclosure(function(self, ...)
-        local method = getnamecallmethod()
-        local args = {...}
-        
-        if method == "FireServer" then
-            -- No Spread: zero out direction deviation
-            if settings.NoSpreadEnabled then
-                if #args >= 2 and typeof(args[1]) == "Vector3" and typeof(args[2]) == "Vector3" then
-                    -- Replace spread-affected direction with perfect aim direction
-                    if settings.SilentAimEnabled then
-                        local targetPos = getBestTarget()
-                        if targetPos then
-                            args[2] = (targetPos - Camera.CFrame.Position).Unit
-                        else
-                            args[2] = Camera.CFrame.LookVector
-                        end
-                    else
-                        args[2] = Camera.CFrame.LookVector
-                    end
-                end
-            elseif settings.SilentAimEnabled then
-                -- Silent aim only (no spread off)
-                if #args >= 2 and typeof(args[1]) == "Vector3" and typeof(args[2]) == "Vector3" then
-                    local targetPos = getBestTarget()
-                    if targetPos then
-                        args[2] = (targetPos - Camera.CFrame.Position).Unit
-                    end
-                end
-            end
-            
-            -- Infinite Ammo: intercept ammo check
-            if settings.InfiniteAmmoEnabled then
-                if #args == 1 and typeof(args[1]) == "boolean" then
-                    -- This is likely the ammo check (InvokeServer(false))
-                    -- Don't block it, just let it pass
-                end
-            end
-        end
-        
-        -- Infinite Ammo: hook InvokeServer too
-        if method == "InvokeServer" and settings.InfiniteAmmoEnabled then
-            if #args == 1 and typeof(args[1]) == "boolean" then
-                -- Let the original call happen, we'll modify the return value
-            end
-        end
-        
-        return originalNamecall(self, unpack(args, 1, #args))
-    end)
-    
-    setreadonly(mt, true)
-    namecallHooked = true
-    print("[SilentAim] Hook installed successfully")
-end
-
-setupSilentAim()
-
--- ===== RAPID FIRE =====
-local function startRapidFire()
-    if rapidFireActive then return end
-    rapidFireActive = true
-    
-    rapidFireThread = task.spawn(function()
-        while rapidFireActive and not cleaned do
-            if settings.RapidFireEnabled and UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
-                pcall(function()
-                    if mouse1click then
-                        mouse1click()
-                    elseif mouse1press then
-                        mouse1press()
-                        task.wait(0.01)
-                        mouse1release()
-                    end
-                end)
-            end
-            task.wait(settings.RapidFireDelay / 1000)
-        end
-    end)
-end
-
-local function stopRapidFire()
-    rapidFireActive = false
-    if rapidFireThread then
-        task.cancel(rapidFireThread)
-        rapidFireThread = nil
-    end
-end
-
--- Start rapid fire thread
-startRapidFire()
-
--- ===== DEBUG RENDER LOOP =====
-table.insert(connections, RunService.RenderStepped:Connect(function()
-    if cleaned then return end
-    if not settings.SilentAimEnabled or not settings.SilentAimDebug then
-        clearDebugLines()
-        return
-    end
-    updateFOVCircle()
-    getBestTarget()
-end))
-
 -- ===== TOGGLE / CLEANUP =====
 local function toggleChams(enabled)
     settings.Enabled = enabled
@@ -448,11 +128,6 @@ end
 local function fullCleanup()
     if cleaned then return end
     cleaned = true
-    settings.SilentAimEnabled = false
-    settings.RapidFireEnabled = false
-    stopRapidFire()
-    if fovCircle then fovCircle:Remove(); fovCircle = nil end
-    clearDebugLines()
     for _, h in pairs(highlightCache) do pcall(function() h:Destroy() end) end
     for _, c in ipairs(connections) do pcall(function() c:Disconnect() end) end
 end
@@ -466,6 +141,7 @@ local NV_TARGETS = {
     ["IngameView, universal_desaturation"] = true,
 }
 local nvActive = false
+local lastNVPoll = 0
 
 local function stopNV()
     nvActive = false
@@ -475,7 +151,6 @@ local function startNV()
     nvActive = true
 end
 
-local lastNVPoll = 0
 table.insert(connections, RunService.Heartbeat:Connect(function()
     if cleaned or not nvActive then return end
     local now = tick()
@@ -519,7 +194,6 @@ if Characters then
             highlightCache[model]   = nil
             ConfirmedEnemies[model] = nil
             teamTypeCache[model]    = nil
-            predictionData[model]   = nil
         end
     end))
 end
@@ -555,12 +229,6 @@ table.insert(connections, RunService.Heartbeat:Connect(function()
     if cleaned then return end
     local now = tick()
 
-    if settings.SilentAimEnabled and not settings.SilentAimDebug then
-        updateFOVCircle()
-    elseif not settings.SilentAimEnabled then
-        if fovCircle then fovCircle.Visible = false end
-    end
-
     if now - lastStateCheck >= 2 then
         lastStateCheck = now
         scanFriendly()
@@ -570,7 +238,6 @@ table.insert(connections, RunService.Heartbeat:Connect(function()
                 highlightCache[model]   = nil
                 ConfirmedEnemies[model] = nil
                 teamTypeCache[model]    = nil
-                predictionData[model]   = nil
                 for i = #visQueue, 1, -1 do
                     if visQueue[i] == model then table.remove(visQueue, i) end
                 end
@@ -607,51 +274,50 @@ local shakeHooked = false
 local origShakeNew = nil
 
 local function setNoShake(enabled)
-    local ok, CameraShakeInstance = pcall(function()
-        return game:GetService("ReplicatedStorage").class.dependencies.CameraShake.CameraShakeInstance
-    end)
-    if not ok then return end
-    
-    local CameraShakeModule = CameraShakeInstance
-    
-    if enabled and not shakeHooked then
-        local mt = getrawmetatable(CameraShakeModule)
-        local oldNew = mt.__index.new
-        if oldNew then
-            origShakeNew = oldNew
-            mt.__index.new = function(self, magnitude, roughness, ...)
-                return origShakeNew(self, 0, 0, ...)
+    pcall(function()
+        local CameraShakeModule = game:GetService("ReplicatedStorage").class.dependencies.CameraShake.CameraShakeInstance
+        
+        if enabled and not shakeHooked then
+            local mt = getrawmetatable(CameraShakeModule)
+            if mt and mt.__index and mt.__index.new then
+                origShakeNew = mt.__index.new
+                mt.__index.new = function(self, magnitude, roughness, ...)
+                    return origShakeNew(self, 0, 0, ...)
+                end
+                shakeHooked = true
             end
-            shakeHooked = true
+        elseif not enabled and shakeHooked and origShakeNew then
+            local mt = getrawmetatable(CameraShakeModule)
+            if mt and mt.__index then
+                mt.__index.new = origShakeNew
+            end
+            shakeHooked = false
         end
-    elseif not enabled and shakeHooked and origShakeNew then
-        local mt = getrawmetatable(CameraShakeModule)
-        if mt and mt.__index then
-            mt.__index.new = origShakeNew
-        end
-        shakeHooked = false
-    end
+    end)
 end
 
 -- ===== NO BLUR =====
 local blurConnection = nil
 
 local function setNoBlur(enabled)
-    local blurPart = workspace:FindFirstChild("ignore")
-        and workspace.ignore:FindFirstChild("builder")
-        and workspace.ignore.builder:FindFirstChild("FrameBlur, blur")
+    pcall(function()
+        local blurPart = workspace:FindFirstChild("ignore")
+            and workspace.ignore:FindFirstChild("builder")
+            and workspace.ignore.builder:FindFirstChild("FrameBlur, blur")
 
-    if not blurPart then return end
+        if not blurPart then return end
 
-    if enabled then
-        blurPart.Transparency = 1
-        blurConnection = blurPart:GetPropertyChangedSignal("Transparency"):Connect(function()
+        if enabled then
             blurPart.Transparency = 1
-        end)
-    else
-        if blurConnection then blurConnection:Disconnect(); blurConnection = nil end
-        blurPart.Transparency = 0
-    end
+            if blurConnection then blurConnection:Disconnect() end
+            blurConnection = blurPart:GetPropertyChangedSignal("Transparency"):Connect(function()
+                pcall(function() blurPart.Transparency = 1 end)
+            end)
+        else
+            if blurConnection then blurConnection:Disconnect(); blurConnection = nil end
+            blurPart.Transparency = 0
+        end
+    end)
 end
 
 -- ===== SCREEN EFFECTS =====
@@ -666,14 +332,15 @@ local function makeEffectKiller(names)
             if not IngameView then return end
             for _, name in ipairs(names) do
                 local e = IngameView:FindFirstChild(name)
-                if e then e:Destroy() end
+                if e then pcall(function() e:Destroy() end) end
             end
+            if conn then conn:Disconnect() end
             conn = IngameView.ChildAdded:Connect(function(child)
-                if nameSet[child.Name] then child:Destroy() end
+                if nameSet[child.Name] then pcall(function() child:Destroy() end) end
             end)
         end,
         disable = function()
-            if conn then conn:Disconnect(); conn = nil end
+            if conn then pcall(function() conn:Disconnect() end); conn = nil end
         end,
     }
 end
