@@ -106,6 +106,11 @@ MiscTab:CreateToggle({
     Name = "No Blur", CurrentValue = false,
     Callback = function(v) setNoBlur(v) end,
 })
+MiscTab:CreateSection("Weapon")
+MiscTab:CreateToggle({
+    Name = "No Gun Bob", CurrentValue = false,
+    Callback = function(v) state.setNoGunBob(v) end,
+})
 
 MiscTab:CreateSection("Screen Effects")
 MiscTab:CreateToggle({
