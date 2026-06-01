@@ -16,6 +16,7 @@ local settings = {
     FillTransparency    = 0.75,
     OutlineTransparency = 0.5,
     NightVision         = false,
+    NoGunBob            = false,
 }
 
 local highlightCache   = {}
@@ -111,6 +112,42 @@ local function checkVisibility(model)
     end
 
     return false
+end
+
+-- ===== NO GUN BOB =====
+local bobHooked = false
+
+local function setNoGunBob(enabled)
+    pcall(function()
+        local renv = getrenv()
+        if not renv then return end
+        
+        -- Try to hook get_bob function
+        if renv._G and renv._G.get_bob and type(renv._G.get_bob) == "function" then
+            if enabled and not bobHooked then
+                local oldGetBob = renv._G.get_bob
+                renv._G.get_bob = function(...)
+                    return Vector3.zero
+                end
+                bobHooked = true
+            elseif not enabled and bobHooked then
+                -- Can't restore easily since we replaced it
+                bobHooked = false
+            end
+        end
+        
+        -- Also try get_cycle_bobbing
+        if renv._G and renv._G.get_cycle_bobbing and type(renv._G.get_cycle_bobbing) == "function" then
+            if enabled and not bobHooked then
+                renv._G.get_cycle_bobbing = function(...)
+                    return Vector3.zero
+                end
+                bobHooked = true
+            elseif not enabled and bobHooked then
+                bobHooked = false
+            end
+        end
+    end)
 end
 
 -- ===== TOGGLE / CLEANUP =====
@@ -368,6 +405,7 @@ _G.ChamsState = {
     stopNV         = stopNV,
     setNoShake     = setNoShake,
     setNoBlur      = setNoBlur,
+    setNoGunBob    = setNoGunBob,
     flashKiller    = flashKiller,
     suppressionKiller = suppressionKiller,
     explosionKiller   = explosionKiller,
