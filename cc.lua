@@ -3983,18 +3983,10 @@ local function CreateCallbackDetour(Instance: InstancesToHook, Method: MethodsTo
 			return
 		end
 
-		-- Only lower thread identity for game callbacks, not executor ones.
-		-- Calling setthreadidentity(2) unconditionally breaks character movement
-		-- in games that use RemoteFunction callbacks tied to physics/input.
 		local old = getthreadidentity()
-		local shouldLowerIdentity = not IsExecutor and old > 2
-		if shouldLowerIdentity then
-			setthreadidentity(2)
-		end
+		setthreadidentity(2)
 		local Result = table.pack(Callback(table.unpack(OriginalInvokeArgs, 1, OriginalInvokeArgs.n)))
-		if shouldLowerIdentity then
-			setthreadidentity(old)
-		end
+		setthreadidentity(old)
 
 		if Log and not Log.Ignored then
 			Log:Call({
@@ -4059,6 +4051,10 @@ local function HandleInstance(Instance: any)
 end
 
 wax.shared.Connect(game.DescendantAdded:Connect(HandleInstance))
+
+if not game:IsLoaded() then
+	game.Loaded:Wait()
+end
 
 local CategoryToSearch = { game:QueryDescendants("RemoteEvent, RemoteFunction, UnreliableRemoteEvent, BindableEvent, BindableFunction") }
 if wax.shared.ExecutorSupport["getnilinstances"].IsWorking then
@@ -6376,10 +6372,6 @@ local function getcallingsource()
 end
 
 -- metamethod hooks
--- Capture the real original __namecall BEFORE hooking so fallthroughs always
--- call the engine function, never the hook itself (prevents recursive crash and
--- "attempt to index function" errors in third-party scripts like Footsteps).
-local _OriginalNamecall = rawget(wax.shared.getrawmetatable(game), "__namecall")
 wax.shared.NamecallHook = wax.shared.Hooking.HookMetaMethod(game, "__namecall", function(...)
 	local self = ...
 	local Method = getnamecallmethod()
@@ -6439,7 +6431,7 @@ wax.shared.NamecallHook = wax.shared.Hooking.HookMetaMethod(game, "__namecall", 
 					return
 				end
 
-				local Result = table.pack(_OriginalNamecall(...))
+				local Result = table.pack(wax.shared.NamecallHook(...))
 				if not Log.Ignored then
 					local RFResultInfo = {
 						Arguments = Result,
@@ -6458,7 +6450,7 @@ wax.shared.NamecallHook = wax.shared.Hooking.HookMetaMethod(game, "__namecall", 
 		end
 	end
 
-	return _OriginalNamecall(...)
+	return wax.shared.NamecallHook(...)
 end)
 
 -- function hooks
@@ -6490,9 +6482,6 @@ end
 
 for _, Function in next, FunctionsToHook do
 	local Method = debug.info(Function, "n")
-	-- Capture the original BEFORE hooking so the fallthrough never calls the
-	-- hook itself recursively (which causes intermittent crashes).
-	local _OriginalFunction = Function
 
 	wax.shared.Hooks[Function] = wax.shared.Hooking.HookFunction(Function, function(...)
 		local self = ...
@@ -6550,7 +6539,7 @@ for _, Function in next, FunctionsToHook do
 						return
 					end
 
-					local Result = table.pack(_OriginalFunction(...))
+					local Result = table.pack(wax.shared.Hooks[Function](...))
 					if not Log.Ignored then
 						local RFResultInfo = {
 							Arguments = Result,
@@ -6569,7 +6558,7 @@ for _, Function in next, FunctionsToHook do
 			end
 		end
 
-		return _OriginalFunction(...)
+		return wax.shared.Hooks[Function](...)
 	end)
 end
 
@@ -10260,200 +10249,11 @@ end)
 Drag.Setup(MainFrame, TopBar)
 Drag.Setup(ShowButton, ShowButton)
 
--- ┌─────────────────────────────────────────────────────────────┐
--- │  TAB BAR  (Spy | Scanner | Globals | Players | Replication) │
--- └─────────────────────────────────────────────────────────────┘
-local MainTabBar = Interface.New("Frame", {
-	BackgroundColor3 = Color3.fromRGB(15, 15, 15),
-	Size = UDim2.new(1, 0, 0, 28),
-	Position = UDim2.new(0, 0, 0, 36),
-	ZIndex = 10,
-	Parent = MainFrame,
-
-	["UIListLayout"] = {
-		FillDirection = Enum.FillDirection.Horizontal,
-		HorizontalAlignment = Enum.HorizontalAlignment.Left,
-		Padding = UDim.new(0, 1),
-	},
-	["UIPadding"] = {
-		PaddingLeft = UDim.new(0, 4),
-		PaddingTop = UDim.new(0, 3),
-		PaddingBottom = UDim.new(0, 3),
-	},
-})
-
-local _SpyFrames = {}
-
-local _AuditContainer = Interface.New("Frame", {
-	BackgroundTransparency = 1,
-	Position = UDim2.new(0, 0, 0, 64),
-	Size = UDim2.new(1, 0, 1, -64),
-	Visible = false,
-	ZIndex = 5,
-	Parent = MainFrame,
-})
-
-local _mainTabs    = {}
-local _mainTabBtns = {}
-local _activeTab   = nil
-local _activePage  = nil
-
-local TAB_ON      = Color3.fromRGB(45, 45, 45)
-local TAB_OFF     = Color3.fromRGB(15, 15, 15)
-local TAB_TXT_ON  = Color3.new(1, 1, 1)
-local TAB_TXT_OFF = Color3.fromRGB(130, 130, 130)
-
-local function _switchTab(id)
-	if _activeTab == id then return end
-	if _activeTab then
-		_mainTabBtns[_activeTab].BackgroundColor3 = TAB_OFF
-		_mainTabBtns[_activeTab].TextColor3       = TAB_TXT_OFF
-		if _mainTabs[_activeTab] then _mainTabs[_activeTab].Visible = false end
-	end
-	_activeTab = id
-	_mainTabBtns[id].BackgroundColor3 = TAB_ON
-	_mainTabBtns[id].TextColor3       = TAB_TXT_ON
-	if id == "spy" then
-		_AuditContainer.Visible = false
-		for _, f in ipairs(_SpyFrames) do f.Visible = true end
-	else
-		for _, f in ipairs(_SpyFrames) do f.Visible = false end
-		_AuditContainer.Visible = true
-		if _activePage then _activePage.Visible = false end
-		_activePage = _mainTabs[id]
-		if _activePage then _activePage.Visible = true end
-	end
-end
-
-local function _makeTabBtn(id, label, order)
-	local btn = Interface.New("TextButton", {
-		Text = label,
-		Font = Enum.Font.Gotham,
-		TextSize = 12,
-		TextColor3 = TAB_TXT_OFF,
-		BackgroundColor3 = TAB_OFF,
-		AutomaticSize = Enum.AutomaticSize.X,
-		Size = UDim2.fromScale(0, 1),
-		BorderSizePixel = 0,
-		AutoButtonColor = false,
-		LayoutOrder = order,
-		Parent = MainTabBar,
-		["UICorner"] = { CornerRadius = UDim.new(0, 4) },
-		["UIPadding"] = { PaddingLeft = UDim.new(0, 12), PaddingRight = UDim.new(0, 12) },
-	})
-	_mainTabBtns[id] = btn
-	btn.MouseButton1Click:Connect(function() _switchTab(id) end)
-	if id ~= "spy" then
-		local page = Interface.New("Frame", {
-			BackgroundTransparency = 1,
-			Size = UDim2.fromScale(1, 1),
-			Visible = false,
-			Parent = _AuditContainer,
-		})
-		_mainTabs[id] = page
-		return page
-	end
-end
-
-_makeTabBtn("spy",         "Spy",         1)
-local _ScannerPage     = _makeTabBtn("scanner",     "Scanner",     2)
-local _GlobalsPage     = _makeTabBtn("globals",     "Globals",     3)
-local _PlayersPage     = _makeTabBtn("players",     "Players",     4)
-local _ReplicationPage = _makeTabBtn("replication", "Replication", 5)
-
-CreateTopSeperator(-1)
-CreateTopButton("clipboard-list", -2, function()
-	local lines = {}
-	for _, typeName in ipairs({"Outgoing", "Incoming"}) do
-		for _, log in pairs(wax.shared.Logs[typeName]) do
-			if not log or not log.Instance then continue end
-			local ok, path = pcall(function() return log.Instance:GetFullName() end)
-			path = ok and path or tostring(log.Instance)
-			for _, call in ipairs(log.Calls) do
-				local args = {}
-				for i = 1, (call.Arguments.n or 0) do
-					args[i] = tostring(call.Arguments[i]):sub(1, 60)
-				end
-				table.insert(lines, string.format("[%s] %s | %s",
-					typeName, path,
-					#args > 0 and table.concat(args, ", ") or "(no args)"))
-			end
-		end
-	end
-	if #lines == 0 then
-		wax.shared.Sonner.info("No logs to copy.")
-		return
-	end
-	local ok, err = pcall(setclipboard, table.concat(lines, "\n"))
-	if ok then
-		wax.shared.Sonner.success(string.format("Copied %d entries to clipboard", #lines))
-	else
-		wax.shared.Sonner.error("Copy failed: " .. tostring(err))
-	end
-end)
-
--- "Copy All (Full)" button: copies everything including paths, types, and full serialized argument values
-CreateTopButton("database", -3, function()
-	local CodeGen = require(wax.shared.ScreenGui.Parent and script or script)
-	local lines = {}
-	for _, typeName in ipairs({"Outgoing", "Incoming"}) do
-		for _, log in pairs(wax.shared.Logs[typeName]) do
-			if not log or not log.Instance then continue end
-			local ok, path = pcall(function() return log.Instance:GetFullName() end)
-			path = ok and path or tostring(log.Instance)
-			for callIdx, call in ipairs(log.Calls) do
-				-- Serialize all arguments fully
-				local argParts = {}
-				local argCount = call.Arguments and (call.Arguments.n or 0) or 0
-				for i = 1, argCount do
-					local v = call.Arguments[i]
-					local argStr
-					local ok2, serialized = pcall(wax.shared.LuaEncode, {v}, {
-						Prettify = false,
-						InsertCycles = false,
-						DisableNilParentHandler = true,
-					})
-					if ok2 and serialized then
-						-- strip outer braces from single-element table
-						argStr = serialized:match("^{(.+)}$") or serialized
-					else
-						argStr = tostring(v)
-					end
-					argParts[i] = string.format("  [%d] (%s) %s", i, typeof(v), argStr)
-				end
-
-				local origin = (call.Origin and pcall(function() return call.Origin:GetFullName() end)) and call.Origin:GetFullName() or tostring(call.Origin or "Unknown")
-				local blocked = call.Blocked and " [BLOCKED]" or ""
-				local executor = call.IsExecutor and " [EXECUTOR]" or ""
-
-				table.insert(lines, string.format(
-					"[%s]%s%s %s :: Call #%d | Origin: %s | Args: %d",
-					typeName, blocked, executor, path, callIdx, origin, argCount
-				))
-				for _, argLine in ipairs(argParts) do
-					table.insert(lines, argLine)
-				end
-				table.insert(lines, "")
-			end
-		end
-	end
-	if #lines == 0 then
-		wax.shared.Sonner.info("No logs to copy.")
-		return
-	end
-	local ok, err = pcall(setclipboard, table.concat(lines, "\n"))
-	if ok then
-		wax.shared.Sonner.success(string.format("Copied full log (%d calls) to clipboard", #lines))
-	else
-		wax.shared.Sonner.error("Copy failed: " .. tostring(err))
-	end
-end)
-
 -- Remote List
 local LeftList = Interface.New("Frame", {
 	BackgroundTransparency = 1,
 	AnchorPoint = Vector2.yAxis,
-	Size = UDim2.new(0, 240, 1, -64),
+	Size = UDim2.new(0, 240, 1, -36),
 	Position = UDim2.fromScale(0, 1),
 	Parent = MainFrame,
 
@@ -10527,7 +10327,7 @@ local RemoteListLine = Interface.New("Frame", {
 	AnchorPoint = Vector2.yAxis,
 	BackgroundColor3 = Color3.fromRGB(25, 25, 25),
 	Position = UDim2.new(0, 240, 1, 0),
-	Size = UDim2.new(0, 2, 1, -64),
+	Size = UDim2.new(0, 2, 1, -36),
 	Parent = MainFrame,
 })
 
@@ -10562,7 +10362,7 @@ local LogsWrapper = Interface.New("Frame", {
 	AnchorPoint = Vector2.one,
 	BackgroundTransparency = 1,
 	Position = UDim2.fromScale(1, 1),
-	Size = UDim2.new(1, -242, 1, -64),
+	Size = UDim2.new(1, -242, 1, -36),
 	Parent = MainFrame,
 
 	["UIPadding"] = {
@@ -11576,8 +11376,8 @@ Drag.Setup(RemoteListLine, RemoteListResize, function(Info, Input: InputObject)
 
 	Info.Frame.Position = UDim2.new(FramePosition.X.Scale, Offset, FramePosition.Y.Scale, FramePosition.Y.Offset)
 
-	LeftList.Size = UDim2.new(0, Offset, 1, -64)
-	LogsWrapper.Size = UDim2.new(1, -(Offset + 2), 1, -64)
+	LeftList.Size = UDim2.new(0, Offset, 1, -36)
+	LogsWrapper.Size = UDim2.new(1, -(Offset + 2), 1, -36)
 end)
 
 wax.shared.Connect(wax.shared.Communicator.Event:Connect(function(Instance, Type, CallIndex)
@@ -11665,332 +11465,6 @@ wax.shared.Connect(wax.shared.UserInputService.InputBegan:Connect(function(Input
 		end
 	end
 end))
-
--- ═══════════════════════════════════════════════════════
--- Register spy frames so tab switcher can show/hide them
--- ═══════════════════════════════════════════════════════
-do
-	table.insert(_SpyFrames, LeftList)
-	table.insert(_SpyFrames, RemoteListLine)
-	table.insert(_SpyFrames, LogsWrapper)
-	-- Default to Spy tab active
-	_mainTabBtns["spy"].BackgroundColor3 = TAB_ON
-	_mainTabBtns["spy"].TextColor3 = TAB_TXT_ON
-	_activeTab = "spy"
-end
-
--- ═══════════════════════════════════════════════════════
--- Shared audit helpers
--- ═══════════════════════════════════════════════════════
-local function _makeLog(parent, topOff)
-	local scroll = Interface.New("ScrollingFrame", {
-		AnchorPoint = Vector2.yAxis,
-		BackgroundColor3 = Color3.fromRGB(12, 12, 18),
-		Position = UDim2.fromScale(0, 1),
-		Size = UDim2.new(1, 0, 1, -(topOff or 34)),
-		AutomaticCanvasSize = Enum.AutomaticSize.Y,
-		CanvasSize = UDim2.fromScale(0, 0),
-		ScrollBarThickness = 2,
-		Parent = parent,
-		["UICorner"] = { CornerRadius = UDim.new(0, 4) },
-		["UIListLayout"] = { Padding = UDim.new(0, 1), SortOrder = Enum.SortOrder.LayoutOrder },
-		["UIPadding"] = {
-			PaddingLeft = UDim.new(0, 6), PaddingRight = UDim.new(0, 6),
-			PaddingTop = UDim.new(0, 4), PaddingBottom = UDim.new(0, 4),
-		},
-	})
-	local n, buf, pending = 0, {}, false
-	local function flush()
-		pending = false
-		for _, txt in ipairs(buf) do
-			n += 1
-			Interface.New("TextLabel", {
-				Text = txt, Font = Enum.Font.Code, TextSize = 11,
-				TextColor3 = Color3.fromRGB(195, 195, 215),
-				BackgroundTransparency = 1,
-				Size = UDim2.new(1, 0, 0, 0),
-				AutomaticSize = Enum.AutomaticSize.Y,
-				TextWrapped = true,
-				TextXAlignment = Enum.TextXAlignment.Left,
-				RichText = false, LayoutOrder = n, Parent = scroll,
-			})
-		end
-		table.clear(buf)
-		task.defer(function() scroll.CanvasPosition = Vector2.new(0, math.huge) end)
-	end
-	local function add(txt)
-		table.insert(buf, tostring(txt))
-		if not pending then pending = true; task.defer(flush) end
-	end
-	local function clr()
-		for _, c in ipairs(scroll:GetChildren()) do
-			if c:IsA("TextLabel") then c:Destroy() end
-		end
-		n = 0; table.clear(buf)
-	end
-	local function getAll()
-		local out = {}
-		for _, c in ipairs(scroll:GetChildren()) do
-			if c:IsA("TextLabel") then table.insert(out, c.Text) end
-		end
-		for _, t in ipairs(buf) do table.insert(out, t) end
-		return table.concat(out, "\n")
-	end
-	return add, clr, getAll
-end
-
-local function _makeBtn(parent, label, col, x, y, w)
-	local b = Interface.New("TextButton", {
-		Text = label, Font = Enum.Font.Gotham, TextSize = 11,
-		TextColor3 = Color3.new(1,1,1), BackgroundColor3 = col,
-		Size = UDim2.new(0, w or 90, 0, 24),
-		Position = UDim2.fromOffset(x, y),
-		BorderSizePixel = 0, Parent = parent,
-		["UICorner"] = { CornerRadius = UDim.new(0, 4) },
-	})
-	b.MouseEnter:Connect(function()
-		wax.shared.TweenService:Create(b, DefaultTweenInfo, {
-			BackgroundColor3 = Color3.new(
-				math.min(col.R+0.08,1), math.min(col.G+0.08,1), math.min(col.B+0.08,1))
-		}):Play()
-	end)
-	b.MouseLeave:Connect(function()
-		wax.shared.TweenService:Create(b, DefaultTweenInfo, { BackgroundColor3 = col }):Play()
-	end)
-	return b
-end
-
-local function _copyBtn(parent, x, y, getAllFn)
-	local b = _makeBtn(parent, "\u{2398} Copy", Color3.fromRGB(40,75,160), x, y, 70)
-	b.MouseButton1Click:Connect(function()
-		local ok, err = pcall(setclipboard, getAllFn())
-		if ok then wax.shared.Sonner.success("Copied to clipboard")
-		else wax.shared.Sonner.error("Copy failed: "..tostring(err)) end
-	end)
-	return b
-end
-
-local G_C  = Color3.fromRGB(35, 150, 80)
-local R_C  = Color3.fromRGB(175, 45, 45)
-local GR_C = Color3.fromRGB(38, 38, 55)
-
--- ═══════════════════════════════════════════════════════
--- SCANNER PAGE
--- ═══════════════════════════════════════════════════════
-do
-	local add, clr, getAll = _makeLog(_ScannerPage, 34)
-	local bRun  = _makeBtn(_ScannerPage, "\u{25b6} Run",   G_C,  4,  4, 70)
-	local bStop = _makeBtn(_ScannerPage, "\u{25a0} Stop",  R_C,  80, 4, 60)
-	local bClr  = _makeBtn(_ScannerPage, "\u{232b} Clear", GR_C, 146,4, 60)
-	_copyBtn(_ScannerPage, 212, 4, getAll)
-
-	local running, stop = false, false
-	bStop.MouseButton1Click:Connect(function() stop = true end)
-	bClr.MouseButton1Click:Connect(clr)
-
-	bRun.MouseButton1Click:Connect(function()
-		if running then return end
-		running = true; stop = false; clr()
-
-		add("=== _G ===")
-		local n = 0
-		for k, v in pairs(_G) do
-			if stop then break end; n += 1
-			add(string.format("_G.%s  [%s]  %s", tostring(k), type(v), tostring(v):sub(1,90)))
-			task.wait()
-		end
-		if n == 0 then add("(empty)") end
-
-		add("=== shared ===")
-		n = 0
-		for k, v in pairs(shared) do
-			if stop then break end; n += 1
-			add(string.format("shared.%s  [%s]  %s", tostring(k), type(v), tostring(v):sub(1,90)))
-			task.wait()
-		end
-		if n == 0 then add("(empty)") end
-
-		add("=== Remotes ===")
-		n = 0
-		local function scanR(root)
-			for _, o in ipairs(root:GetDescendants()) do
-				if stop then return end
-				if o:IsA("RemoteEvent") or o:IsA("RemoteFunction") or o:IsA("UnreliableRemoteEvent") then
-					n += 1; add(string.format("[%s]  %s", o.ClassName, o:GetFullName()))
-				end
-				task.wait()
-			end
-		end
-		scanR(game:GetService("ReplicatedStorage"))
-		pcall(function() scanR(game:GetService("ReplicatedFirst")) end)
-		add(string.format("(%d remotes found)", n))
-
-		add("=== Exposed Scripts ===")
-		n = 0
-		for _, o in ipairs(game:GetDescendants()) do
-			if stop then break end
-			if o:IsA("Script") or o:IsA("ModuleScript") or o:IsA("LocalScript") then
-				local p = o:GetFullName():lower()
-				if p:find("replicatedstorage") or p:find("workspace") or p:find("replicatedfirst") then
-					n += 1; add(string.format("[%s]  %s", o.ClassName, o:GetFullName()))
-				end
-			end
-			task.wait()
-		end
-		if n == 0 then add("(none found)") end
-
-		add("=== Client-Visible Values ===")
-		n = 0
-		for _, o in ipairs(game:GetDescendants()) do
-			if stop then break end
-			if o:IsA("ValueBase") then
-				local p = o:GetFullName():lower()
-				if p:find("replicatedstorage") or p:find("workspace") then
-					n += 1
-					if n <= 100 then
-						add(string.format("[%s]  %s  =  %s", o.ClassName, o:GetFullName(), tostring((o::any).Value):sub(1,60)))
-					end
-				end
-			end
-			task.wait()
-		end
-		add(string.format("(%d values found)", n))
-
-		add("=== Local Humanoid ===")
-		local char = wax.shared.Players.LocalPlayer.Character
-		if char then
-			local hum = char:FindFirstChildOfClass("Humanoid")
-			if hum then
-				add("WalkSpeed   " .. hum.WalkSpeed)
-				add("JumpPower   " .. hum.JumpPower)
-				add("JumpHeight  " .. hum.JumpHeight)
-				add(string.format("Health      %.0f / %.0f", hum.Health, hum.MaxHealth))
-			else add("(no Humanoid)") end
-		else add("(no character)") end
-
-		add("=== done ===")
-		running = false
-	end)
-end
-
--- ═══════════════════════════════════════════════════════
--- GLOBALS PAGE
--- ═══════════════════════════════════════════════════════
-do
-	local add, clr, getAll = _makeLog(_GlobalsPage, 34)
-	local bScan = _makeBtn(_GlobalsPage, "\u{25b6} Scan",  G_C,  4,  4, 70)
-	local bClr  = _makeBtn(_GlobalsPage, "\u{232b} Clear", GR_C, 80, 4, 60)
-	_copyBtn(_GlobalsPage, 146, 4, getAll)
-	bClr.MouseButton1Click:Connect(clr)
-	bScan.MouseButton1Click:Connect(function()
-		clr()
-		add("=== _G ===")
-		local n = 0
-		for k, v in pairs(_G) do
-			n += 1
-			add(string.format("_G.%s  [%s]  %s", tostring(k), type(v), tostring(v):sub(1,100)))
-		end
-		if n == 0 then add("(empty)") end
-		add("=== shared ===")
-		n = 0
-		for k, v in pairs(shared) do
-			n += 1
-			add(string.format("shared.%s  [%s]  %s", tostring(k), type(v), tostring(v):sub(1,100)))
-		end
-		if n == 0 then add("(empty)") end
-		if getgenv then
-			add("=== getgenv() ===")
-			n = 0
-			local ok, genv = pcall(getgenv)
-			if ok and type(genv) == "table" then
-				for k, v in pairs(genv) do
-					n += 1
-					if n > 300 then add("(truncated at 300)"); break end
-					add(string.format("genv.%s  [%s]  %s", tostring(k), type(v), tostring(v):sub(1,90)))
-				end
-			else add("(could not read getgenv)") end
-		end
-		add("=== done ===")
-	end)
-end
-
--- ═══════════════════════════════════════════════════════
--- PLAYERS PAGE
--- ═══════════════════════════════════════════════════════
-do
-	local add, clr, getAll = _makeLog(_PlayersPage, 34)
-	local bScan = _makeBtn(_PlayersPage, "\u{25b6} Scan",  G_C,  4,  4, 70)
-	local bClr  = _makeBtn(_PlayersPage, "\u{232b} Clear", GR_C, 80, 4, 60)
-	_copyBtn(_PlayersPage, 146, 4, getAll)
-	bClr.MouseButton1Click:Connect(clr)
-	bScan.MouseButton1Click:Connect(function()
-		clr()
-		for _, plr in ipairs(wax.shared.Players:GetPlayers()) do
-			add(string.format("--- %s  (userId %d)", plr.Name, plr.UserId))
-			local char = plr.Character
-			if not char then add("  no character"); continue end
-			local hum = char:FindFirstChildOfClass("Humanoid")
-			if not hum then add("  no humanoid"); continue end
-			add("  WalkSpeed   " .. hum.WalkSpeed)
-			add("  JumpPower   " .. hum.JumpPower)
-			add("  JumpHeight  " .. hum.JumpHeight)
-			add(string.format("  Health      %.0f / %.0f", hum.Health, hum.MaxHealth))
-			local root = char:FindFirstChild("HumanoidRootPart")
-			if root then
-				local p = root.Position
-				add(string.format("  Position    %.1f, %.1f, %.1f", p.X, p.Y, p.Z))
-				local v = root.AssemblyLinearVelocity
-				add(string.format("  Velocity    %.1f, %.1f, %.1f", v.X, v.Y, v.Z))
-			end
-			for _, item in ipairs(char:GetChildren()) do
-				if item:IsA("Tool") then add("  Tool  " .. item.Name) end
-			end
-		end
-		add("=== done ===")
-	end)
-end
-
--- ═══════════════════════════════════════════════════════
--- REPLICATION PAGE
--- ═══════════════════════════════════════════════════════
-do
-	local add, clr, getAll = _makeLog(_ReplicationPage, 34)
-	local bScan = _makeBtn(_ReplicationPage, "\u{25b6} Scan",  G_C,  4,  4, 70)
-	local bClr  = _makeBtn(_ReplicationPage, "\u{232b} Clear", GR_C, 80, 4, 60)
-	_copyBtn(_ReplicationPage, 146, 4, getAll)
-	bClr.MouseButton1Click:Connect(clr)
-	bScan.MouseButton1Click:Connect(function()
-		clr()
-		local counts = { ModuleScript=0, Script=0, LocalScript=0, Remote=0, Value=0 }
-		local function scanTree(root)
-			for _, o in ipairs(root:GetDescendants()) do
-				local cls = o.ClassName
-				if o:IsA("ModuleScript") then
-					counts.ModuleScript += 1; add("[ModuleScript]   " .. o:GetFullName())
-				elseif o:IsA("Script") then
-					counts.Script += 1; add("[Script]         " .. o:GetFullName())
-				elseif o:IsA("LocalScript") then
-					counts.LocalScript += 1; add("[LocalScript]    " .. o:GetFullName())
-				elseif o:IsA("RemoteEvent") or o:IsA("RemoteFunction") or o:IsA("UnreliableRemoteEvent") then
-					counts.Remote += 1; add(string.format("[%s]  %s", cls, o:GetFullName()))
-				elseif o:IsA("ValueBase") then
-					counts.Value += 1
-					add(string.format("[%s]  %s  =  %s", cls, o:GetFullName(), tostring((o::any).Value):sub(1,60)))
-				end
-			end
-		end
-		add("=== ReplicatedStorage ==="); scanTree(game:GetService("ReplicatedStorage"))
-		add("=== ReplicatedFirst ==="); pcall(function() scanTree(game:GetService("ReplicatedFirst")) end)
-		add("=== Workspace scripts ===")
-		for _, o in ipairs(game:GetService("Workspace"):GetDescendants()) do
-			if o:IsA("Script") or o:IsA("LocalScript") or o:IsA("ModuleScript") then
-				add(string.format("[%s]  %s", o.ClassName, o:GetFullName()))
-			end
-		end
-		add(string.format("=== %d ModuleScripts | %d Scripts | %d LocalScripts | %d Remotes | %d Values ===",
-			counts.ModuleScript, counts.Script, counts.LocalScript, counts.Remote, counts.Value))
-	end)
-end
 
 return {}
 
@@ -12407,7 +11881,7 @@ local ObjectTree = {
                                         5,
                                         {
                                             "Outgoing",
-                                            Value = "local function CreateLookupTable(table)\n\tlocal LookupTable = {}\n\tfor _, Method in next, table do\n\t\tLookupTable[Method] = true\n\tend\n\treturn LookupTable\nend\n\nlocal NamecallMethods = CreateLookupTable({\n\t\"FireServer\",\n\t\"InvokeServer\",\n\t\"Fire\",\n\t\"Invoke\",\n\t\"fireServer\",\n\t\"invokeServer\",\n\t\"fire\",\n\t\"invoke\",\n})\nlocal AllowedClassNames = CreateLookupTable({ \"RemoteEvent\", \"RemoteFunction\", \"UnreliableRemoteEvent\", \"BindableEvent\", \"BindableFunction\" })\n\n--[[\n\tReturns the calling function via `debug.info`\n\n\t@return `function | nil` The calling function or nil if not found.\n]]\nlocal function getcallingfunction()\n\tlocal BaseLevel = if wax.shared.ExecutorSupport[\"oth\"].IsWorking then 2 else 4\n\n\tfor i = BaseLevel, 10 do\n\t\tlocal Function, Source = debug.info(i, \"fs\")\n\t\tif not Function or not Source then\n\t\t\tbreak\n\t\tend\n\n\t\tif Source == \"[C]\" then\n\t\t\tcontinue\n\t\tend\n\n\t\treturn Function\n\tend\n\n\treturn debug.info(BaseLevel, \"f\")\nend\n\n--[[\n\tReturns the calling line of the script that called the function via `debug.info`\n\n\t@return number Returns the line number of the calling script.\n]]\nlocal function getcallingline()\n\tlocal BaseLevel = if wax.shared.ExecutorSupport[\"oth\"].IsWorking then 2 else 4\n\n\tfor i = BaseLevel, 10 do\n\t\tlocal Source, Line = debug.info(i, \"sl\")\n\t\tif not Source then\n\t\t\tbreak\n\t\tend\n\n\t\tif Source == \"[C]\" then\n\t\t\tcontinue\n\t\tend\n\n\t\treturn Line\n\tend\n\n\treturn debug.info(BaseLevel, \"l\")\nend\n\n--[[\n\tReturns the calling source of the script that called the function via `debug.info`\n\n\t@return string Returns the source of the calling script.\n]]\nlocal function getcallingsource()\n\tlocal BaseLevel = if wax.shared.ExecutorSupport[\"oth\"].IsWorking then 2 else 4\n\n\tfor i = BaseLevel, 10 do\n\t\tlocal Source = debug.info(i, \"s\")\n\t\tif not Source then\n\t\t\tbreak\n\t\tend\n\n\t\tif Source == \"[C]\" then\n\t\t\tcontinue\n\t\tend\n\n\t\treturn Source\n\tend\n\n\treturn debug.info(BaseLevel, \"s\")\nend\n\n-- metamethod hooks\nwax.shared.NamecallHook = wax.shared.Hooking.HookMetaMethod(game, \"__namecall\", function(...)\n\tlocal self = ...\n\tlocal Method = getnamecallmethod()\n\n\tif\n\t\ttypeof(self) == \"Instance\"\n\t\tand AllowedClassNames[self.ClassName]\n\t\tand not rawequal(self, wax.shared.Communicator)\n\t\tand not rawequal(self, wax.shared.ActorCommunicator)\n\t\tand NamecallMethods[Method]\n\t\tand not wax.shared.ShouldIgnore(self, getcallingscript())\n\tthen\n\t\tlocal Log = wax.shared.Logs.Outgoing[self]\n\t\tif not Log then\n\t\t\tLog = wax.shared.NewLog(self, \"Outgoing\", Method, getcallingscript())\n\t\tend\n\n\t\tlocal Info = {\n\t\t\tArguments = table.pack(select(2, ...)),\n\t\t\tOrigin = getcallingscript(),\n\t\t\tFunction = getcallingfunction(),\n\t\t\tLine = getcallingline(),\n\t\t\tSource = getcallingsource(),\n\t\t\tIsExecutor = checkcaller(),\n\t\t}\n\n\t\tif Log.Blocked then\n\t\t\tif wax.shared.SaveManager:GetState(\"LogBlockedRemotes\", false) then\n\t\t\t\tInfo.Blocked = true\n\t\t\t\tLog:Call(Info)\n\t\t\tend\n\n\t\t\treturn\n\t\telseif not Log.Ignored then\n\t\t\tLog:Call(Info)\n\t\t\t-- For RemoteFunction return value (ex: local result = RemoteFunction:InvokeServer())\n\t\t\tif self.ClassName == \"RemoteFunction\" and (Method == \"InvokeServer\" or Method == \"invokeServer\") then\n\t\t\t\tLog = wax.shared.Logs.Incoming[self]\n\t\t\t\tif not Log then\n\t\t\t\t\tLog = wax.shared.NewLog(self, \"Incoming\", Method, getcallingscript())\n\t\t\t\tend\n\n\t\t\t\tif Log.Blocked then\n\t\t\t\t\tif wax.shared.SaveManager:GetState(\"LogBlockedRemotes\", false) then\n\t\t\t\t\t\tLog:Call({\n\t\t\t\t\t\t\tArguments = table.pack(),\n\t\t\t\t\t\t\tOrigin = getcallingscript(),\n\t\t\t\t\t\t\tFunction = getcallingfunction(),\n\t\t\t\t\t\t\tLine = getcallingline(),\n\t\t\t\t\t\t\tSource = getcallingsource(),\n\t\t\t\t\t\t\tIsExecutor = checkcaller(),\n\t\t\t\t\t\t\tOriginalInvokeArgs = table.pack(select(2, ...)),\n\t\t\t\t\t\t\tBlocked = true,\n\t\t\t\t\t\t})\n\t\t\t\t\tend\n\n\t\t\t\t\treturn\n\t\t\t\tend\n\n\t\t\t\tlocal Result = table.pack(_OriginalNamecall(...))\n\t\t\t\tif not Log.Ignored then\n\t\t\t\t\tlocal RFResultInfo = {\n\t\t\t\t\t\tArguments = Result,\n\t\t\t\t\t\tOrigin = getcallingscript(),\n\t\t\t\t\t\tFunction = getcallingfunction(),\n\t\t\t\t\t\tLine = getcallingline(),\n\t\t\t\t\t\tSource = getcallingsource(),\n\t\t\t\t\t\tIsExecutor = checkcaller(),\n\t\t\t\t\t\tOriginalInvokeArgs = table.pack(select(2, ...)),\n\t\t\t\t\t}\n\t\t\t\t\tLog:Call(RFResultInfo)\n\t\t\t\tend\n\n\t\t\t\treturn table.unpack(Result, 1, Result.n)\n\t\t\tend\n\t\tend\n\tend\n\n\treturn _OriginalNamecall(...)\nend)\n\n-- function hooks\nlocal FunctionsToHook\ndo\n\tlocal BindableFunction = Instance.new(\"BindableFunction\")\n\tlocal BindableEvent = Instance.new(\"BindableEvent\")\n\n\tlocal RemoteFunction = Instance.new(\"RemoteFunction\")\n\tlocal RemoteEvent = Instance.new(\"RemoteEvent\")\n\tlocal UnreliableRemoteEvent = Instance.new(\"UnreliableRemoteEvent\")\n\n\tFunctionsToHook = {\n\t\tBindableFunction.Invoke,\n\t\tBindableEvent.Fire,\n\n\t\tRemoteFunction.InvokeServer,\n\t\tRemoteEvent.FireServer,\n\t\tUnreliableRemoteEvent.FireServer,\n\t}\n\n\tBindableFunction:Destroy()\n\tBindableEvent:Destroy()\n\n\tRemoteFunction:Destroy()\n\tRemoteEvent:Destroy()\n\tUnreliableRemoteEvent:Destroy()\nend\n\nfor _, Function in next, FunctionsToHook do\n\tlocal Method = debug.info(Function, \"n\")\n\n\twax.shared.Hooks[Function] = wax.shared.Hooking.HookFunction(Function, function(...)\n\t\tlocal self = ...\n\n\t\tif\n\t\t\ttypeof(self) == \"Instance\"\n\t\t\tand AllowedClassNames[self.ClassName]\n\t\t\tand not rawequal(self, wax.shared.Communicator)\n\t\t\tand not wax.shared.ShouldIgnore(self, getcallingscript())\n\t\tthen\n\t\t\tlocal Log = wax.shared.Logs.Outgoing[self]\n\t\t\tif not Log then\n\t\t\t\tLog = wax.shared.NewLog(self, \"Outgoing\", Method, getcallingscript())\n\t\t\tend\n\n\t\t\tlocal Info = {\n\t\t\t\tArguments = table.pack(select(2, ...)),\n\t\t\t\tOrigin = getcallingscript(),\n\t\t\t\tFunction = getcallingfunction(),\n\t\t\t\tLine = getcallingline(),\n\t\t\t\tSource = getcallingsource(),\n\t\t\t\tIsExecutor = checkcaller(),\n\t\t\t}\n\n\t\t\tif Log.Blocked then\n\t\t\t\tif wax.shared.SaveManager:GetState(\"LogBlockedRemotes\", false) then\n\t\t\t\t\tInfo.Blocked = true\n\t\t\t\t\tLog:Call(Info)\n\t\t\t\tend\n\n\t\t\t\treturn\n\t\t\telseif not Log.Ignored then\n\t\t\t\tLog:Call(Info)\n\t\t\t\t-- For RemoteFunction return value (ex: local result = RemoteFunction:InvokeServer())\n\t\t\t\tif self.ClassName == \"RemoteFunction\" and (Method == \"InvokeServer\" or Method == \"invokeServer\") then\n\t\t\t\t\tLog = wax.shared.Logs.Incoming[self]\n\t\t\t\t\tif not Log then\n\t\t\t\t\t\tLog = wax.shared.NewLog(self, \"Incoming\", Method, getcallingscript())\n\t\t\t\t\tend\n\n\t\t\t\t\tif Log.Blocked then\n\t\t\t\t\t\tif wax.shared.SaveManager:GetState(\"LogBlockedRemotes\", false) then\n\t\t\t\t\t\t\tLog:Call({\n\t\t\t\t\t\t\t\tArguments = table.pack(),\n\t\t\t\t\t\t\t\tOrigin = getcallingscript(),\n\t\t\t\t\t\t\t\tFunction = getcallingfunction(),\n\t\t\t\t\t\t\t\tLine = getcallingline(),\n\t\t\t\t\t\t\t\tSource = getcallingsource(),\n\t\t\t\t\t\t\t\tIsExecutor = checkcaller(),\n\t\t\t\t\t\t\t\tOriginalInvokeArgs = table.pack(select(2, ...)),\n\t\t\t\t\t\t\t\tBlocked = true,\n\t\t\t\t\t\t\t})\n\t\t\t\t\t\tend\n\n\t\t\t\t\t\treturn\n\t\t\t\t\tend\n\n\t\t\t\t\tlocal Result = table.pack(_OriginalFunction(...))\n\t\t\t\t\tif not Log.Ignored then\n\t\t\t\t\t\tlocal RFResultInfo = {\n\t\t\t\t\t\t\tArguments = Result,\n\t\t\t\t\t\t\tOrigin = getcallingscript(),\n\t\t\t\t\t\t\tFunction = getcallingfunction(),\n\t\t\t\t\t\t\tLine = getcallingline(),\n\t\t\t\t\t\t\tSource = getcallingsource(),\n\t\t\t\t\t\t\tIsExecutor = checkcaller(),\n\t\t\t\t\t\t\tOriginalInvokeArgs = table.pack(select(2, ...)),\n\t\t\t\t\t\t}\n\t\t\t\t\t\tLog:Call(RFResultInfo)\n\t\t\t\t\tend\n\n\t\t\t\t\treturn table.unpack(Result, 1, Result.n)\n\t\t\t\tend\n\t\t\tend\n\t\tend\n\n\t\treturn _OriginalFunction(...)\n\tend)\nend\n"
+                                            Value = "local function CreateLookupTable(table)\n\tlocal LookupTable = {}\n\tfor _, Method in next, table do\n\t\tLookupTable[Method] = true\n\tend\n\treturn LookupTable\nend\n\nlocal NamecallMethods = CreateLookupTable({\n\t\"FireServer\",\n\t\"InvokeServer\",\n\t\"Fire\",\n\t\"Invoke\",\n\t\"fireServer\",\n\t\"invokeServer\",\n\t\"fire\",\n\t\"invoke\",\n})\nlocal AllowedClassNames = CreateLookupTable({ \"RemoteEvent\", \"RemoteFunction\", \"UnreliableRemoteEvent\", \"BindableEvent\", \"BindableFunction\" })\n\n--[[\n\tReturns the calling function via `debug.info`\n\n\t@return `function | nil` The calling function or nil if not found.\n]]\nlocal function getcallingfunction()\n\tlocal BaseLevel = if wax.shared.ExecutorSupport[\"oth\"].IsWorking then 2 else 4\n\n\tfor i = BaseLevel, 10 do\n\t\tlocal Function, Source = debug.info(i, \"fs\")\n\t\tif not Function or not Source then\n\t\t\tbreak\n\t\tend\n\n\t\tif Source == \"[C]\" then\n\t\t\tcontinue\n\t\tend\n\n\t\treturn Function\n\tend\n\n\treturn debug.info(BaseLevel, \"f\")\nend\n\n--[[\n\tReturns the calling line of the script that called the function via `debug.info`\n\n\t@return number Returns the line number of the calling script.\n]]\nlocal function getcallingline()\n\tlocal BaseLevel = if wax.shared.ExecutorSupport[\"oth\"].IsWorking then 2 else 4\n\n\tfor i = BaseLevel, 10 do\n\t\tlocal Source, Line = debug.info(i, \"sl\")\n\t\tif not Source then\n\t\t\tbreak\n\t\tend\n\n\t\tif Source == \"[C]\" then\n\t\t\tcontinue\n\t\tend\n\n\t\treturn Line\n\tend\n\n\treturn debug.info(BaseLevel, \"l\")\nend\n\n--[[\n\tReturns the calling source of the script that called the function via `debug.info`\n\n\t@return string Returns the source of the calling script.\n]]\nlocal function getcallingsource()\n\tlocal BaseLevel = if wax.shared.ExecutorSupport[\"oth\"].IsWorking then 2 else 4\n\n\tfor i = BaseLevel, 10 do\n\t\tlocal Source = debug.info(i, \"s\")\n\t\tif not Source then\n\t\t\tbreak\n\t\tend\n\n\t\tif Source == \"[C]\" then\n\t\t\tcontinue\n\t\tend\n\n\t\treturn Source\n\tend\n\n\treturn debug.info(BaseLevel, \"s\")\nend\n\n-- metamethod hooks\nwax.shared.NamecallHook = wax.shared.Hooking.HookMetaMethod(game, \"__namecall\", function(...)\n\tlocal self = ...\n\tlocal Method = getnamecallmethod()\n\n\tif\n\t\ttypeof(self) == \"Instance\"\n\t\tand AllowedClassNames[self.ClassName]\n\t\tand not rawequal(self, wax.shared.Communicator)\n\t\tand not rawequal(self, wax.shared.ActorCommunicator)\n\t\tand NamecallMethods[Method]\n\t\tand not wax.shared.ShouldIgnore(self, getcallingscript())\n\tthen\n\t\tlocal Log = wax.shared.Logs.Outgoing[self]\n\t\tif not Log then\n\t\t\tLog = wax.shared.NewLog(self, \"Outgoing\", Method, getcallingscript())\n\t\tend\n\n\t\tlocal Info = {\n\t\t\tArguments = table.pack(select(2, ...)),\n\t\t\tOrigin = getcallingscript(),\n\t\t\tFunction = getcallingfunction(),\n\t\t\tLine = getcallingline(),\n\t\t\tSource = getcallingsource(),\n\t\t\tIsExecutor = checkcaller(),\n\t\t}\n\n\t\tif Log.Blocked then\n\t\t\tif wax.shared.SaveManager:GetState(\"LogBlockedRemotes\", false) then\n\t\t\t\tInfo.Blocked = true\n\t\t\t\tLog:Call(Info)\n\t\t\tend\n\n\t\t\treturn\n\t\telseif not Log.Ignored then\n\t\t\tLog:Call(Info)\n\t\t\t-- For RemoteFunction return value (ex: local result = RemoteFunction:InvokeServer())\n\t\t\tif self.ClassName == \"RemoteFunction\" and (Method == \"InvokeServer\" or Method == \"invokeServer\") then\n\t\t\t\tLog = wax.shared.Logs.Incoming[self]\n\t\t\t\tif not Log then\n\t\t\t\t\tLog = wax.shared.NewLog(self, \"Incoming\", Method, getcallingscript())\n\t\t\t\tend\n\n\t\t\t\tif Log.Blocked then\n\t\t\t\t\tif wax.shared.SaveManager:GetState(\"LogBlockedRemotes\", false) then\n\t\t\t\t\t\tLog:Call({\n\t\t\t\t\t\t\tArguments = table.pack(),\n\t\t\t\t\t\t\tOrigin = getcallingscript(),\n\t\t\t\t\t\t\tFunction = getcallingfunction(),\n\t\t\t\t\t\t\tLine = getcallingline(),\n\t\t\t\t\t\t\tSource = getcallingsource(),\n\t\t\t\t\t\t\tIsExecutor = checkcaller(),\n\t\t\t\t\t\t\tOriginalInvokeArgs = table.pack(select(2, ...)),\n\t\t\t\t\t\t\tBlocked = true,\n\t\t\t\t\t\t})\n\t\t\t\t\tend\n\n\t\t\t\t\treturn\n\t\t\t\tend\n\n\t\t\t\tlocal Result = table.pack(wax.shared.NamecallHook(...))\n\t\t\t\tif not Log.Ignored then\n\t\t\t\t\tlocal RFResultInfo = {\n\t\t\t\t\t\tArguments = Result,\n\t\t\t\t\t\tOrigin = getcallingscript(),\n\t\t\t\t\t\tFunction = getcallingfunction(),\n\t\t\t\t\t\tLine = getcallingline(),\n\t\t\t\t\t\tSource = getcallingsource(),\n\t\t\t\t\t\tIsExecutor = checkcaller(),\n\t\t\t\t\t\tOriginalInvokeArgs = table.pack(select(2, ...)),\n\t\t\t\t\t}\n\t\t\t\t\tLog:Call(RFResultInfo)\n\t\t\t\tend\n\n\t\t\t\treturn table.unpack(Result, 1, Result.n)\n\t\t\tend\n\t\tend\n\tend\n\n\treturn wax.shared.NamecallHook(...)\nend)\n\n-- function hooks\nlocal FunctionsToHook\ndo\n\tlocal BindableFunction = Instance.new(\"BindableFunction\")\n\tlocal BindableEvent = Instance.new(\"BindableEvent\")\n\n\tlocal RemoteFunction = Instance.new(\"RemoteFunction\")\n\tlocal RemoteEvent = Instance.new(\"RemoteEvent\")\n\tlocal UnreliableRemoteEvent = Instance.new(\"UnreliableRemoteEvent\")\n\n\tFunctionsToHook = {\n\t\tBindableFunction.Invoke,\n\t\tBindableEvent.Fire,\n\n\t\tRemoteFunction.InvokeServer,\n\t\tRemoteEvent.FireServer,\n\t\tUnreliableRemoteEvent.FireServer,\n\t}\n\n\tBindableFunction:Destroy()\n\tBindableEvent:Destroy()\n\n\tRemoteFunction:Destroy()\n\tRemoteEvent:Destroy()\n\tUnreliableRemoteEvent:Destroy()\nend\n\nfor _, Function in next, FunctionsToHook do\n\tlocal Method = debug.info(Function, \"n\")\n\n\twax.shared.Hooks[Function] = wax.shared.Hooking.HookFunction(Function, function(...)\n\t\tlocal self = ...\n\n\t\tif\n\t\t\ttypeof(self) == \"Instance\"\n\t\t\tand AllowedClassNames[self.ClassName]\n\t\t\tand not rawequal(self, wax.shared.Communicator)\n\t\t\tand not wax.shared.ShouldIgnore(self, getcallingscript())\n\t\tthen\n\t\t\tlocal Log = wax.shared.Logs.Outgoing[self]\n\t\t\tif not Log then\n\t\t\t\tLog = wax.shared.NewLog(self, \"Outgoing\", Method, getcallingscript())\n\t\t\tend\n\n\t\t\tlocal Info = {\n\t\t\t\tArguments = table.pack(select(2, ...)),\n\t\t\t\tOrigin = getcallingscript(),\n\t\t\t\tFunction = getcallingfunction(),\n\t\t\t\tLine = getcallingline(),\n\t\t\t\tSource = getcallingsource(),\n\t\t\t\tIsExecutor = checkcaller(),\n\t\t\t}\n\n\t\t\tif Log.Blocked then\n\t\t\t\tif wax.shared.SaveManager:GetState(\"LogBlockedRemotes\", false) then\n\t\t\t\t\tInfo.Blocked = true\n\t\t\t\t\tLog:Call(Info)\n\t\t\t\tend\n\n\t\t\t\treturn\n\t\t\telseif not Log.Ignored then\n\t\t\t\tLog:Call(Info)\n\t\t\t\t-- For RemoteFunction return value (ex: local result = RemoteFunction:InvokeServer())\n\t\t\t\tif self.ClassName == \"RemoteFunction\" and (Method == \"InvokeServer\" or Method == \"invokeServer\") then\n\t\t\t\t\tLog = wax.shared.Logs.Incoming[self]\n\t\t\t\t\tif not Log then\n\t\t\t\t\t\tLog = wax.shared.NewLog(self, \"Incoming\", Method, getcallingscript())\n\t\t\t\t\tend\n\n\t\t\t\t\tif Log.Blocked then\n\t\t\t\t\t\tif wax.shared.SaveManager:GetState(\"LogBlockedRemotes\", false) then\n\t\t\t\t\t\t\tLog:Call({\n\t\t\t\t\t\t\t\tArguments = table.pack(),\n\t\t\t\t\t\t\t\tOrigin = getcallingscript(),\n\t\t\t\t\t\t\t\tFunction = getcallingfunction(),\n\t\t\t\t\t\t\t\tLine = getcallingline(),\n\t\t\t\t\t\t\t\tSource = getcallingsource(),\n\t\t\t\t\t\t\t\tIsExecutor = checkcaller(),\n\t\t\t\t\t\t\t\tOriginalInvokeArgs = table.pack(select(2, ...)),\n\t\t\t\t\t\t\t\tBlocked = true,\n\t\t\t\t\t\t\t})\n\t\t\t\t\t\tend\n\n\t\t\t\t\t\treturn\n\t\t\t\t\tend\n\n\t\t\t\t\tlocal Result = table.pack(wax.shared.Hooks[Function](...))\n\t\t\t\t\tif not Log.Ignored then\n\t\t\t\t\t\tlocal RFResultInfo = {\n\t\t\t\t\t\t\tArguments = Result,\n\t\t\t\t\t\t\tOrigin = getcallingscript(),\n\t\t\t\t\t\t\tFunction = getcallingfunction(),\n\t\t\t\t\t\t\tLine = getcallingline(),\n\t\t\t\t\t\t\tSource = getcallingsource(),\n\t\t\t\t\t\t\tIsExecutor = checkcaller(),\n\t\t\t\t\t\t\tOriginalInvokeArgs = table.pack(select(2, ...)),\n\t\t\t\t\t\t}\n\t\t\t\t\t\tLog:Call(RFResultInfo)\n\t\t\t\t\tend\n\n\t\t\t\t\treturn table.unpack(Result, 1, Result.n)\n\t\t\t\tend\n\t\t\tend\n\t\tend\n\n\t\treturn wax.shared.Hooks[Function](...)\n\tend)\nend\n"
                                         }
                                     }
                                 }
