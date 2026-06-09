@@ -1,4 +1,4 @@
--- ===== NEXUS.GG - ESP + AIMBOT v3 - Advanced Hitbox System =====
+-- ===== NEXUS.GG - ESP + AIMBOT v5 - Fixed =====
 local Workspace = workspace
 local Camera = Workspace.CurrentCamera
 local RunService = game:GetService("RunService")
@@ -10,10 +10,9 @@ local HttpService = game:GetService("HttpService")
 
 -- Configuration
 local config = {
-    -- ESP Settings
     ESP = {
         Enabled = true,
-        TeamCheck = true,
+        TeamCheck = false,
         ShowTeammates = false,
         Enemy = {Fill = Color3.fromRGB(255, 60, 60), Outline = Color3.fromRGB(255, 60, 60)},
         Teammate = {Fill = Color3.fromRGB(60, 160, 255), Outline = Color3.fromRGB(60, 160, 255)},
@@ -21,29 +20,26 @@ local config = {
         MaxDistance = 500
     },
     
-    -- Aimbot Settings
     Aimbot = {
         Enabled = true,
-        Smoothness = 0.91,
-        FOV = 180,
+        Smoothness = 0.71,
+        FOV = 360,
         TargetPart = "Auto",
         VisCheck = true,
         Humanize = true,
         MaxDistance = 500,
-        Prediction = 0.12
+        AimDelay = 0.09,
+        EasingCurve = 0.22 -- New: controls easing curve (0=linear, 1=strong ease)
     },
     
-    -- AutoFire Settings
     AutoFire = {
         Enabled = false,
         Delay = 0.08,
         HitboxMultiplier = 1.5,
         VisCheck = true,
-        UseAimbotTarget = true,
-        MinAccuracy = 0.85
+        UseAimbotTarget = true
     },
     
-    -- FOV Circle
     FOV = {
         Show = true,
         Transparency = 0.45,
@@ -58,60 +54,39 @@ local HITBOX = {
         Head = 1.4,
         UpperTorso = 2.2,
         LowerTorso = 1.8,
-        HumanoidRootPart = 2.0,
-        LeftUpperArm = 0.8,
-        RightUpperArm = 0.8,
-        LeftUpperLeg = 1.1,
-        RightUpperLeg = 1.1
+        HumanoidRootPart = 2.0
     },
-    Priorities = {
-        "Head",
-        "UpperTorso",
-        "LowerTorso",
-        "HumanoidRootPart"
-    },
+    Priorities = {"Head", "UpperTorso", "LowerTorso", "HumanoidRootPart"},
     IgnoreList = {
-        LeftHand = true,
-        RightHand = true,
-        LeftFoot = true,
-        RightFoot = true,
-        LeftLowerArm = true,
-        RightLowerArm = true,
-        LeftLowerLeg = true,
-        RightLowerLeg = true
+        LeftHand = true, RightHand = true, LeftFoot = true, RightFoot = true,
+        LeftLowerArm = true, RightLowerArm = true, LeftLowerLeg = true, RightLowerLeg = true
     }
 }
 
--- State management
+-- State
 local state = {
     team = nil,
     aimbotTarget = nil,
     lastFire = 0,
     isAiming = false,
     highlightCache = {},
+    aimStartTime = 0,
     humanizer = {
         lastTarget = nil,
         lastSwitch = 0,
         offset = Vector3.zero,
         nextOffsetTime = 0,
-        stutter = 0,
-        overshoot = {timer = 0, amount = 0},
-        reaction = {delay = 0, triggered = false}
+        microAdjustments = {},
+        lastAdjustTime = 0,
+        aimSmoothness = 0
     }
 }
 
--- Raycast parameters
-local rayParams = RaycastParams.new()
-rayParams.FilterType = Enum.RaycastFilterType.Exclude
-rayParams.IgnoreWater = true
-
--- Create UI Library
+-- Create UI
 local UI = {
     gui = Instance.new("ScreenGui"),
-    elements = {},
     isOpen = false
 }
-
 UI.gui.Name = HttpService:GenerateGUID(false)
 UI.gui.Parent = gethui()
 UI.gui.ResetOnSpawn = false
@@ -127,7 +102,6 @@ function UI:Create()
     main.Draggable = true
     main.Parent = self.gui
     
-    -- Header
     local header = Instance.new("Frame")
     header.Size = UDim2.new(1, 0, 0, 35)
     header.BackgroundColor3 = Color3.fromRGB(18, 18, 22)
@@ -145,7 +119,6 @@ function UI:Create()
     title.Text = "nexus.gg"
     title.Parent = header
     
-    -- Content container
     local content = Instance.new("Frame")
     content.Size = UDim2.new(1, 0, 0, 0)
     content.Position = UDim2.new(0, 0, 0, 35)
@@ -154,7 +127,6 @@ function UI:Create()
     content.ClipsDescendants = true
     content.Parent = main
     
-    -- Close button
     local close = Instance.new("TextButton")
     close.Size = UDim2.new(0, 30, 0, 30)
     close.Position = UDim2.new(1, -32, 0, 2)
@@ -170,7 +142,6 @@ function UI:Create()
     self.main = main
     self.contentHeight = 0
     
-    -- Toggle button
     close.MouseButton1Click:Connect(function()
         self.isOpen = not self.isOpen
         if self.isOpen then
@@ -286,7 +257,6 @@ function UI:AddSlider(name, min, max, default, suffix, callback)
     valueLabel.TextXAlignment = Enum.TextXAlignment.Right
     valueLabel.Parent = frame
     
-    -- Update value display
     local function updateDisplay(val)
         if suffix == "%" then
             valueLabel.Text = string.format("%.0f%%", val)
@@ -294,6 +264,8 @@ function UI:AddSlider(name, min, max, default, suffix, callback)
             valueLabel.Text = string.format("%.1fx", val)
         elseif suffix == "s" then
             valueLabel.Text = string.format("%.2fs", val)
+        elseif suffix == "ms" then
+            valueLabel.Text = string.format("%.0fms", val)
         else
             valueLabel.Text = string.format("%.0f", val) .. (suffix or "")
         end
@@ -301,7 +273,6 @@ function UI:AddSlider(name, min, max, default, suffix, callback)
     
     updateDisplay(default)
     
-    -- Slider track
     local track = Instance.new("Frame")
     track.Size = UDim2.new(1, 0, 0, 6)
     track.Position = UDim2.new(0, 0, 0, 22)
@@ -309,7 +280,6 @@ function UI:AddSlider(name, min, max, default, suffix, callback)
     track.BorderSizePixel = 0
     track.Parent = frame
     
-    -- Slider fill
     local fill = Instance.new("Frame")
     local pct = (default - min) / (max - min)
     fill.Size = UDim2.new(pct, 0, 1, 0)
@@ -317,7 +287,6 @@ function UI:AddSlider(name, min, max, default, suffix, callback)
     fill.BorderSizePixel = 0
     fill.Parent = track
     
-    -- Interactive button
     local slider = Instance.new("TextButton")
     slider.Size = UDim2.new(1, 0, 1, 0)
     slider.BackgroundTransparency = 1
@@ -394,12 +363,10 @@ end
 -- Initialize UI
 UI:Create()
 
--- ESP Settings
 UI:AddSection("visuals")
 UI:AddToggle("Enable ESP", config.ESP.Enabled, function(v) config.ESP.Enabled = v end)
 UI:AddToggle("Team Check", config.ESP.TeamCheck, function(v) config.ESP.TeamCheck = v end)
 
--- Aimbot Settings
 UI:AddSection("aimbot")
 UI:AddToggle("Enable Aimbot", config.Aimbot.Enabled, function(v) config.Aimbot.Enabled = v end)
 UI:AddDropdown("Target", {"Auto", "Head", "Torso"}, config.Aimbot.TargetPart, function(v) config.Aimbot.TargetPart = v end)
@@ -407,8 +374,9 @@ UI:AddSlider("Smoothness", 0, 100, config.Aimbot.Smoothness * 100, "%", function
 UI:AddSlider("FOV", 10, 360, config.Aimbot.FOV, "°", function(v) config.Aimbot.FOV = v end)
 UI:AddToggle("Visible Only", config.Aimbot.VisCheck, function(v) config.Aimbot.VisCheck = v end)
 UI:AddToggle("Humanize", config.Aimbot.Humanize, function(v) config.Aimbot.Humanize = v end)
+UI:AddSlider("Aim Delay", 0, 200, config.Aimbot.AimDelay * 1000, "ms", function(v) config.Aimbot.AimDelay = v / 1000 end)
+UI:AddSlider("Easing Curve", 0, 100, config.Aimbot.EasingCurve * 100, "%", function(v) config.Aimbot.EasingCurve = v / 100 end)
 
--- AutoFire Settings
 UI:AddSection("auto fire")
 UI:AddToggle("Enable AutoFire", config.AutoFire.Enabled, function(v) config.AutoFire.Enabled = v end)
 UI:AddToggle("Use Aimbot Target", config.AutoFire.UseAimbotTarget, function(v) config.AutoFire.UseAimbotTarget = v end)
@@ -416,7 +384,6 @@ UI:AddToggle("Visible Only", config.AutoFire.VisCheck, function(v) config.AutoFi
 UI:AddSlider("Hitbox Mult.", 1.0, 3.0, config.AutoFire.HitboxMultiplier, "x", function(v) config.AutoFire.HitboxMultiplier = v end)
 UI:AddSlider("Fire Delay", 0.05, 0.5, config.AutoFire.Delay, "s", function(v) config.AutoFire.Delay = v end)
 
--- FOV Settings
 UI:AddSection("fov circle")
 UI:AddToggle("Show FOV", config.FOV.Show, function(v) config.FOV.Show = v end)
 UI:AddSlider("Transparency", 0, 100, config.FOV.Transparency * 100, "%", function(v) config.FOV.Transparency = v / 100 end)
@@ -476,7 +443,6 @@ local function IsPartVisible(part, character)
         return true
     end
     
-    -- Check multiple points for better detection
     local halfSize = part.Size / 2
     local checks = {
         Vector3.new(halfSize.X, 0, 0),
@@ -499,33 +465,45 @@ local function IsPartVisible(part, character)
     return false
 end
 
-local function GetTargetPart(character)
-    local center = Camera.ViewportSize / 2
+local function IsTargetVisible(character, targetPos)
+    if not config.Aimbot.VisCheck then return true end
     
+    local myChar = LocalPlayer.Character
+    local ignoreList = {character}
+    if myChar then table.insert(ignoreList, myChar) end
+    
+    local rayParams = RaycastParams.new()
+    rayParams.FilterType = Enum.RaycastFilterType.Exclude
+    rayParams.FilterDescendantsInstances = ignoreList
+    rayParams.IgnoreWater = true
+    
+    local origin = Camera.CFrame.Position
+    local result = Workspace:Raycast(origin, targetPos - origin, rayParams)
+    
+    return not result or result.Instance:IsDescendantOf(character)
+end
+
+local function GetTargetPart(character)
     if config.Aimbot.TargetPart == "Head" then
-        local head = character:FindFirstChild("Head")
-        return head
+        return character:FindFirstChild("Head")
     elseif config.Aimbot.TargetPart == "Torso" then
         return character:FindFirstChild("UpperTorso") or character:FindFirstChild("LowerTorso")
     elseif config.Aimbot.TargetPart == "Auto" then
+        local center = Camera.ViewportSize / 2
         local bestPart = nil
         local bestScore = math.huge
         
-        for _, part in pairs(character:GetChildren()) do
-            if part:IsA("BasePart") and not HITBOX.IgnoreList[part.Name] then
-                local priority = table.find(HITBOX.Priorities, part.Name) or 99
-                
-                if priority < 99 then
-                    local screenPos, onScreen = Camera:WorldToViewportPoint(part.Position)
-                    if onScreen and screenPos.Z > 0 then
-                        local screenPoint = Vector2.new(screenPos.X, screenPos.Y)
-                        local dist = (screenPoint - center).Magnitude
-                        local score = dist * (1 + priority * 0.15)
-                        
-                        if score < bestScore then
-                            bestScore = score
-                            bestPart = part
-                        end
+        for _, partName in ipairs(HITBOX.Priorities) do
+            local part = character:FindFirstChild(partName)
+            if part then
+                local screenPos, onScreen = Camera:WorldToViewportPoint(part.Position)
+                if onScreen and screenPos.Z > 0 then
+                    local screenPoint = Vector2.new(screenPos.X, screenPos.Y)
+                    local dist = (screenPoint - center).Magnitude
+                    
+                    if dist < bestScore then
+                        bestScore = dist
+                        bestPart = part
                     end
                 end
             end
@@ -535,20 +513,6 @@ local function GetTargetPart(character)
     end
     
     return character:FindFirstChild("HumanoidRootPart")
-end
-
-local function IsTargetVisible(character, targetPos)
-    if not config.Aimbot.VisCheck then return true end
-    
-    local myChar = LocalPlayer.Character
-    local ignoreList = {character}
-    if myChar then table.insert(ignoreList, myChar) end
-    rayParams.FilterDescendantsInstances = ignoreList
-    
-    local origin = Camera.CFrame.Position
-    local result = Workspace:Raycast(origin, targetPos - origin, rayParams)
-    
-    return not result or result.Instance:IsDescendantOf(character)
 end
 
 local function FindBestTarget()
@@ -570,7 +534,9 @@ local function FindBestTarget()
                                 if humanoid and humanoid.Health > 0 then
                                     local targetPart = GetTargetPart(character)
                                     if targetPart then
-                                        if IsTargetVisible(character, targetPart.Position) then
+                                        if config.Aimbot.VisCheck and not IsTargetVisible(character, targetPart.Position) then
+                                            -- skip if not visible
+                                        else
                                             local screenPos, onScreen = Camera:WorldToViewportPoint(targetPart.Position)
                                             if onScreen and screenPos.Z > 0 then
                                                 local screenPoint = Vector2.new(screenPos.X, screenPos.Y)
@@ -633,7 +599,6 @@ end
 local function IsCrosshairOnTarget()
     local center = Camera.ViewportSize / 2
     
-    -- Check aimbot target first
     if config.AutoFire.UseAimbotTarget and state.aimbotTarget then
         local hitboxes = GetCharacterHitboxes(state.aimbotTarget.character)
         for _, hitbox in pairs(hitboxes) do
@@ -644,7 +609,6 @@ local function IsCrosshairOnTarget()
         return false
     end
     
-    -- Check all enemies
     local charsFolder = Workspace:FindFirstChild("Characters")
     if not charsFolder then return false end
     
@@ -689,83 +653,145 @@ local function HandleAutoFire()
     end
 end
 
+-- Smooth easing function that starts slow and naturally accelerates
+local function SmoothEase(t, curveStrength)
+    -- t is normalized time (0 to 1)
+    -- curveStrength: 0 = linear, 1 = strong ease out
+    if t <= 0 then return 0 end
+    if t >= 1 then return 1 end
+    
+    -- Cubic ease out for natural movement
+    local easeOut = 1 - (1 - t)^3
+    
+    -- Mix between linear and eased based on curveStrength
+    return easeOut * curveStrength + t * (1 - curveStrength)
+end
+
+-- Advanced humanizer with realistic aim patterns
+local function ApplyHumanization(aimPos, target, elapsedTime)
+    if not config.Aimbot.Humanize then return aimPos end
+    
+    local now = tick()
+    local distance = target.distance
+    
+    -- Target switching delay (human reaction time)
+    if state.humanizer.lastTarget ~= target.character then
+        if now - state.humanizer.lastSwitch < 0.1 + math.random() * 0.05 then
+            return aimPos -- Still reacting
+        else
+            state.humanizer.lastTarget = target.character
+            state.humanizer.lastSwitch = now
+            state.humanizer.microAdjustments = {}
+        end
+    end
+    
+    -- Micro-adjustments (tiny cursor movements like a real player)
+    if now > state.humanizer.lastAdjustTime + (math.random(40, 120) / 1000) then
+        -- Random micro-movements that get smaller over time
+        local adjustStrength = math.max(0.05, 0.3 * (1 - math.min(1, elapsedTime / 1.5)))
+        local microX = (math.random() - 0.5) * adjustStrength * (distance / 50)
+        local microY = (math.random() - 0.5) * adjustStrength * (distance / 50)
+        
+        table.insert(state.humanizer.microAdjustments, {
+            x = microX,
+            y = microY,
+            time = now
+        })
+        
+        state.humanizer.lastAdjustTime = now
+    end
+    
+    -- Apply micro-adjustments with decay
+    local totalOffset = Vector3.zero
+    for i = #state.humanizer.microAdjustments, 1, -1 do
+        local adj = state.humanizer.microAdjustments[i]
+        local age = now - adj.time
+        if age > 0.3 then
+            table.remove(state.humanizer.microAdjustments, i)
+        else
+            local decay = 1 - (age / 0.3)
+            totalOffset = totalOffset + Vector3.new(adj.x, adj.y, 0) * decay
+        end
+    end
+    
+    -- Natural aim overshoot simulation
+    if elapsedTime < 0.25 and math.random() < 0.15 then
+        local overshoot = Vector3.new(
+            (math.random() - 0.5) * 0.8 * (1 - elapsedTime / 0.25),
+            (math.random() - 0.5) * 0.8 * (1 - elapsedTime / 0.25),
+            0
+        )
+        totalOffset = totalOffset + overshoot
+    end
+    
+    return aimPos + totalOffset
+end
+
 local function ProcessAimbot()
     if not config.Aimbot.Enabled or not state.isAiming then
         state.aimbotTarget = nil
+        state.aimStartTime = 0
+        state.humanizer.aimSmoothness = 0
         return
     end
     
-    -- Humanize reaction delay
-    if config.Aimbot.Humanize and not state.humanizer.reaction.triggered then
-        state.humanizer.reaction.delay = state.humanizer.reaction.delay + 0.016
-        if state.humanizer.reaction.delay < 0.08 then return end
-        state.humanizer.reaction.triggered = true
+    local now = tick()
+    
+    -- Aim delay initialization
+    if state.aimStartTime == 0 then
+        state.aimStartTime = now
+        state.humanizer.aimSmoothness = 0.01 -- Start very slow
     end
+    
+    local elapsed = now - state.aimStartTime
+    if elapsed < config.Aimbot.AimDelay then
+        return
+    end
+    
+    local aimTime = elapsed - config.Aimbot.AimDelay
     
     local target = FindBestTarget()
     state.aimbotTarget = target
     
     if not target then
         state.humanizer.lastTarget = nil
+        state.humanizer.aimSmoothness = math.max(0, state.humanizer.aimSmoothness - 0.05)
         return
     end
     
     local aimPos = target.position
-    local now = tick()
     
-    -- Humanization
-    if config.Aimbot.Humanize then
-        if state.humanizer.lastTarget ~= target.character then
-            state.humanizer.reaction.triggered = false
-            state.humanizer.reaction.delay = 0
-            
-            if now - state.humanizer.lastSwitch < 0.15 then
-                return
-            else
-                state.humanizer.lastTarget = target.character
-                state.humanizer.lastSwitch = now
-            end
-        end
-        
-        -- Update offset
-        if now > state.humanizer.nextOffsetTime then
-            state.humanizer.offset = Vector3.new(
-                (math.random() - 0.5) * 0.6,
-                (math.random() - 0.5) * 0.6,
-                (math.random() - 0.5) * 0.6
-            )
-            state.humanizer.nextOffsetTime = now + math.random(0.3, 0.8)
-        end
-        aimPos = aimPos + state.humanizer.offset
-        
-        -- Micro stutter
-        state.humanizer.stutter = math.abs(math.sin(now * 8)) * 0.012
-        
-        -- Overshoot
-        if state.humanizer.overshoot.timer <= 0 then
-            if math.random() < 0.06 then
-                state.humanizer.overshoot.amount = math.random(0.03, 0.09)
-                state.humanizer.overshoot.timer = 0.15
-            end
-        else
-            state.humanizer.overshoot.timer = state.humanizer.overshoot.timer - 0.016
-        end
+    -- Apply humanization
+    aimPos = ApplyHumanization(aimPos, target, aimTime)
+    
+    -- Dynamic smoothness based on distance and elapsed time
+    local baseSmoothness = 1 - config.Aimbot.Smoothness
+    
+    -- Start very slow, then speed up (natural aim acceleration)
+    local aimProgress = math.min(1, aimTime / 0.4) -- Max acceleration over 0.4 seconds
+    local accelerationCurve = aimProgress^2 -- Quadratic acceleration
+    
+    -- Distance-based adjustment (further targets need more precise aiming)
+    local distanceFactor = math.clamp(target.distance / 100, 0.6, 1.4)
+    
+    -- Update aim smoothness dynamically
+    local targetSmoothness = baseSmoothness * (1 - accelerationCurve * 0.7) * distanceFactor
+    state.humanizer.aimSmoothness = state.humanizer.aimSmoothness * 0.95 + targetSmoothness * 0.05
+    
+    -- Apply easing curve
+    local easingStrength = config.Aimbot.EasingCurve
+    local smoothFactor = SmoothEase(state.humanizer.aimSmoothness, easingStrength)
+    
+    -- Additional micro-adjustment factor based on distance
+    if target.distance > 150 then
+        smoothFactor = smoothFactor * 0.85 -- Slower for distant targets
+    elseif target.distance < 30 then
+        smoothFactor = smoothFactor * 1.15 -- Faster for close targets
     end
     
-    -- Calculate smoothing
-    local smoothness = 1 - config.Aimbot.Smoothness
+    local finalAlpha = math.clamp(smoothFactor, 0.008, 0.95)
     
-    if config.Aimbot.Humanize then
-        smoothness = smoothness * (1 - state.humanizer.stutter)
-        if state.humanizer.overshoot.amount > 0 then
-            smoothness = math.min(smoothness + state.humanizer.overshoot.amount, 1)
-            state.humanizer.overshoot.amount = state.humanizer.overshoot.amount * 0.85
-        end
-    end
-    
-    local distFactor = math.clamp(target.distance / 75, 0.6, 2.0)
-    local finalAlpha = math.clamp(smoothness * distFactor, 0.003, 1)
-    
+    -- Calculate new camera position
     local lookAt = CFrame.new(Camera.CFrame.Position, aimPos)
     Camera.CFrame = Camera.CFrame:Lerp(lookAt, finalAlpha)
 end
@@ -816,7 +842,6 @@ local function UpdateESP()
         end
     end
     
-    -- Cleanup removed characters
     for character, highlight in pairs(state.highlightCache) do
         if not processedChars[character] then
             pcall(function() highlight:Destroy() end)
@@ -833,24 +858,32 @@ fovCircle.NumSides = 100
 fovCircle.Visible = config.FOV.Show
 
 local function UpdateFOVCircle()
-    fovCircle.Visible = config.FOV.Show
     if config.FOV.Show then
+        fovCircle.Visible = true
         local dynamicFOV = config.Aimbot.FOV * (70 / Camera.FieldOfView) * (Camera.ViewportSize.Y / 1080)
         fovCircle.Radius = dynamicFOV
         fovCircle.Color = config.FOV.Color
         fovCircle.Transparency = config.FOV.Transparency
         fovCircle.Position = Camera.ViewportSize / 2
+    else
+        fovCircle.Visible = false
     end
 end
 
 -- Main render loop
 RunService.RenderStepped:Connect(function()
-    state.isAiming = UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton2)
-    
-    UpdateFOVCircle()
-    ProcessAimbot()
-    HandleAutoFire()
-    UpdateESP()
+    pcall(function()
+        state.isAiming = UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton2)
+        
+        if not state.isAiming then
+            state.aimStartTime = 0
+        end
+        
+        UpdateFOVCircle()
+        ProcessAimbot()
+        HandleAutoFire()
+        UpdateESP()
+    end)
 end)
 
 -- Character events
