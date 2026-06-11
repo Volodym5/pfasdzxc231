@@ -1,6 +1,6 @@
--- ========================================================
--- FULL CHEAT - FINAL + PREDICTION
--- ========================================================
+-- ================
+--   FULL SCRIPT
+-- ================
 
 local Workspace = workspace
 local Camera = Workspace.CurrentCamera
