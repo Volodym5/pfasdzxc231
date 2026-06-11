@@ -1,6 +1,6 @@
--- =============
---  SILENT AIM
--- =============
+-- ==============
+--  SILENT AIM --
+-- ==============
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
