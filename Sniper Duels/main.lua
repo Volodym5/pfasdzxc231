@@ -525,8 +525,3 @@ UIS.InputBegan:Connect(function(input, gp)
         UI.gui.Enabled = not UI.gui.Enabled
     end
 end)
-
-print("========================================")
-print("LOADED - Insert = Menu | Right Click = Aim")
-print("Silent Aim: table[12] method")
-print("========================================")
