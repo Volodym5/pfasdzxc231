@@ -1,6 +1,6 @@
--- ====================================================
--- this script doesn't have some 'high end' features --
--- ====================================================
+-- ===================================================
+--  this script doesn't have some 'high end' features
+-- ===================================================
 local Workspace = workspace
 local Camera = Workspace.CurrentCamera
 local RunService = game:GetService("RunService")
