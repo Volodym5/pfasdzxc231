@@ -1,6 +1,6 @@
--- ========================================================
--- SILENT AIM - LIVE TEST (will actually redirect shots)
--- ========================================================
+-- =============
+--  SILENT AIM
+-- =============
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
