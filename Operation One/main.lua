@@ -16,8 +16,8 @@ local noMatchStart = {}
 local BLACKLIST_DURATION = 5
 local NO_MATCH_THRESHOLD = 10
 
-local FOV_RADIUS = 150
-local SMOOTHNESS = 0.6
+local FOV_RADIUS = 100
+local SMOOTHNESS = 0.75
 local aimbotEnabled = true
 local currentTarget = nil
 
@@ -49,7 +49,7 @@ local function updateTransparentCache()
     local allParts = workspace:GetDescendants()
     for i = 1, #allParts do
         local part = allParts[i]
-        if part:IsA("BasePart") and part.Transparency >= 0.92 then
+        if part:IsA("BasePart") and part.Transparency >= 0.95 then
             if not transparentSet[part] then
                 transparentSet[part] = true
                 ignoreListDirty = true
@@ -527,7 +527,7 @@ end)
 RunService.RenderStepped:Connect(function(dt)
     if espEnabled then
         lastUpdate = lastUpdate + dt
-        if lastUpdate >= 0.05 then
+        if lastUpdate >= 0.1 then
             lastUpdate = 0
             updateHighlights()
         end
