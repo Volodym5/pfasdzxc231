@@ -53,11 +53,15 @@ local config = {
             FOV = 100,
             HitPart = "Nearest",
             HitChance = 100,
-            DynamicFOV = true
+            DynamicFOV = true,
+            FOVFollowTime = 3.0,
+            FOVFollowEnabled = true,
+            FOVSpawnDelay = 0.8 -- Seconds after spawn before FOV can follow
         },
         AutoShoot = {
             Enabled = false,
-            Delay = 0.1
+            Delay = 0.02,
+            SpawnProtectionTime = 1.65 -- Seconds after spawn before autofire can target
         }
     },
     
@@ -79,6 +83,12 @@ local state = {
     highlightCache = {},
     aimStartTime = 0,
     autoShootActive = false,
+    silentFovTrackTarget = nil,
+    silentFovTrackPart = nil,
+    silentFovTrackTime = 0,
+    fovTrackScreenPos = nil,
+    -- Spawn times tracking (player -> spawnTime)
+    spawnTimes = {},
     humanizer = {
         lastTarget = nil,
         lastSwitch = 0,
@@ -89,6 +99,59 @@ local state = {
         aimSmoothness = 0
     }
 }
+
+-- ========================================================
+-- SPAWN PROTECTION TRACKING (lightweight, per-player)
+-- ========================================================
+local function OnPlayerAdded(player)
+    player.CharacterAdded:Connect(function(char)
+        state.spawnTimes[player] = tick()
+        -- Cleanup old entries when character despawns
+        local hum = char:WaitForChild("Humanoid", 5)
+        if hum then
+            hum.Died:Connect(function()
+                -- Keep spawn time until they respawn
+            end)
+        end
+        char.AncestryChanged:Connect(function()
+            if not char.Parent then
+                task.delay(10, function()
+                    if state.spawnTimes[player] and (not player.Character or not player.Character.Parent) then
+                        state.spawnTimes[player] = nil
+                    end
+                end)
+            end
+        end)
+    end)
+end
+
+-- Connect for existing players
+for _, player in ipairs(Players:GetPlayers()) do
+    if player ~= LocalPlayer then
+        OnPlayerAdded(player)
+    end
+end
+
+-- Connect for new players
+Players.PlayerAdded:Connect(function(player)
+    if player ~= LocalPlayer then
+        OnPlayerAdded(player)
+    end
+end)
+
+-- Check if a player is spawn protected for AutoShoot (2.5s)
+local function IsSpawnProtectedForShoot(player)
+    local spawnTime = state.spawnTimes[player]
+    if not spawnTime then return false end
+    return (tick() - spawnTime) < config.Rage.AutoShoot.SpawnProtectionTime
+end
+
+-- Check if a player is spawn protected for FOV tracking (1.5s)
+local function IsSpawnProtectedForFOV(player)
+    local spawnTime = state.spawnTimes[player]
+    if not spawnTime then return false end
+    return (tick() - spawnTime) < config.Rage.SilentAim.FOVSpawnDelay
+end
 
 -- ========================================================
 -- GLASS CACHE (updated every 10 seconds)
@@ -154,7 +217,7 @@ local function IsEnemy(player)
 end
 
 -- ========================================================
--- RAYCAST HELPER (avoids creating new RaycastParams every call)
+-- SHARED RAYCAST HELPER
 -- ========================================================
 local rayParams = RaycastParams.new()
 rayParams.IgnoreWater = true
@@ -172,7 +235,7 @@ local function RaycastVisible(origin, target, ignoreChar)
 end
 
 -- ========================================================
--- VISIBILITY CHECK
+-- SHARED VISIBILITY CHECK
 -- ========================================================
 local function IsPartVisible(part, character)
     if not Global.VisCheck then return true end
@@ -181,15 +244,55 @@ local function IsPartVisible(part, character)
 end
 
 -- ========================================================
--- PREDICTION CHECK (only called when about to shoot)
+-- PREDICTION CHECK - 300ms future visibility
 -- ========================================================
 local function WillStillBeVisible(part, character)
-    local predictedPos = part.Position
-    if part.Velocity.Magnitude > 1 then
-        predictedPos = part.Position + part.Velocity * 0.2
+    local PREDICT_TIME = 0.125 -- 300ms
+
+    local rootPart = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+
+    local targetVel = part.AssemblyLinearVelocity
+    local predictedTargetPos = part.Position + targetVel * PREDICT_TIME
+
+    local predictedCameraPos = Camera.CFrame.Position
+    if rootPart then
+        local rootVel = rootPart.AssemblyLinearVelocity
+        local flatVel = Vector3.new(rootVel.X, 0, rootVel.Z)
+        predictedCameraPos = Camera.CFrame.Position + flatVel * PREDICT_TIME
     end
+
+    local direction = predictedTargetPos - predictedCameraPos
+    local distance = direction.Magnitude
+
+    if distance < 0.5 then
+        return true
+    end
+
     UpdateGlassCache()
-    return RaycastVisible(Camera.CFrame.Position, predictedPos, character)
+
+    local ignoreList = {character}
+    if LocalPlayer.Character then
+        table.insert(ignoreList, LocalPlayer.Character)
+    end
+    for _, glass in ipairs(glassParts) do
+        table.insert(ignoreList, glass)
+    end
+
+    rayParams.FilterType = Enum.RaycastFilterType.Exclude
+    rayParams.FilterDescendantsInstances = ignoreList
+
+    local result = Workspace:Raycast(predictedCameraPos, direction, rayParams)
+    if not result or result.Instance:IsDescendantOf(character) then
+        return true
+    end
+
+    local currentDir = part.Position - Camera.CFrame.Position
+    local currentResult = Workspace:Raycast(Camera.CFrame.Position, currentDir, rayParams)
+    if not currentResult or currentResult.Instance:IsDescendantOf(character) then
+        return true
+    end
+
+    return false
 end
 
 -- ========================================================
@@ -211,9 +314,9 @@ local function IsValidHitPart(partName, targetMode)
 end
 
 -- ========================================================
--- FIND TARGET
+-- FIND TARGET (separate spawn protection for FOV vs Shoot)
 -- ========================================================
-local function FindTarget(baseFOV, targetMode, checkVis, useDynamicFOV)
+local function FindTarget(baseFOV, targetMode, checkVis, useDynamicFOV, ignoreSpawnProtected, spawnCheckFunc)
     local fov = useDynamicFOV and GetDynamicFOV(baseFOV) or baseFOV
     local best, bestDist = nil, fov
     local bestChar = nil
@@ -222,6 +325,10 @@ local function FindTarget(baseFOV, targetMode, checkVis, useDynamicFOV)
     for _, player in ipairs(Players:GetPlayers()) do
         if player == LocalPlayer then continue end
         if not IsEnemy(player) then continue end
+        
+        -- Skip spawn protected players using the provided check function
+        if ignoreSpawnProtected and spawnCheckFunc and spawnCheckFunc(player) then continue end
+        
         local char = player.Character
         if not char then continue end
         local hum = char:FindFirstChildOfClass("Humanoid")
@@ -253,7 +360,7 @@ local function FindTarget(baseFOV, targetMode, checkVis, useDynamicFOV)
         end
     end
     
-    return best
+    return best, bestChar
 end
 
 -- ========================================================
@@ -313,14 +420,59 @@ local function HandleTriggerbot()
 end
 
 -- ========================================================
--- AUTO SHOOT (RAGE)
+-- UPDATE SILENT AIM FOV TRACKING (1.5s spawn delay for FOV)
+-- ========================================================
+local function UpdateSilentFOVTracking()
+    -- Find target with FOV spawn protection (1.5s)
+    local part, char = FindTarget(config.Rage.SilentAim.FOV, config.Rage.SilentAim.HitPart, Global.VisCheck, config.Rage.SilentAim.DynamicFOV, true, IsSpawnProtectedForFOV)
+    
+    if part and char then
+        state.silentFovTrackTarget = char
+        state.silentFovTrackPart = part
+        state.silentFovTrackTime = tick()
+        
+        local sp, vis = Camera:WorldToViewportPoint(part.Position)
+        if vis then
+            state.fovTrackScreenPos = Vector2.new(sp.X, sp.Y)
+        end
+    elseif state.silentFovTrackTarget then
+        local hum = state.silentFovTrackTarget:FindFirstChildOfClass("Humanoid")
+        local isDead = not hum or hum.Health <= 0
+        local isBehindWall = state.silentFovTrackPart and not IsPartVisible(state.silentFovTrackPart, state.silentFovTrackTarget)
+        local timeExceeded = (tick() - state.silentFovTrackTime) > config.Rage.SilentAim.FOVFollowTime
+        
+        if isDead or isBehindWall or timeExceeded then
+            state.silentFovTrackTarget = nil
+            state.silentFovTrackPart = nil
+            state.silentFovTrackTime = 0
+            state.fovTrackScreenPos = nil
+        elseif state.silentFovTrackPart then
+            local sp, vis = Camera:WorldToViewportPoint(state.silentFovTrackPart.Position)
+            if vis then
+                state.fovTrackScreenPos = Vector2.new(sp.X, sp.Y)
+            else
+                state.fovTrackScreenPos = nil
+            end
+        end
+    end
+    
+    if not config.Rage.SilentAim.FOVFollowEnabled then
+        state.silentFovTrackTarget = nil
+        state.silentFovTrackPart = nil
+        state.silentFovTrackTime = 0
+        state.fovTrackScreenPos = nil
+    end
+end
+
+-- ========================================================
+-- AUTO SHOOT (RAGE) - 2.5s spawn protection for shooting
 -- ========================================================
 local function HandleAutoShoot()
     if not config.Rage.AutoShoot.Enabled then return end
-    if state.isAiming then return end
     if state.autoShootActive then return end
     
-    local target = FindTarget(config.Rage.SilentAim.FOV, "Nearest", true, config.Rage.SilentAim.DynamicFOV)
+    -- Find target with AutoShoot spawn protection (2.5s)
+    local target, targetChar = FindTarget(config.Rage.SilentAim.FOV, "Nearest", Global.VisCheck, config.Rage.SilentAim.DynamicFOV, true, IsSpawnProtectedForShoot)
     
     if target then
         state.autoShootActive = true
@@ -414,7 +566,7 @@ local function ProcessLegitAimbot()
     if elapsed < config.Legit.Aimbot.AimDelay then return end
     local aimTime = elapsed - config.Legit.Aimbot.AimDelay
     
-    local part = FindTarget(config.Legit.Aimbot.FOV, config.Legit.Aimbot.TargetPart, Global.VisCheck, config.Legit.Aimbot.DynamicFOV)
+    local part = FindTarget(config.Legit.Aimbot.FOV, config.Legit.Aimbot.TargetPart, Global.VisCheck, config.Legit.Aimbot.DynamicFOV, false, nil)
     state.legitTarget = part
     
     if not part then
@@ -447,7 +599,7 @@ local function ProcessLegitAimbot()
 end
 
 -- ========================================================
--- SILENT AIM (with prediction)
+-- SILENT AIM (with 300ms prediction)
 -- ========================================================
 local function SetupSilentAim()
     local s, gunMod = pcall(function()
@@ -469,7 +621,7 @@ local function SetupSilentAim()
             local args = {...}
             if config.Rage.SilentAim.Enabled then
                 if math.random(1, 100) <= config.Rage.SilentAim.HitChance then
-                    local tgt = FindTarget(config.Rage.SilentAim.FOV, config.Rage.SilentAim.HitPart, Global.VisCheck, config.Rage.SilentAim.DynamicFOV)
+                    local tgt = FindTarget(config.Rage.SilentAim.FOV, config.Rage.SilentAim.HitPart, Global.VisCheck, config.Rage.SilentAim.DynamicFOV, false, nil)
                     if tgt and WillStillBeVisible(tgt, tgt.Parent) then
                         state.silentTarget = tgt
                         args[5] = tgt.Position
@@ -568,7 +720,12 @@ local function UpdateFOVCircles()
         silentFovCircle.Radius = config.Rage.SilentAim.DynamicFOV and GetDynamicFOV(config.Rage.SilentAim.FOV) or config.Rage.SilentAim.FOV
         silentFovCircle.Color = config.FOV.SilentColor
         silentFovCircle.Transparency = 0.5
-        silentFovCircle.Position = center
+        
+        if config.Rage.SilentAim.FOVFollowEnabled and state.fovTrackScreenPos then
+            silentFovCircle.Position = state.fovTrackScreenPos
+        else
+            silentFovCircle.Position = center
+        end
     else
         silentFovCircle.Visible = false
     end
@@ -600,8 +757,8 @@ local sliderData = {}
 
 function UI:Create()
     mainFrame = Instance.new("Frame")
-    mainFrame.Size = UDim2.new(0, 520, 0, 380)
-    mainFrame.Position = UDim2.new(0.5, -260, 0.5, -190)
+    mainFrame.Size = UDim2.new(0, 520, 0, 440)
+    mainFrame.Position = UDim2.new(0.5, -260, 0.5, -220)
     mainFrame.BackgroundColor3 = bgColor
     mainFrame.BorderSizePixel = 0
     mainFrame.ClipsDescendants = true
@@ -1020,7 +1177,7 @@ UI:SetTabBuilder(legitTab, function()
     UI:AddSection("Aimbot")
     UI:AddToggle("Enabled", config.Legit.Aimbot.Enabled, function(v) config.Legit.Aimbot.Enabled = v end)
     UI:AddDropdown("Target", {"Nearest", "Head", "Torso"}, config.Legit.Aimbot.TargetPart, function(v) config.Legit.Aimbot.TargetPart = v end)
-    UI:AddSlider("FOV", 10, 360, config.Legit.Aimbot.FOV, "°", function(v) config.Legit.Aimbot.FOV = v end)
+    UI:AddSlider("FOV", 10, 720, config.Legit.Aimbot.FOV, "°", function(v) config.Legit.Aimbot.FOV = v end)
     UI:AddSlider("Smoothness", 1, 100, config.Legit.Aimbot.Smoothness * 100, "%", function(v) config.Legit.Aimbot.Smoothness = v / 100 end)
     UI:AddToggle("Humanize", config.Legit.Aimbot.Humanize, function(v) config.Legit.Aimbot.Humanize = v end)
     UI:AddToggle("Dynamic FOV", config.Legit.Aimbot.DynamicFOV, function(v) config.Legit.Aimbot.DynamicFOV = v end)
@@ -1036,13 +1193,17 @@ UI:SetTabBuilder(rageTab, function()
     UI:AddSection("Silent Aim")
     UI:AddToggle("Enabled", config.Rage.SilentAim.Enabled, function(v) config.Rage.SilentAim.Enabled = v end)
     UI:AddDropdown("Target", {"Nearest", "Head", "Torso"}, config.Rage.SilentAim.HitPart, function(v) config.Rage.SilentAim.HitPart = v end)
-    UI:AddSlider("FOV", 10, 360, config.Rage.SilentAim.FOV, "°", function(v) config.Rage.SilentAim.FOV = v end)
+    UI:AddSlider("FOV", 10, 1000, config.Rage.SilentAim.FOV, "°", function(v) config.Rage.SilentAim.FOV = v end)
     UI:AddSlider("Hit Chance", 0, 100, config.Rage.SilentAim.HitChance, "%", function(v) config.Rage.SilentAim.HitChance = v end)
     UI:AddToggle("Dynamic FOV", config.Rage.SilentAim.DynamicFOV, function(v) config.Rage.SilentAim.DynamicFOV = v end)
+    UI:AddToggle("FOV Follow Target", config.Rage.SilentAim.FOVFollowEnabled, function(v) config.Rage.SilentAim.FOVFollowEnabled = v end)
+    UI:AddSlider("Follow Time", 0.5, 5.0, config.Rage.SilentAim.FOVFollowTime, "s", function(v) config.Rage.SilentAim.FOVFollowTime = v end)
+    UI:AddSlider("FOV Spawn Delay", 0, 3, config.Rage.SilentAim.FOVSpawnDelay, "s", function(v) config.Rage.SilentAim.FOVSpawnDelay = v end)
 
     UI:AddSection("Auto Shoot")
     UI:AddToggle("Enabled", config.Rage.AutoShoot.Enabled, function(v) config.Rage.AutoShoot.Enabled = v end)
-    UI:AddSlider("Delay", 50, 500, config.Rage.AutoShoot.Delay * 1000, "ms", function(v) config.Rage.AutoShoot.Delay = v / 1000 end)
+    UI:AddSlider("Delay", 0, 500, config.Rage.AutoShoot.Delay * 1000, "ms", function(v) config.Rage.AutoShoot.Delay = v / 1000 end)
+    UI:AddSlider("Spawn Protect", 0, 5, config.Rage.AutoShoot.SpawnProtectionTime, "s", function(v) config.Rage.AutoShoot.SpawnProtectionTime = v end)
 end)
 
 local visualsTab = UI:AddTab("Visuals", "👁️")
@@ -1066,6 +1227,7 @@ RunService.RenderStepped:Connect(function()
     pcall(function()
         state.isAiming = UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton2)
         if not state.isAiming then state.aimStartTime = 0 end
+        UpdateSilentFOVTracking()
         UpdateFOVCircles()
         ProcessLegitAimbot()
         HandleTriggerbot()
