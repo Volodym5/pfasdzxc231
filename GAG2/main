@@ -1,0 +1,233 @@
+local UI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Volodym5/pfasdzxc231/main/lib/source.lua"))()
+
+local Window = UI:CreateWindow({
+    Title          = "Garden Cheats",
+    Size           = UDim2.fromOffset(500, 350),
+    Center         = true,
+    Resizable      = true,
+    ToggleKeybind  = Enum.KeyCode.RightControl,
+    AutoShow       = true,
+})
+
+local player = game.Players.LocalPlayer
+local RunService = game:GetService("RunService")
+local Networking = require(game.ReplicatedStorage.SharedModules.Networking)
+
+-- Make all prompts instant
+for _, prompt in ipairs(game:GetDescendants()) do
+    if prompt:IsA("ProximityPrompt") then
+        prompt.HoldDuration = 0
+    end
+end
+game.DescendantAdded:Connect(function(obj)
+    if obj:IsA("ProximityPrompt") then
+        obj.HoldDuration = 0
+    end
+end)
+
+local harvestEnabled = false
+local stealEnabled = false
+local sellEnabled = false
+local lastHarvest = 0
+local lastSell = 0
+local harvestDelay = 0.1
+local sellDelay = 2
+local stealPlotIndex = 0
+local unlockedPlots = {}
+local homePosition = nil
+
+local function isPlotUnlocked(plotNum)
+    local plotGui = player.PlayerGui:FindFirstChild("Plot" .. plotNum)
+    if plotGui then
+        local playerFrame = plotGui:FindFirstChild("PlayerFrame")
+        if playerFrame then
+            local unlocked = playerFrame:FindFirstChild("Unlocked")
+            if unlocked then
+                return unlocked.Visible
+            end
+        end
+    end
+    return false
+end
+
+local function getUnlockedPlots()
+    local plots = {}
+    for _, plot in ipairs(workspace.Gardens:GetChildren()) do
+        if plot.Name:find("^Plot%d+$") then
+            local plotNum = tonumber(plot.Name:match("%d+$"))
+            local ownerId = plot:GetAttribute("OwnerUserId")
+            if plotNum and ownerId and ownerId ~= player.UserId then
+                if isPlotUnlocked(plotNum) then
+                    table.insert(plots, plot)
+                end
+            end
+        end
+    end
+    return plots
+end
+
+local function getHomePosition()
+    local myUserId = player.UserId
+    for _, plot in ipairs(workspace.Gardens:GetChildren()) do
+        local plants = plot:FindFirstChild("Plants")
+        if plants then
+            for _, plant in ipairs(plants:GetChildren()) do
+                if plant:GetAttribute("UserId") == myUserId then
+                    local sp = plot:FindFirstChild("SpawnPoint")
+                    if sp and sp:IsA("BasePart") then
+                        return sp.Position + Vector3.new(0, 3, 0)
+                    end
+                end
+                break
+            end
+        end
+    end
+    return nil
+end
+
+local function goHome()
+    local char = player.Character
+    if not char then return end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+    if not homePosition then
+        homePosition = getHomePosition()
+    end
+    if homePosition then
+        root.CFrame = CFrame.new(homePosition)
+    end
+end
+
+local function doHarvest()
+    local char = player.Character
+    if not char then return end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj.Name == "HarvestPart" and obj:IsA("BasePart") and obj.Parent then
+            local prompt = obj:FindFirstChildOfClass("ProximityPrompt")
+            if prompt and prompt.ActionText == "Harvest" then
+                fireproximityprompt(prompt)
+                firetouchinterest(root, obj, 0)
+                firetouchinterest(root, obj, 1)
+            end
+        end
+    end
+end
+
+local function doSteal()
+    local char = player.Character
+    if not char then return end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+    
+    if #unlockedPlots == 0 then
+        unlockedPlots = getUnlockedPlots()
+        stealPlotIndex = 0
+        if #unlockedPlots == 0 then return end
+    end
+    
+    stealPlotIndex = stealPlotIndex + 1
+    if stealPlotIndex > #unlockedPlots then
+        stealPlotIndex = 1
+        unlockedPlots = getUnlockedPlots()
+    end
+    
+    if #unlockedPlots == 0 then return end
+    
+    local plot = unlockedPlots[stealPlotIndex]
+    local plotNum = tonumber(plot.Name:match("%d+$"))
+    if not plotNum or not isPlotUnlocked(plotNum) then
+        unlockedPlots = getUnlockedPlots()
+        return
+    end
+    
+    local sp = plot:FindFirstChild("SpawnPoint")
+    if sp and sp:IsA("BasePart") then
+        root.CFrame = CFrame.new(sp.Position + Vector3.new(0, 5, 0))
+    end
+    task.wait(0.1)
+    
+    local plants = plot:FindFirstChild("Plants")
+    if plants then
+        for _, plant in ipairs(plants:GetChildren()) do
+            local fruits = plant:FindFirstChild("Fruits")
+            if fruits then
+                for _, fruit in ipairs(fruits:GetChildren()) do
+                    local harvestPart = fruit:FindFirstChild("HarvestPart")
+                    if harvestPart then
+                        local prompt = harvestPart:FindFirstChildOfClass("ProximityPrompt")
+                        if prompt and prompt.ActionText == "Steal" then
+                            fireproximityprompt(prompt)
+                            firetouchinterest(root, harvestPart, 0)
+                            firetouchinterest(root, harvestPart, 1)
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
+local function doSell()
+    pcall(function()
+        Networking.NPCS.SellAll:Fire()
+    end)
+end
+
+RunService.Heartbeat:Connect(function()
+    local now = tick()
+    if harvestEnabled and now - lastHarvest > harvestDelay then
+        lastHarvest = now
+        doHarvest()
+    end
+    if sellEnabled and now - lastSell > sellDelay then
+        lastSell = now
+        doSell()
+    end
+end)
+
+task.spawn(function()
+    while true do
+        if stealEnabled then
+            doSteal()
+        end
+        task.wait(0.3)
+    end
+end)
+
+local Tab = Window:AddTab("Farming")
+local Box = Tab:AddGroupbox({ Name = "Auto Farm", Side = 1 })
+
+Box:AddToggle("Harvest", {
+    Text = "Auto Harvest",
+    Default = false,
+    Callback = function(value)
+        harvestEnabled = value
+    end,
+})
+
+Box:AddToggle("Steal", {
+    Text = "Auto Steal",
+    Default = false,
+    Callback = function(value)
+        stealEnabled = value
+        if not value then goHome() else unlockedPlots = {} end
+    end,
+})
+
+Box:AddToggle("Sell", {
+    Text = "Auto Sell",
+    Default = false,
+    Callback = function(value)
+        sellEnabled = value
+    end,
+})
+
+Box:AddButton("GoHome", {
+    Text = "Teleport Home",
+    Variant = "Secondary",
+    Callback = function()
+        goHome()
+    end,
+})
