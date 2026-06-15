@@ -1582,11 +1582,11 @@ end
 local ClassDefaults = {
     Frame = { BorderSizePixel = 0 },
     TextLabel = {
-        BorderSizePixel   = 0,
+        BorderSizePixel        = 0,
         BackgroundTransparency = 1,
-        TextColor3        = "TextPrimary",
-        FontFace          = "Font",
-        RichText          = true,
+        TextColor3             = "TextPrimary",
+        FontFace               = "Font",
+        RichText               = true,
     },
     TextButton = {
         AutoButtonColor  = false,
@@ -1596,11 +1596,11 @@ local ClassDefaults = {
         RichText         = true,
     },
     TextBox = {
-        BorderSizePixel  = 0,
-        TextColor3       = "TextPrimary",
-        PlaceholderColor3= "TextMuted",
-        FontFace         = "Font",
-        Text             = "",
+        BorderSizePixel   = 0,
+        TextColor3        = "TextPrimary",
+        PlaceholderColor3 = "TextMuted",
+        FontFace          = "Font",
+        Text              = "",
     },
     ImageLabel = {
         BackgroundTransparency = 1,
@@ -5979,12 +5979,61 @@ function Library:CreateWindow(info)
     New("UIStroke",  { Color = "BorderColor", Thickness = 1, Transparency = 0.5, Parent = mainFrame })
     ZManager.Apply(mainFrame, "float")
 
-    -- DPI Scale instance — driven by Library:SetDPIScale()
-    local dpiScaleInst = Instance.new("UIScale")
-    dpiScaleInst.Scale  = Library.DPIScale
-    dpiScaleInst.Parent = mainFrame
-    windowMaid:Give(EventBus:On("dpiChange", function(s)
-        TweenService:Create(dpiScaleInst, TweenInfo.new(0.18, Enum.EasingStyle.Quad), { Scale = s }):Play()
+    -- DPI Scale — resize the window frame AND compensate TextSize so text
+    -- stays visually identical to 100% at every scale level.
+    local _dpiBaseSize = info.Size  -- the "100%" reference size
+    local _applyingDPI = false       -- guard: don't treat DPI-driven resizes as manual
+
+    -- Snapshot original TextSize for every text element inside mainFrame once,
+    -- then reapply them corrected by 1/scale so they appear the same size.
+    local _textBaseSizes = nil  -- populated lazily on first DPI change
+    local function snapshotTextSizes()
+        _textBaseSizes = {}
+        local textClasses = { "TextLabel", "TextButton", "TextBox" }
+        for _, cls in ipairs(textClasses) do
+            for _, inst in ipairs(mainFrame:GetDescendants()) do
+                if inst:IsA(cls) and inst.TextSize > 0 then
+                    _textBaseSizes[inst] = inst.TextSize
+                end
+            end
+        end
+    end
+    local function applyTextSizes(s)
+        if not _textBaseSizes then snapshotTextSizes() end
+        local inv = 1 / math.max(0.1, s)
+        for inst, base in pairs(_textBaseSizes) do
+            if inst and inst.Parent then
+                pcall(function() inst.TextSize = math.round(base * inv) end)
+            else
+                _textBaseSizes[inst] = nil  -- clean up destroyed instances
+            end
+        end
+    end
+
+    local function applyDPISize(s)
+        _applyingDPI = true
+        local baseX = _dpiBaseSize.X.Offset
+        local baseY = _dpiBaseSize.Y.Offset
+        local newSize = UDim2.fromOffset(
+            math.round(baseX * s),
+            math.round(baseY * s)
+        )
+        TweenService:Create(mainFrame, TweenInfo.new(0.18, Enum.EasingStyle.Quad), { Size = newSize }):Play()
+        applyTextSizes(s)
+        task.delay(0.2, function() _applyingDPI = false end)
+    end
+    windowMaid:Give(EventBus:On("dpiChange", applyDPISize))
+    -- When the user manually resizes, update the base size so DPI changes
+    -- stay relative to the new manual size rather than the original.
+    windowMaid:Give(mainFrame:GetPropertyChangedSignal("Size"):Connect(function()
+        if _applyingDPI then return end
+        local s = Library.DPIScale
+        if s and s > 0 then
+            _dpiBaseSize = UDim2.fromOffset(
+                math.round(mainFrame.Size.X.Offset / s),
+                math.round(mainFrame.Size.Y.Offset / s)
+            )
+        end
     end))
 
     -- Frosted glass layers: stacked semi-transparent tints to fake acrylic blur
