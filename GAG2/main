@@ -35,11 +35,11 @@ local lastSell = 0
 local harvestDelay = 0.1
 local sellDelay = 2
 local lastSteal = 0
-local stealDelay = 0.1
+local stealDelay = 0.15
 local stealIndex = 0
 local stealTargets = {}
 local lastSeedPack = 0
-local seedPackDelay = 0.5
+local seedPackDelay = 1
 local homePosition = nil
 
 -- WalkSpeed (looped)
@@ -139,6 +139,15 @@ local function stopFly()
     end
 end
 
+-- Check if it's night
+local function isNightTime()
+    local night = game.ReplicatedStorage:FindFirstChild("Night")
+    if night and night:IsA("BoolValue") then
+        return night.Value == true
+    end
+    return false
+end
+
 -- Seed Pack Collector
 local function collectSeedPack()
     local char = player.Character
@@ -148,10 +157,8 @@ local function collectSeedPack()
     
     local seedPackPart = workspace.Map.SeedPackSpawnServerLocations:FindFirstChild("Part")
     if seedPackPart and seedPackPart:IsA("BasePart") then
-        -- Teleport to it
         root.CFrame = seedPackPart.CFrame * CFrame.new(0, 2, 2)
         task.wait(0.1)
-        -- Try to interact with it
         local prompt = seedPackPart:FindFirstChildOfClass("ProximityPrompt")
         if prompt then
             fireproximityprompt(prompt)
@@ -182,9 +189,18 @@ local function getStealTargets()
         if obj.Name == "HarvestPart" and obj:IsA("BasePart") and obj.Parent then
             local prompt = obj:FindFirstChildOfClass("ProximityPrompt")
             if not prompt or prompt.ActionText ~= "Steal" then continue end
-            local plant = obj.Parent
+            
+            local fruitModel = obj.Parent
+            local plant = fruitModel.Parent
+            if not plant then continue end
+            
             local userId = plant:GetAttribute("UserId")
+            local plantId = plant:GetAttribute("PlantId")
+            local fruitId = fruitModel:GetAttribute("FruitId") or fruitModel.Name
+            
             if not userId or userId == myUserId then continue end
+            if not plantId then continue end
+            
             local current = obj
             local plotNum = nil
             while current do
@@ -194,8 +210,14 @@ local function getStealTargets()
                 end
                 current = current.Parent
             end
+            
             if plotNum and isPlotUnlocked(plotNum) then
-                table.insert(targets, obj)
+                table.insert(targets, {
+                    part = obj,
+                    userId = userId,
+                    plantId = plantId,
+                    fruitId = fruitId or ""
+                })
             end
         end
     end
@@ -252,6 +274,8 @@ local function doHarvest()
 end
 
 local function doSteal()
+    if not isNightTime() then return end
+    
     local char = player.Character
     if not char then return end
     local root = char:FindFirstChild("HumanoidRootPart")
@@ -272,19 +296,14 @@ local function doSteal()
     if #stealTargets == 0 then return end
     
     local target = stealTargets[stealIndex]
-    if not target or not target.Parent then
+    if not target or not target.part or not target.part.Parent then
         stealTargets = getStealTargets()
         return
     end
     
-    root.CFrame = target.CFrame * CFrame.new(0, 2, 2)
-    
-    local prompt = target:FindFirstChildOfClass("ProximityPrompt")
-    if prompt then
-        fireproximityprompt(prompt)
-    end
-    firetouchinterest(root, target, 0)
-    firetouchinterest(root, target, 1)
+    -- Use BeginSteal + CompleteSteal packets like the game does
+    Networking.Steal.BeginSteal:Fire(target.userId, target.plantId, target.fruitId)
+    Networking.Steal.CompleteSteal:Fire()
 end
 
 local function doSell()
