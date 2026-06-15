@@ -318,42 +318,36 @@ end)
 
 -- Main Tab
 local MainTab = Window:AddTab("Main")
-local FarmBox = MainTab:AddGroupbox({ Name = "Auto Farm", Side = 1 })
 
+local FarmBox = MainTab:AddGroupbox({ Name = "Auto Farm", Side = 1 })
 FarmBox:AddToggle("Harvest", {
-    Text = "Auto Harvest",
-    Default = false,
+    Text = "Auto Harvest", Default = false,
     Callback = function(value) harvestEnabled = value end,
 })
-
 FarmBox:AddToggle("Steal", {
-    Text = "Auto Steal",
-    Default = false,
-    Risky = true,
+    Text = "Auto Steal", Default = false, Risky = true,
     Callback = function(value)
-        stealEnabled = value
-        stealTargets = {}
+        stealEnabled = value; stealTargets = {}
         if not value then goHome() end
     end,
 })
-
 FarmBox:AddDropdown("IgnoreList", {
-    Text = "Ignore List",
-    Values = fruitNames,
-    Multi = true,
+    Text = "Ignore List", Values = fruitNames, Multi = true,
     Callback = function(selected) ignoredSeeds = selected end,
 })
-
 FarmBox:AddToggle("Sell", {
-    Text = "Auto Sell",
-    Default = false,
+    Text = "Auto Sell", Default = false,
     Callback = function(value) sellEnabled = value end,
 })
-
 FarmBox:AddToggle("SeedPack", {
-    Text = "Auto Seed Pack",
-    Default = false,
+    Text = "Auto Seed Pack", Default = false,
     Callback = function(value) seedPackEnabled = value end,
+})
+
+local AntiBox = MainTab:AddGroupbox({ Name = "Anti", Side = 2 })
+AntiBox:AddToggle("AntiCactus", {
+    Text = "Anti Cactus", Default = false,
+    Callback = function(value) antiCactusEnabled = value end,
 })
 
 -- Player Tab
@@ -361,19 +355,16 @@ local PlayerTab = Window:AddTab("Player")
 local MovementBox = PlayerTab:AddGroupbox({ Name = "Movement", Side = 1 })
 
 MovementBox:AddToggle("WalkSpeed", {
-    Text = "WalkSpeed",
-    Default = false,
+    Text = "WalkSpeed", Default = false,
     Callback = function(value)
         walkSpeedEnabled = value
         if value then startWalkSpeed() else stopWalkSpeed() end
     end,
 })
-
 MovementBox:AddSlider("WalkSpeedValue", {
     Text = "Walk Speed", Default = 24, Min = 16, Max = 200, Rounding = 0,
     Callback = function(value) walkSpeedValue = value end,
 })
-
 MovementBox:AddKeyPicker("WalkSpeedKey", {
     Text = "WalkSpeed", Default = "V", Mode = "Toggle",
     Callback = function()
@@ -382,7 +373,6 @@ MovementBox:AddKeyPicker("WalkSpeedKey", {
         if walkSpeedEnabled then startWalkSpeed() else stopWalkSpeed() end
     end,
 })
-
 MovementBox:AddToggle("Fly", {
     Text = "Fly", Default = false,
     Callback = function(value)
@@ -390,12 +380,10 @@ MovementBox:AddToggle("Fly", {
         if value then startFly() else stopFly() end
     end,
 })
-
 MovementBox:AddSlider("FlySpeed", {
     Text = "Fly Speed", Default = 50, Min = 10, Max = 200, Rounding = 0,
     Callback = function(value) flySpeed = value end,
 })
-
 MovementBox:AddKeyPicker("FlyKey", {
     Text = "Fly", Default = "B", Mode = "Toggle",
     Callback = function()
@@ -404,18 +392,7 @@ MovementBox:AddKeyPicker("FlyKey", {
         if flyEnabled then startFly() else stopFly() end
     end,
 })
-
 MovementBox:AddKeyPicker("HomeKey", {
     Text = "Teleport Home", Default = "T", Mode = "Always",
     Callback = function() goHome() end,
-})
-
--- Anti Tab
-local AntiTab = Window:AddTab("Anti")
-local AntiBox = AntiTab:AddGroupbox({ Name = "Protection", Side = 1 })
-
-AntiBox:AddToggle("AntiCactus", {
-    Text = "Anti Cactus",
-    Default = false,
-    Callback = function(value) antiCactusEnabled = value end,
 })
