@@ -22,6 +22,15 @@ local fruitNames = {
     "Moon Bloom", "Dragon's Breath",
 }
 
+local gearNames = {
+    "Common Watering Can", "Common Sprinkler", "Sign", "Lantern",
+    "Wheelbarrow", "Uncommon Sprinkler", "Rare Sprinkler",
+    "Legendary Sprinkler", "Super Sprinkler", "Trowel",
+    "Speed Mushroom", "Jump Mushroom", "Gnome", "Shrink Mushroom",
+    "Supersize Mushroom", "Invisibility Mushroom", "Teleporter",
+    "Super Watering Can", "Basic Pot", "Flashbang",
+}
+
 for _, prompt in ipairs(game:GetDescendants()) do
     if prompt:IsA("ProximityPrompt") and prompt.ActionText == "Harvest" then
         prompt.HoldDuration = 0
@@ -37,17 +46,21 @@ local harvestEnabled = false
 local stealEnabled = false
 local sellEnabled = false
 local seedPackEnabled = false
-local autoBuyEnabled = false
+local autoBuySeedsEnabled = false
+local autoBuyGearsEnabled = false
 local autoBuySeeds = {}
-local buyIndex = 0
+local autoBuyGears = {}
+local buySeedIndex = 0
+local buyGearIndex = 0
 local lastHarvest = 0
 local lastSell = 0
-local harvestDelay = 0.1
-local sellDelay = 2
+local harvestDelay = 0.08
+local sellDelay = 1.6
 local lastSeedPack = 0
-local seedPackDelay = 0.01
-local lastAutoBuy = 0
-local autoBuyDelay = 0.2
+local seedPackDelay = 0.005
+local lastAutoBuySeed = 0
+local lastAutoBuyGear = 0
+local autoBuyDelay = 0.05
 local ignoredSeeds = {}
 
 local antiCactusEnabled = false
@@ -192,7 +205,7 @@ local function doHarvest()
     end
 end
 
--- Steal system
+-- Steal
 local function getUnlockedPlots()
     local myUserId = player.UserId
     local plots = {}
@@ -207,10 +220,7 @@ local function getUnlockedPlots()
                     local col2 = visual:FindFirstChild("PlantAreaColumn2")
                     if col1 and col2 and col1:IsA("BasePart") and col2:IsA("BasePart") then
                         local midPoint = (col1.Position + col2.Position) / 2
-                        table.insert(plots, {
-                            plotNum = plotNum,
-                            position = midPoint + Vector3.new(0, -7, 0)
-                        })
+                        table.insert(plots, {plotNum = plotNum, position = midPoint + Vector3.new(0, -7, 0)})
                     end
                 end
             end
@@ -225,7 +235,6 @@ local function collectFruitsOnPlot(plotNum)
     local root = char:FindFirstChild("HumanoidRootPart")
     if not root then return end
     local myUserId = player.UserId
-    
     for _, obj in ipairs(workspace:GetDescendants()) do
         if obj.Name == "HarvestPart" and obj:IsA("BasePart") and obj.Parent then
             local prompt = obj:FindFirstChildOfClass("ProximityPrompt")
@@ -265,48 +274,50 @@ end
 local function doStealCycle()
     local plots = getUnlockedPlots()
     if #plots == 0 then return end
-    
-    -- Shuffle
     for i = #plots, 2, -1 do
         local j = math.random(1, i)
         plots[i], plots[j] = plots[j], plots[i]
     end
-    
     for _, plot in ipairs(plots) do
         if not stealEnabled then break end
         local char = player.Character
         if char then
             local root = char:FindFirstChild("HumanoidRootPart")
-            if root then
-                root.CFrame = CFrame.new(plot.position)
-            end
+            if root then root.CFrame = CFrame.new(plot.position) end
         end
-        
         local endTime = tick() + 2
         while tick() < endTime and stealEnabled do
             collectFruitsOnPlot(plot.plotNum)
             task.wait(0.1)
         end
     end
-    
-    if stealEnabled then
-        goHome()
-    end
+    if stealEnabled then goHome() end
 end
 
 local function doSell()
     pcall(function() Networking.NPCS.SellAll:Fire() end)
 end
 
-local function doAutoBuy()
+local function doAutoBuySeeds()
     local buyList = {}
     for seed, enabled in pairs(autoBuySeeds) do
         if enabled then table.insert(buyList, seed) end
     end
     if #buyList == 0 then return end
-    buyIndex = buyIndex + 1
-    if buyIndex > #buyList then buyIndex = 1 end
-    pcall(function() Networking.SeedShop.PurchaseSeed:Fire(buyList[buyIndex]) end)
+    buySeedIndex = buySeedIndex + 1
+    if buySeedIndex > #buyList then buySeedIndex = 1 end
+    pcall(function() Networking.SeedShop.PurchaseSeed:Fire(buyList[buySeedIndex]) end)
+end
+
+local function doAutoBuyGears()
+    local buyList = {}
+    for gear, enabled in pairs(autoBuyGears) do
+        if enabled then table.insert(buyList, gear) end
+    end
+    if #buyList == 0 then return end
+    buyGearIndex = buyGearIndex + 1
+    if buyGearIndex > #buyList then buyGearIndex = 1 end
+    pcall(function() Networking.GearShop.PurchaseGear:Fire(buyList[buyGearIndex]) end)
 end
 
 RunService.Heartbeat:Connect(function()
@@ -320,8 +331,11 @@ RunService.Heartbeat:Connect(function()
     if seedPackEnabled and now - lastSeedPack > seedPackDelay then
         lastSeedPack = now; collectSeedPack()
     end
-    if autoBuyEnabled and now - lastAutoBuy > autoBuyDelay then
-        lastAutoBuy = now; doAutoBuy()
+    if autoBuySeedsEnabled and now - lastAutoBuySeed > autoBuyDelay then
+        lastAutoBuySeed = now; doAutoBuySeeds()
+    end
+    if autoBuyGearsEnabled and now - lastAutoBuyGear > autoBuyDelay then
+        lastAutoBuyGear = now; doAutoBuyGears()
     end
     if antiCactusEnabled then
         local char = player.Character
@@ -355,12 +369,9 @@ RunService.Heartbeat:Connect(function()
     end
 end)
 
--- Steal runs in its own thread
 task.spawn(function()
     while true do
-        if stealEnabled then
-            doStealCycle()
-        end
+        if stealEnabled then doStealCycle() end
         task.wait(1)
     end
 end)
@@ -369,91 +380,36 @@ end)
 local MainTab = Window:AddTab("Main")
 
 local FarmBox = MainTab:AddGroupbox({ Name = "Auto Farm", Side = 1 })
-FarmBox:AddToggle("Harvest", {
-    Text = "Auto Harvest", Default = false,
-    Callback = function(value) harvestEnabled = value end,
-})
-FarmBox:AddToggle("Sell", {
-    Text = "Auto Sell", Default = false,
-    Callback = function(value) sellEnabled = value end,
-})
-FarmBox:AddToggle("SeedPack", {
-    Text = "Auto Seed Pack", Default = false,
-    Callback = function(value) seedPackEnabled = value end,
-})
+FarmBox:AddToggle("Harvest", { Text = "Auto Harvest", Default = false, Callback = function(value) harvestEnabled = value end })
+FarmBox:AddToggle("Sell", { Text = "Auto Sell", Default = false, Callback = function(value) sellEnabled = value end })
+FarmBox:AddToggle("SeedPack", { Text = "Auto Seed Pack", Default = false, Callback = function(value) seedPackEnabled = value end })
 
 local StealBox = MainTab:AddGroupbox({ Name = "Steal", Side = 2 })
-StealBox:AddToggle("Steal", {
-    Text = "Auto Steal", Default = false, Risky = false,
-    Callback = function(value)
-        stealEnabled = value
-        if not value then goHome() end
-    end,
-})
-StealBox:AddDropdown("IgnoreList", {
-    Text = "Ignore List", Values = fruitNames, Multi = true,
-    Callback = function(selected) ignoredSeeds = selected end,
-})
-
-local BuyBox = MainTab:AddGroupbox({ Name = "Auto Buy", Side = 1 })
-BuyBox:AddToggle("AutoBuy", {
-    Text = "Auto Buy Seeds", Default = false,
-    Callback = function(value) autoBuyEnabled = value end,
-})
-BuyBox:AddDropdown("BuySeed", {
-    Text = "Seeds to Buy", Values = fruitNames, Multi = true,
-    Callback = function(selected) autoBuySeeds = selected end,
-})
+StealBox:AddToggle("Steal", { Text = "Auto Steal", Default = false, Risky = false, Callback = function(value) stealEnabled = value; if not value then goHome() end end })
+StealBox:AddDropdown("IgnoreList", { Text = "Ignore List", Values = fruitNames, Multi = true, Callback = function(selected) ignoredSeeds = selected end })
 
 local AntiBox = MainTab:AddGroupbox({ Name = "Anti", Side = 2 })
-AntiBox:AddToggle("AntiCactus", {
-    Text = "Anti Cactus", Default = false,
-    Callback = function(value) antiCactusEnabled = value end,
-})
+AntiBox:AddToggle("AntiCactus", { Text = "Anti Cactus", Default = false, Callback = function(value) antiCactusEnabled = value end })
+
+-- Auto Buy Tab
+local BuyTab = Window:AddTab("Auto Buy")
+
+local SeedBuyBox = BuyTab:AddGroupbox({ Name = "Seeds", Side = 1 })
+SeedBuyBox:AddToggle("AutoBuySeeds", { Text = "Auto Buy Seeds", Default = false, Callback = function(value) autoBuySeedsEnabled = value end })
+SeedBuyBox:AddDropdown("BuySeed", { Text = "Seeds", Values = fruitNames, Multi = true, Callback = function(selected) autoBuySeeds = selected end })
+
+local GearBuyBox = BuyTab:AddGroupbox({ Name = "Gears", Side = 2 })
+GearBuyBox:AddToggle("AutoBuyGears", { Text = "Auto Buy Gears", Default = false, Callback = function(value) autoBuyGearsEnabled = value end })
+GearBuyBox:AddDropdown("BuyGear", { Text = "Gears", Values = gearNames, Multi = true, Callback = function(selected) autoBuyGears = selected end })
 
 -- Player Tab
 local PlayerTab = Window:AddTab("Player")
 local MovementBox = PlayerTab:AddGroupbox({ Name = "Movement", Side = 1 })
 
-MovementBox:AddToggle("WalkSpeed", {
-    Text = "WalkSpeed", Default = false,
-    Callback = function(value)
-        walkSpeedEnabled = value
-        if value then startWalkSpeed() else stopWalkSpeed() end
-    end,
-})
-MovementBox:AddSlider("WalkSpeedValue", {
-    Text = "Walk Speed", Default = 24, Min = 16, Max = 200, Rounding = 0,
-    Callback = function(value) walkSpeedValue = value end,
-})
-MovementBox:AddKeyPicker("WalkSpeedKey", {
-    Text = "WalkSpeed", Default = "V", Mode = "Toggle",
-    Callback = function()
-        walkSpeedEnabled = not walkSpeedEnabled
-        UI.Toggles.WalkSpeed:SetValue(walkSpeedEnabled)
-        if walkSpeedEnabled then startWalkSpeed() else stopWalkSpeed() end
-    end,
-})
-MovementBox:AddToggle("Fly", {
-    Text = "Fly", Default = false,
-    Callback = function(value)
-        flyEnabled = value
-        if value then startFly() else stopFly() end
-    end,
-})
-MovementBox:AddSlider("FlySpeed", {
-    Text = "Fly Speed", Default = 50, Min = 10, Max = 200, Rounding = 0,
-    Callback = function(value) flySpeed = value end,
-})
-MovementBox:AddKeyPicker("FlyKey", {
-    Text = "Fly", Default = "B", Mode = "Toggle",
-    Callback = function()
-        flyEnabled = not flyEnabled
-        UI.Toggles.Fly:SetValue(flyEnabled)
-        if flyEnabled then startFly() else stopFly() end
-    end,
-})
-MovementBox:AddKeyPicker("HomeKey", {
-    Text = "Teleport Home", Default = "T", Mode = "Always",
-    Callback = function() goHome() end,
-})
+MovementBox:AddToggle("WalkSpeed", { Text = "WalkSpeed", Default = false, Callback = function(value) walkSpeedEnabled = value; if value then startWalkSpeed() else stopWalkSpeed() end end })
+MovementBox:AddSlider("WalkSpeedValue", { Text = "Walk Speed", Default = 24, Min = 16, Max = 200, Rounding = 0, Callback = function(value) walkSpeedValue = value end })
+MovementBox:AddKeyPicker("WalkSpeedKey", { Text = "WalkSpeed", Default = "V", Mode = "Toggle", Callback = function() walkSpeedEnabled = not walkSpeedEnabled; UI.Toggles.WalkSpeed:SetValue(walkSpeedEnabled); if walkSpeedEnabled then startWalkSpeed() else stopWalkSpeed() end end })
+MovementBox:AddToggle("Fly", { Text = "Fly", Default = false, Callback = function(value) flyEnabled = value; if value then startFly() else stopFly() end end })
+MovementBox:AddSlider("FlySpeed", { Text = "Fly Speed", Default = 50, Min = 10, Max = 200, Rounding = 0, Callback = function(value) flySpeed = value end })
+MovementBox:AddKeyPicker("FlyKey", { Text = "Fly", Default = "B", Mode = "Toggle", Callback = function() flyEnabled = not flyEnabled; UI.Toggles.Fly:SetValue(flyEnabled); if flyEnabled then startFly() else stopFly() end end })
+MovementBox:AddKeyPicker("HomeKey", { Text = "Teleport Home", Default = "T", Mode = "Always", Callback = function() goHome() end })
