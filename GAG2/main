@@ -55,15 +55,16 @@ local buyGearIndex = 0
 local lastHarvest = 0
 local lastSell = 0
 local harvestDelay = 0.08
-local sellDelay = 1.6
+local sellDelay = 2
 local lastSeedPack = 0
 local seedPackDelay = 0.005
 local lastAutoBuySeed = 0
 local lastAutoBuyGear = 0
-local autoBuyDelay = 0.05
+local autoBuyDelay = 0.07
 local ignoredSeeds = {}
 
 local antiCactusEnabled = false
+local noErrorSoundEnabled = false
 
 local walkSpeedEnabled = false
 local walkSpeedValue = 40
@@ -320,6 +321,15 @@ local function doAutoBuyGears()
     pcall(function() Networking.GearShop.PurchaseGear:Fire(buyList[buyGearIndex]) end)
 end
 
+-- Block error sound
+game.DescendantAdded:Connect(function(obj)
+    if noErrorSoundEnabled and obj:IsA("Sound") then
+        if obj.SoundId == "rbxassetid://550209561" then
+            obj:Destroy()
+        end
+    end
+end)
+
 RunService.Heartbeat:Connect(function()
     local now = tick()
     if harvestEnabled and now - lastHarvest > harvestDelay then
@@ -390,6 +400,7 @@ StealBox:AddDropdown("IgnoreList", { Text = "Ignore List", Values = fruitNames, 
 
 local AntiBox = MainTab:AddGroupbox({ Name = "Anti", Side = 2 })
 AntiBox:AddToggle("AntiCactus", { Text = "Anti Cactus", Default = false, Callback = function(value) antiCactusEnabled = value end })
+AntiBox:AddToggle("NoErrorSound", { Text = "No Error Sound", Default = false, Callback = function(value) noErrorSoundEnabled = value end })
 
 -- Auto Buy Tab
 local BuyTab = Window:AddTab("Auto Buy")
