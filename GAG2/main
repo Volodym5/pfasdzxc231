@@ -41,15 +41,6 @@ local speedEnabled = false
 local speedValue = 24
 local defaultSpeed = 16
 
--- CFrame Speed
-local function updateSpeed()
-    -- Just store the value, actual movement handled in loop
-end
-
-player.CharacterAdded:Connect(function()
-    task.wait(0.1)
-end)
-
 local function isPlotUnlocked(plotNum)
     local plotGui = player.PlayerGui:FindFirstChild("Plot" .. plotNum)
     if plotGui then
@@ -182,9 +173,6 @@ local function doSell()
     end)
 end
 
--- CFrame speed boost
-local UserInputService = game:GetService("UserInputService")
-
 RunService.RenderStepped:Connect(function()
     if not speedEnabled then return end
     local char = player.Character
@@ -247,7 +235,7 @@ FarmBox:AddToggle("Sell", {
 
 -- Player Tab
 local PlayerTab = Window:AddTab("Player")
-local PlayerBox = PlayerTab:AddGroupbox({ Name = "Player", Side = 1 })
+local PlayerBox = PlayerTab:AddGroupbox({ Name = "Movement", Side = 1 })
 
 PlayerBox:AddToggle("Speed", {
     Text = "CFrame Speed",
@@ -268,28 +256,21 @@ PlayerBox:AddSlider("SpeedValue", {
     end,
 })
 
-PlayerBox:AddButton("TeleportHome", {
-    Text = "Teleport Home",
-    Variant = "Secondary",
-    Callback = function()
-        goHome()
-    end,
-})
-
--- Keybinds
-Window:AddKeybind("TeleportHomeKB", {
-    Text = "Teleport Home",
-    Default = Enum.KeyCode.T,
-    Callback = function()
-        goHome()
-    end,
-})
-
-Window:AddKeybind("SpeedKB", {
-    Text = "Toggle CFrame Speed",
+PlayerBox:AddKeyPicker("SpeedKey", {
+    Text = "Speed Toggle",
     Default = Enum.KeyCode.V,
+    Mode = "Toggle",
     Callback = function()
         speedEnabled = not speedEnabled
         UI.Toggles.Speed:SetValue(speedEnabled)
+    end,
+})
+
+PlayerBox:AddKeyPicker("HomeKey", {
+    Text = "Teleport Home",
+    Default = Enum.KeyCode.T,
+    Mode = "Toggle",
+    Callback = function()
+        goHome()
     end,
 })
