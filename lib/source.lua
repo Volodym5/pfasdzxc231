@@ -7527,7 +7527,7 @@ function Library:CreateWindow(info)
                     UndoManager.Undo("default")
                 end
             end
-            if input.KeyCode == Enum.KeyCode.D then
+            if input.KeyCode == Enum.KeyCode.K then
                 DebugOverlay.Toggle()
             end
         end
