@@ -39,86 +39,81 @@ local stealIndex = 0
 local stealTargets = {}
 local homePosition = nil
 
--- WalkSpeed
+-- WalkSpeed (looped)
 local walkSpeedEnabled = false
 local walkSpeedValue = 24
-local defaultWalkSpeed = 16
+local walkSpeedConnection = nil
 
-local function updateWalkSpeed()
+local function startWalkSpeed()
+    if walkSpeedConnection then return end
+    walkSpeedConnection = RunService.RenderStepped:Connect(function()
+        local char = player.Character
+        if char then
+            local humanoid = char:FindFirstChild("Humanoid")
+            if humanoid then
+                humanoid.WalkSpeed = walkSpeedValue
+            end
+        end
+    end)
+end
+
+local function stopWalkSpeed()
+    if walkSpeedConnection then
+        walkSpeedConnection:Disconnect()
+        walkSpeedConnection = nil
+    end
     local char = player.Character
     if char then
         local humanoid = char:FindFirstChild("Humanoid")
         if humanoid then
-            humanoid.WalkSpeed = walkSpeedEnabled and walkSpeedValue or defaultWalkSpeed
+            humanoid.WalkSpeed = 16
         end
     end
 end
 
-player.CharacterAdded:Connect(function(char)
-    task.wait(0.1)
-    updateWalkSpeed()
-end)
-
--- CFrame Fly
+-- Normal Fly
 local flyEnabled = false
 local flySpeed = 50
 local flyConnection = nil
-local flyKeys = { W = false, A = false, S = false, D = false, Space = false, LeftControl = false }
-
-local function onInputBegan(input, gameProcessed)
-    if gameProcessed then return end
-    if input.KeyCode == Enum.KeyCode.W then flyKeys.W = true
-    elseif input.KeyCode == Enum.KeyCode.A then flyKeys.A = true
-    elseif input.KeyCode == Enum.KeyCode.S then flyKeys.S = true
-    elseif input.KeyCode == Enum.KeyCode.D then flyKeys.D = true
-    elseif input.KeyCode == Enum.KeyCode.Space then flyKeys.Space = true
-    elseif input.KeyCode == Enum.KeyCode.LeftControl then flyKeys.LeftControl = true
-    end
-end
-
-local function onInputEnded(input, gameProcessed)
-    if input.KeyCode == Enum.KeyCode.W then flyKeys.W = false
-    elseif input.KeyCode == Enum.KeyCode.A then flyKeys.A = false
-    elseif input.KeyCode == Enum.KeyCode.S then flyKeys.S = false
-    elseif input.KeyCode == Enum.KeyCode.D then flyKeys.D = false
-    elseif input.KeyCode == Enum.KeyCode.Space then flyKeys.Space = false
-    elseif input.KeyCode == Enum.KeyCode.LeftControl then flyKeys.LeftControl = false
-    end
-end
 
 local function startFly()
     if flyConnection then return end
-    UserInputService.InputBegan:Connect(onInputBegan)
-    UserInputService.InputEnded:Connect(onInputEnded)
-    
-    -- Disable gravity
     local char = player.Character
-    if char then
-        local humanoid = char:FindFirstChild("Humanoid")
-        if humanoid then
-            humanoid.PlatformStand = true
-        end
+    if char and char:FindFirstChild("HumanoidRootPart") then
+        -- Set up body gyro and velocity
+        local root = char.HumanoidRootPart
+        local humanoid = char.Humanoid
+        
+        local bodyGyro = Instance.new("BodyGyro")
+        bodyGyro.P = 9e4
+        bodyGyro.MaxTorque = Vector3.new(9e4, 9e4, 9e4)
+        bodyGyro.CFrame = root.CFrame
+        bodyGyro.Parent = root
+        
+        local bodyVelocity = Instance.new("BodyVelocity")
+        bodyVelocity.Velocity = Vector3.zero
+        bodyVelocity.MaxForce = Vector3.new(9e4, 9e4, 9e4)
+        bodyVelocity.Parent = root
+        
+        humanoid.PlatformStand = true
+        
+        flyConnection = RunService.RenderStepped:Connect(function()
+            if not flyEnabled then return end
+            if not root or not root.Parent then return end
+            
+            bodyGyro.CFrame = workspace.CurrentCamera.CFrame
+            
+            local moveVector = Vector3.zero
+            if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveVector = moveVector + workspace.CurrentCamera.CFrame.LookVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveVector = moveVector - workspace.CurrentCamera.CFrame.LookVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveVector = moveVector - workspace.CurrentCamera.CFrame.RightVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveVector = moveVector + workspace.CurrentCamera.CFrame.RightVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.Space) then moveVector = moveVector + Vector3.new(0, 1, 0) end
+            if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then moveVector = moveVector - Vector3.new(0, 1, 0) end
+            
+            bodyVelocity.Velocity = moveVector.Magnitude > 0 and moveVector.Unit * flySpeed or Vector3.zero
+        end)
     end
-    
-    flyConnection = RunService.RenderStepped:Connect(function(dt)
-        if not flyEnabled then return end
-        local char = player.Character
-        if not char then return end
-        local root = char:FindFirstChild("HumanoidRootPart")
-        if not root then return end
-        
-        local moveVector = Vector3.zero
-        if flyKeys.W then moveVector = moveVector + workspace.CurrentCamera.CFrame.LookVector end
-        if flyKeys.S then moveVector = moveVector - workspace.CurrentCamera.CFrame.LookVector end
-        if flyKeys.A then moveVector = moveVector - workspace.CurrentCamera.CFrame.RightVector end
-        if flyKeys.D then moveVector = moveVector + workspace.CurrentCamera.CFrame.RightVector end
-        if flyKeys.Space then moveVector = moveVector + Vector3.new(0, 1, 0) end
-        if flyKeys.LeftControl then moveVector = moveVector - Vector3.new(0, 1, 0) end
-        
-        if moveVector.Magnitude > 0 then
-            root.CFrame = root.CFrame + (moveVector.Unit * flySpeed * dt)
-        end
-    end)
 end
 
 local function stopFly()
@@ -126,12 +121,16 @@ local function stopFly()
         flyConnection:Disconnect()
         flyConnection = nil
     end
-    -- Reset keys
-    for k in pairs(flyKeys) do flyKeys[k] = false end
-    -- Restore gravity
     local char = player.Character
     if char then
+        local root = char:FindFirstChild("HumanoidRootPart")
         local humanoid = char:FindFirstChild("Humanoid")
+        if root then
+            local bg = root:FindFirstChild("BodyGyro")
+            if bg then bg:Destroy() end
+            local bv = root:FindFirstChild("BodyVelocity")
+            if bv then bv:Destroy() end
+        end
         if humanoid then
             humanoid.PlatformStand = false
         end
@@ -325,7 +324,11 @@ MovementBox:AddToggle("WalkSpeed", {
     Default = false,
     Callback = function(value)
         walkSpeedEnabled = value
-        updateWalkSpeed()
+        if value then
+            startWalkSpeed()
+        else
+            stopWalkSpeed()
+        end
     end,
 })
 
@@ -337,7 +340,6 @@ MovementBox:AddSlider("WalkSpeedValue", {
     Rounding = 0,
     Callback = function(value)
         walkSpeedValue = value
-        updateWalkSpeed()
     end,
 })
 
@@ -348,12 +350,16 @@ MovementBox:AddKeyPicker("WalkSpeedKey", {
     Callback = function()
         walkSpeedEnabled = not walkSpeedEnabled
         UI.Toggles.WalkSpeed:SetValue(walkSpeedEnabled)
-        updateWalkSpeed()
+        if walkSpeedEnabled then
+            startWalkSpeed()
+        else
+            stopWalkSpeed()
+        end
     end,
 })
 
 MovementBox:AddToggle("Fly", {
-    Text = "CFrame Fly",
+    Text = "Fly",
     Default = false,
     Callback = function(value)
         flyEnabled = value
