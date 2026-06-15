@@ -1,11 +1,11 @@
 local UI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Volodym5/pfasdzxc231/main/lib/source.lua"))()
 
 local Window = UI:CreateWindow({
-    Title          = "Garden Cheats",
+    Title          = "GAG2",
     Size           = UDim2.fromOffset(500, 450),
     Center         = true,
     Resizable      = true,
-    ToggleKeybind  = Enum.KeyCode.RightControl,
+    ToggleKeybind  = Enum.KeyCode.RightShift,
     AutoShow       = true,
 })
 
@@ -39,10 +39,10 @@ local sellEnabled = false
 local seedPackEnabled = false
 local lastHarvest = 0
 local lastSell = 0
-local harvestDelay = 0.1
+local harvestDelay = 0.05
 local sellDelay = 2
 local lastSeedPack = 0
-local seedPackDelay = 1
+local seedPackDelay = 0.02
 local homePosition = nil
 local ignoredSeeds = {}
 
