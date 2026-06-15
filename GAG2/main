@@ -11,6 +11,7 @@ local Window = UI:CreateWindow({
 
 local player = game.Players.LocalPlayer
 local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 local Networking = require(game.ReplicatedStorage.SharedModules.Networking)
 
 -- Make all prompts instant
@@ -60,30 +61,62 @@ end)
 
 -- CFrame Fly
 local flyEnabled = false
-local flySpeed = 24
+local flySpeed = 50
 local flyConnection = nil
-local lastFlyReset = 0
+local flyKeys = { W = false, A = false, S = false, D = false, Space = false, LeftControl = false }
+
+local function onInputBegan(input, gameProcessed)
+    if gameProcessed then return end
+    if input.KeyCode == Enum.KeyCode.W then flyKeys.W = true
+    elseif input.KeyCode == Enum.KeyCode.A then flyKeys.A = true
+    elseif input.KeyCode == Enum.KeyCode.S then flyKeys.S = true
+    elseif input.KeyCode == Enum.KeyCode.D then flyKeys.D = true
+    elseif input.KeyCode == Enum.KeyCode.Space then flyKeys.Space = true
+    elseif input.KeyCode == Enum.KeyCode.LeftControl then flyKeys.LeftControl = true
+    end
+end
+
+local function onInputEnded(input, gameProcessed)
+    if input.KeyCode == Enum.KeyCode.W then flyKeys.W = false
+    elseif input.KeyCode == Enum.KeyCode.A then flyKeys.A = false
+    elseif input.KeyCode == Enum.KeyCode.S then flyKeys.S = false
+    elseif input.KeyCode == Enum.KeyCode.D then flyKeys.D = false
+    elseif input.KeyCode == Enum.KeyCode.Space then flyKeys.Space = false
+    elseif input.KeyCode == Enum.KeyCode.LeftControl then flyKeys.LeftControl = false
+    end
+end
 
 local function startFly()
     if flyConnection then return end
-    flyConnection = RunService.RenderStepped:Connect(function()
+    UserInputService.InputBegan:Connect(onInputBegan)
+    UserInputService.InputEnded:Connect(onInputEnded)
+    
+    -- Disable gravity
+    local char = player.Character
+    if char then
+        local humanoid = char:FindFirstChild("Humanoid")
+        if humanoid then
+            humanoid.PlatformStand = true
+        end
+    end
+    
+    flyConnection = RunService.RenderStepped:Connect(function(dt)
         if not flyEnabled then return end
         local char = player.Character
         if not char then return end
         local root = char:FindFirstChild("HumanoidRootPart")
         if not root then return end
-        local humanoid = char:FindFirstChild("Humanoid")
-        if not humanoid then return end
         
-        if tick() - lastFlyReset > 5 then
-            lastFlyReset = tick()
-            local currentPos = root.Position
-            root.CFrame = CFrame.new(currentPos)
-        end
+        local moveVector = Vector3.zero
+        if flyKeys.W then moveVector = moveVector + workspace.CurrentCamera.CFrame.LookVector end
+        if flyKeys.S then moveVector = moveVector - workspace.CurrentCamera.CFrame.LookVector end
+        if flyKeys.A then moveVector = moveVector - workspace.CurrentCamera.CFrame.RightVector end
+        if flyKeys.D then moveVector = moveVector + workspace.CurrentCamera.CFrame.RightVector end
+        if flyKeys.Space then moveVector = moveVector + Vector3.new(0, 1, 0) end
+        if flyKeys.LeftControl then moveVector = moveVector - Vector3.new(0, 1, 0) end
         
-        local moveDir = humanoid.MoveDirection
-        if moveDir.Magnitude > 0 then
-            root.CFrame = root.CFrame + (moveDir * flySpeed * 0.01)
+        if moveVector.Magnitude > 0 then
+            root.CFrame = root.CFrame + (moveVector.Unit * flySpeed * dt)
         end
     end)
 end
@@ -93,11 +126,14 @@ local function stopFly()
         flyConnection:Disconnect()
         flyConnection = nil
     end
+    -- Reset keys
+    for k in pairs(flyKeys) do flyKeys[k] = false end
+    -- Restore gravity
     local char = player.Character
     if char then
-        local root = char:FindFirstChild("HumanoidRootPart")
-        if root then
-            root.CFrame = root.CFrame
+        local humanoid = char:FindFirstChild("Humanoid")
+        if humanoid then
+            humanoid.PlatformStand = false
         end
     end
 end
@@ -322,7 +358,6 @@ MovementBox:AddToggle("Fly", {
     Callback = function(value)
         flyEnabled = value
         if value then
-            lastFlyReset = tick()
             startFly()
         else
             stopFly()
@@ -332,8 +367,8 @@ MovementBox:AddToggle("Fly", {
 
 MovementBox:AddSlider("FlySpeed", {
     Text = "Fly Speed",
-    Default = 24,
-    Min = 16,
+    Default = 50,
+    Min = 10,
     Max = 200,
     Rounding = 0,
     Callback = function(value)
@@ -349,7 +384,6 @@ MovementBox:AddKeyPicker("FlyKey", {
         flyEnabled = not flyEnabled
         UI.Toggles.Fly:SetValue(flyEnabled)
         if flyEnabled then
-            lastFlyReset = tick()
             startFly()
         else
             stopFly()
