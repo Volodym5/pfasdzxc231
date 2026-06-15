@@ -1,4 +1,5 @@
 local UI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Volodym5/pfasdzxc231/main/lib/source.lua"))()
+
 local Window = UI:CreateWindow({
     Title          = "Garden Cheats",
     Size           = UDim2.fromOffset(500, 350),
@@ -10,6 +11,7 @@ local Window = UI:CreateWindow({
 
 local player = game.Players.LocalPlayer
 local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 local Networking = require(game.ReplicatedStorage.SharedModules.Networking)
 
 -- Make all prompts instant
@@ -36,6 +38,29 @@ local stealDelay = 0.1
 local stealIndex = 0
 local stealTargets = {}
 local homePosition = nil
+local walkSpeedEnabled = false
+local walkSpeedValue = 24
+local defaultWalkSpeed = 16
+
+-- WalkSpeed
+local function updateWalkSpeed()
+    local char = player.Character
+    if char then
+        local humanoid = char:FindFirstChild("Humanoid")
+        if humanoid then
+            if walkSpeedEnabled then
+                humanoid.WalkSpeed = walkSpeedValue
+            else
+                humanoid.WalkSpeed = defaultWalkSpeed
+            end
+        end
+    end
+end
+
+player.CharacterAdded:Connect(function()
+    task.wait(0.1)
+    updateWalkSpeed()
+end)
 
 local function isPlotUnlocked(plotNum)
     local plotGui = player.PlayerGui:FindFirstChild("Plot" .. plotNum)
@@ -153,10 +178,8 @@ local function doSteal()
         return
     end
     
-    -- Teleport to fruit
     root.CFrame = target.CFrame * CFrame.new(0, 2, 2)
     
-    -- Collect it
     local prompt = target:FindFirstChildOfClass("ProximityPrompt")
     if prompt then
         fireproximityprompt(prompt)
@@ -187,10 +210,23 @@ RunService.Heartbeat:Connect(function()
     end
 end)
 
-local Tab = Window:AddTab("Farming")
-local Box = Tab:AddGroupbox({ Name = "Auto Farm", Side = 1 })
+-- Keybinds
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if input.KeyCode == Enum.KeyCode.T then
+        goHome()
+    elseif input.KeyCode == Enum.KeyCode.V then
+        walkSpeedEnabled = not walkSpeedEnabled
+        UI.Toggles.WalkSpeed:SetValue(walkSpeedEnabled)
+        updateWalkSpeed()
+    end
+end)
 
-Box:AddToggle("Harvest", {
+-- Farming Tab
+local FarmTab = Window:AddTab("Farming")
+local FarmBox = FarmTab:AddGroupbox({ Name = "Auto Farm", Side = 1 })
+
+FarmBox:AddToggle("Harvest", {
     Text = "Auto Harvest",
     Default = false,
     Callback = function(value)
@@ -198,7 +234,7 @@ Box:AddToggle("Harvest", {
     end,
 })
 
-Box:AddToggle("Steal", {
+FarmBox:AddToggle("Steal", {
     Text = "Auto Steal",
     Default = false,
     Risky = true,
@@ -208,7 +244,7 @@ Box:AddToggle("Steal", {
     end,
 })
 
-Box:AddToggle("Sell", {
+FarmBox:AddToggle("Sell", {
     Text = "Auto Sell",
     Default = false,
     Callback = function(value)
@@ -216,8 +252,33 @@ Box:AddToggle("Sell", {
     end,
 })
 
-Box:AddButton("GoHome", {
-    Text = "Teleport Home",
+-- Player Tab
+local PlayerTab = Window:AddTab("Player")
+local PlayerBox = PlayerTab:AddGroupbox({ Name = "Player", Side = 1 })
+
+PlayerBox:AddToggle("WalkSpeed", {
+    Text = "WalkSpeed [V]",
+    Default = false,
+    Callback = function(value)
+        walkSpeedEnabled = value
+        updateWalkSpeed()
+    end,
+})
+
+PlayerBox:AddSlider("WalkSpeedValue", {
+    Text = "Speed",
+    Default = 24,
+    Min = 16,
+    Max = 200,
+    Rounding = 0,
+    Callback = function(value)
+        walkSpeedValue = value
+        updateWalkSpeed()
+    end,
+})
+
+PlayerBox:AddButton("TeleportHome", {
+    Text = "Teleport Home [T]",
     Variant = "Secondary",
     Callback = function()
         goHome()
