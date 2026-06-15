@@ -6461,11 +6461,12 @@ function Library:CreateWindow(info)
         })
         New("UIListLayout", { Padding = UDim.new(0, 8), SortOrder = Enum.SortOrder.LayoutOrder, Parent = scrollLeft })
 
-        -- Centre divider
-        New("Frame", {
+        -- Centre divider (hidden when only one side is used)
+        local colDivider = New("Frame", {
             BackgroundColor3 = "BorderColor",
             Position         = UDim2.new(0.5, -1, 0, 0),
             Size             = UDim2.new(0, 1, 1, 0),
+            Visible          = false,
             Parent           = tabContainer,
         })
 
@@ -6478,6 +6479,7 @@ function Library:CreateWindow(info)
             ScrollBarImageColor3      = "MutedColor",
             Position                  = UDim2.new(0.5, 1, 0, 0),
             Size                      = UDim2.new(0.5, -1, 1, 0),
+            Visible                   = false,
             Parent                    = tabContainer,
         })
         New("UIPadding", {
@@ -6486,6 +6488,39 @@ function Library:CreateWindow(info)
             Parent = scrollRight,
         })
         New("UIListLayout", { Padding = UDim.new(0, 8), SortOrder = Enum.SortOrder.LayoutOrder, Parent = scrollRight })
+
+        -- Column usage counters; refreshed every time a groupbox is added
+        local _leftCount  = 0
+        local _rightCount = 0
+        local function refreshColumnLayout()
+            local hasLeft  = _leftCount  > 0
+            local hasRight = _rightCount > 0
+            if hasLeft and hasRight then
+                -- Normal two-column split
+                scrollLeft.Size     = UDim2.new(0.5, -1, 1, 0)
+                scrollLeft.Visible  = true
+                scrollRight.Size    = UDim2.new(0.5, -1, 1, 0)
+                scrollRight.Position = UDim2.new(0.5, 1, 0, 0)
+                scrollRight.Visible = true
+                colDivider.Visible  = true
+            elseif hasLeft then
+                -- Only left used — expand to full width
+                scrollLeft.Size     = UDim2.new(1, 0, 1, 0)
+                scrollLeft.Visible  = true
+                scrollRight.Visible = false
+                colDivider.Visible  = false
+            elseif hasRight then
+                -- Only right used — move to left edge, expand to full width
+                scrollRight.Size     = UDim2.new(1, 0, 1, 0)
+                scrollRight.Position = UDim2.fromOffset(0, 0)
+                scrollRight.Visible  = true
+                scrollLeft.Visible   = false
+                colDivider.Visible   = false
+            end
+        end
+        -- Start with left full-width until something is added
+        scrollLeft.Size    = UDim2.new(1, 0, 1, 0)
+        scrollLeft.Visible = true
 
         tab.Container   = tabContainer
         tab.LeftScroll  = scrollLeft
@@ -6555,6 +6590,11 @@ function Library:CreateWindow(info)
             gbInfo = gbInfo or {}
             local side = gbInfo.Side or 1
             local scroll = side == 1 and scrollLeft or scrollRight
+            -- Track usage and reflow columns
+            if side == 1 then _leftCount = _leftCount + 1
+            else               _rightCount = _rightCount + 1
+            end
+            refreshColumnLayout()
 
             local boxHolder = New("Frame", {
                 BackgroundColor3 = "SurfaceColor",
@@ -6659,6 +6699,11 @@ function Library:CreateWindow(info)
             tbInfo = tbInfo or {}
             local side   = tbInfo.Side or 1
             local scroll = side == 1 and scrollLeft or scrollRight
+            -- Track usage and reflow columns
+            if side == 1 then _leftCount = _leftCount + 1
+            else               _rightCount = _rightCount + 1
+            end
+            refreshColumnLayout()
 
             local tbHolder = New("Frame", {
                 BackgroundColor3 = "SurfaceColor",
@@ -7188,7 +7233,7 @@ function Library:CreateWindow(info)
             AutomaticCanvasSize    = Enum.AutomaticSize.Y,
             ScrollBarThickness     = 3,
             Position               = UDim2.fromOffset(0, 0),
-            Size                   = UDim2.new(0.5, -1, 1, 0),
+            Size                   = UDim2.new(1, 0, 1, 0),
             Parent                 = settingsContainer,
         })
         New("UIPadding", {
@@ -7198,10 +7243,11 @@ function Library:CreateWindow(info)
         })
         New("UIListLayout", { Padding = UDim.new(0,8), SortOrder = Enum.SortOrder.LayoutOrder, Parent = scrollLeft })
 
-        New("Frame", {
+        local sColDivider = New("Frame", {
             BackgroundColor3 = "BorderColor",
             Position = UDim2.new(0.5,-1,0,0),
             Size     = UDim2.new(0,1,1,0),
+            Visible  = false,
             Parent   = settingsContainer,
         })
 
@@ -7213,6 +7259,7 @@ function Library:CreateWindow(info)
             ScrollBarThickness     = 3,
             Position               = UDim2.new(0.5, 1, 0, 0),
             Size                   = UDim2.new(0.5, -1, 1, 0),
+            Visible                = false,
             Parent                 = settingsContainer,
         })
         New("UIPadding", {
@@ -7221,6 +7268,32 @@ function Library:CreateWindow(info)
             Parent = scrollRight,
         })
         New("UIListLayout", { Padding = UDim.new(0,8), SortOrder = Enum.SortOrder.LayoutOrder, Parent = scrollRight })
+
+        local _sLeftCount  = 0
+        local _sRightCount = 0
+        local function refreshSettingsLayout()
+            local hasLeft  = _sLeftCount  > 0
+            local hasRight = _sRightCount > 0
+            if hasLeft and hasRight then
+                scrollLeft.Size      = UDim2.new(0.5, -1, 1, 0)
+                scrollLeft.Visible   = true
+                scrollRight.Size     = UDim2.new(0.5, -1, 1, 0)
+                scrollRight.Position = UDim2.new(0.5, 1, 0, 0)
+                scrollRight.Visible  = true
+                sColDivider.Visible  = true
+            elseif hasLeft then
+                scrollLeft.Size      = UDim2.new(1, 0, 1, 0)
+                scrollLeft.Visible   = true
+                scrollRight.Visible  = false
+                sColDivider.Visible  = false
+            elseif hasRight then
+                scrollRight.Size     = UDim2.new(1, 0, 1, 0)
+                scrollRight.Position = UDim2.fromOffset(0, 0)
+                scrollRight.Visible  = true
+                scrollLeft.Visible   = false
+                sColDivider.Visible  = false
+            end
+        end
 
         local function makeGroupbox(name, parent)
             local boxHolder = New("Frame", {
@@ -7322,8 +7395,16 @@ function Library:CreateWindow(info)
             _label    = settingsBtnLabel,
             _bar      = settingsActiveBar,
         }
-        function Settings:AddLeftGroupbox(name)  return makeGroupbox(name, scrollLeft)  end
-        function Settings:AddRightGroupbox(name) return makeGroupbox(name, scrollRight) end
+        function Settings:AddLeftGroupbox(name)
+            _sLeftCount = _sLeftCount + 1
+            refreshSettingsLayout()
+            return makeGroupbox(name, scrollLeft)
+        end
+        function Settings:AddRightGroupbox(name)
+            _sRightCount = _sRightCount + 1
+            refreshSettingsLayout()
+            return makeGroupbox(name, scrollRight)
+        end
         function Settings:Show()  activateSettings() end
 
         Window.Settings = Settings
