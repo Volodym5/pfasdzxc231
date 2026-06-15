@@ -1,11 +1,11 @@
 local UI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Volodym5/pfasdzxc231/main/lib/source.lua"))()
 
 local Window = UI:CreateWindow({
-    Title          = "Garden Cheats",
+    Title          = "GAG2",
     Size           = UDim2.fromOffset(500, 450),
     Center         = true,
     Resizable      = true,
-    ToggleKeybind  = Enum.KeyCode.RightControl,
+    ToggleKeybind  = Enum.KeyCode.RightShift,
     AutoShow       = true,
 })
 
@@ -39,10 +39,10 @@ local sellEnabled = false
 local seedPackEnabled = false
 local lastHarvest = 0
 local lastSell = 0
-local harvestDelay = 0.1
+local harvestDelay = 0.05
 local sellDelay = 2
 local lastSeedPack = 0
-local seedPackDelay = 1
+local seedPackDelay = 0.02
 local homePosition = nil
 local ignoredSeeds = {}
 
@@ -54,7 +54,7 @@ local stealIndex = 0
 local antiCactusEnabled = false
 
 local walkSpeedEnabled = false
-local walkSpeedValue = 24
+local walkSpeedValue = 40
 local walkSpeedConnection = nil
 
 local function startWalkSpeed()
@@ -79,7 +79,7 @@ end
 
 -- Infinite Yield CFrame Fly
 local flyEnabled = false
-local flySpeed = 50
+local flySpeed = 100
 local flyConnection = nil
 
 local function startFly()
@@ -320,17 +320,6 @@ FarmBox:AddToggle("Harvest", {
     Text = "Auto Harvest", Default = false,
     Callback = function(value) harvestEnabled = value end,
 })
-FarmBox:AddToggle("Steal", {
-    Text = "Auto Steal", Default = false, Risky = true,
-    Callback = function(value)
-        stealEnabled = value; stealTargets = {}
-        if not value then goHome() end
-    end,
-})
-FarmBox:AddDropdown("IgnoreList", {
-    Text = "Ignore List", Values = fruitNames, Multi = true,
-    Callback = function(selected) ignoredSeeds = selected end,
-})
 FarmBox:AddToggle("Sell", {
     Text = "Auto Sell", Default = false,
     Callback = function(value) sellEnabled = value end,
@@ -338,6 +327,19 @@ FarmBox:AddToggle("Sell", {
 FarmBox:AddToggle("SeedPack", {
     Text = "Auto Seed Pack", Default = false,
     Callback = function(value) seedPackEnabled = value end,
+})
+
+local StealBox = MainTab:AddGroupbox({ Name = "Steal", Side = 1 })
+StealBox:AddToggle("Steal", {
+    Text = "Auto Steal", Default = false, Risky = false,
+    Callback = function(value)
+        stealEnabled = value; stealTargets = {}
+        if not value then goHome() end
+    end,
+})
+StealBox:AddDropdown("IgnoreList", {
+    Text = "Ignore List", Values = fruitNames, Multi = true,
+    Callback = function(selected) ignoredSeeds = selected end,
 })
 
 local AntiBox = MainTab:AddGroupbox({ Name = "Anti", Side = 2 })
