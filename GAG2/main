@@ -131,6 +131,29 @@ local function stopFly()
     end
 end
 
+local function isPlotUnlocked(plotNum)
+    local plotGui = player.PlayerGui:FindFirstChild("Plot" .. plotNum)
+    if plotGui then
+        local playerFrame = plotGui:FindFirstChild("PlayerFrame")
+        if playerFrame then
+            local unlocked = playerFrame:FindFirstChild("Unlocked")
+            if unlocked then return unlocked.Visible end
+        end
+    end
+    return false
+end
+
+local function getPlotNumber(harvestPart)
+    local current = harvestPart
+    while current do
+        if current.Name:find("^Plot%d+$") then
+            return tonumber(current.Name:match("%d+$"))
+        end
+        current = current.Parent
+    end
+    return nil
+end
+
 local function collectSeedPack()
     local char = player.Character
     if not char then return end
@@ -212,7 +235,10 @@ local function doSteal()
                         local seedName = plantModel:GetAttribute("SeedName")
                         if userId and userId ~= myUserId then
                             if not seedName or not ignoredSeeds[seedName] then
-                                table.insert(stealTargets, {part = obj, prompt = prompt})
+                                local plotNum = getPlotNumber(obj)
+                                if plotNum and isPlotUnlocked(plotNum) then
+                                    table.insert(stealTargets, {part = obj, prompt = prompt})
+                                end
                             end
                         end
                     end
