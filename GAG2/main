@@ -285,29 +285,30 @@ RunService.Heartbeat:Connect(function()
         lastSeedPack = now; collectSeedPack()
     end
     if antiCactusEnabled then
-    local char = player.Character
-    if char then
-        local root = char:FindFirstChild("HumanoidRootPart")
-        if root then
-            for _, part in ipairs(workspace:GetPartBoundsInRadius(root.Position, 20)) do
-                pcall(function()
-                    if part and part.Parent and part.CanTouch then
-                        -- Check if any ancestor is a cactus plant
-                        local p = part.Parent
-                        while p and not p.Name:find("^Plot") do
-                            local seed = p:GetAttribute("SeedName")
-                            if seed == "Cactus" or seed == "Baby Cactus" then
-                                part.CanTouch = false
-                                break
+        local char = player.Character
+        if char then
+            local root = char:FindFirstChild("HumanoidRootPart")
+            if root then
+                for _, part in ipairs(workspace:GetPartBoundsInRadius(root.Position, 20)) do
+                    pcall(function()
+                        if part and part.Parent and part.CanTouch then
+                            local p = part.Parent
+                            while p and not p.Name:find("^Plot") do
+                                local seed = p:GetAttribute("SeedName")
+                                if seed == "Cactus" or seed == "Baby Cactus" then
+                                    part.CanTouch = false
+                                    break
+                                end
+                                p = p.Parent
                             end
-                            p = p.Parent
                         end
-                    end
-                end)
+                    end)
+                end
             end
         end
     end
-end
+end)
+
 -- Main Tab
 local MainTab = Window:AddTab("Main")
 local FarmBox = MainTab:AddGroupbox({ Name = "Auto Farm", Side = 1 })
