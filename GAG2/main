@@ -1,11 +1,11 @@
 local UI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Volodym5/pfasdzxc231/main/lib/source.lua"))()
 
 local Window = UI:CreateWindow({
-    Title          = "GAG2",
+    Title          = "Garden Cheats",
     Size           = UDim2.fromOffset(500, 450),
     Center         = true,
     Resizable      = true,
-    ToggleKeybind  = Enum.KeyCode.RightShift,
+    ToggleKeybind  = Enum.KeyCode.RightControl,
     AutoShow       = true,
 })
 
@@ -39,10 +39,10 @@ local sellEnabled = false
 local seedPackEnabled = false
 local lastHarvest = 0
 local lastSell = 0
-local harvestDelay = 0.05
+local harvestDelay = 0.1
 local sellDelay = 2
 local lastSeedPack = 0
-local seedPackDelay = 0.02
+local seedPackDelay = 1
 local homePosition = nil
 local ignoredSeeds = {}
 
@@ -77,6 +77,7 @@ local function stopWalkSpeed()
     end
 end
 
+-- Infinite Yield CFrame Fly
 local flyEnabled = false
 local flySpeed = 50
 local flyConnection = nil
@@ -84,30 +85,28 @@ local flyConnection = nil
 local function startFly()
     if flyConnection then return end
     local char = player.Character
-    if char and char:FindFirstChild("HumanoidRootPart") then
-        local root = char.HumanoidRootPart
-        local humanoid = char.Humanoid
-        local bodyGyro = Instance.new("BodyGyro")
-        bodyGyro.P = 9e4
-        bodyGyro.MaxTorque = Vector3.new(9e4, 9e4, 9e4)
-        bodyGyro.Parent = root
-        local bodyVelocity = Instance.new("BodyVelocity")
-        bodyVelocity.MaxForce = Vector3.new(9e4, 9e4, 9e4)
-        bodyVelocity.Parent = root
-        humanoid.PlatformStand = true
+    if char and char:FindFirstChild("Head") then
+        local humanoid = char:FindFirstChildOfClass("Humanoid")
+        local head = char.Head
         
-        flyConnection = RunService.RenderStepped:Connect(function()
+        humanoid.PlatformStand = true
+        head.Anchored = true
+        
+        flyConnection = RunService.Heartbeat:Connect(function(deltaTime)
             if not flyEnabled then return end
-            if not root or not root.Parent then return end
-            bodyGyro.CFrame = workspace.CurrentCamera.CFrame
-            local mv = Vector3.zero
-            if UserInputService:IsKeyDown(Enum.KeyCode.W) then mv += workspace.CurrentCamera.CFrame.LookVector end
-            if UserInputService:IsKeyDown(Enum.KeyCode.S) then mv -= workspace.CurrentCamera.CFrame.LookVector end
-            if UserInputService:IsKeyDown(Enum.KeyCode.A) then mv -= workspace.CurrentCamera.CFrame.RightVector end
-            if UserInputService:IsKeyDown(Enum.KeyCode.D) then mv += workspace.CurrentCamera.CFrame.RightVector end
-            if UserInputService:IsKeyDown(Enum.KeyCode.Space) then mv += Vector3.new(0, 1, 0) end
-            if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then mv -= Vector3.new(0, 1, 0) end
-            bodyVelocity.Velocity = mv.Magnitude > 0 and mv.Unit * flySpeed or Vector3.zero
+            if not char or not char.Parent then return end
+            
+            local moveDirection = humanoid.MoveDirection * (flySpeed * deltaTime)
+            local headCFrame = head.CFrame
+            local camera = workspace.CurrentCamera
+            local cameraCFrame = camera.CFrame
+            local cameraOffset = headCFrame:ToObjectSpace(cameraCFrame).Position
+            cameraCFrame = cameraCFrame * CFrame.new(-cameraOffset.X, -cameraOffset.Y, -cameraOffset.Z + 1)
+            local cameraPosition = cameraCFrame.Position
+            local headPosition = headCFrame.Position
+            
+            local objectSpaceVelocity = CFrame.new(cameraPosition, Vector3.new(headPosition.X, cameraPosition.Y, headPosition.Z)):VectorToObjectSpace(moveDirection)
+            head.CFrame = CFrame.new(headPosition) * (cameraCFrame - cameraPosition) * CFrame.new(objectSpaceVelocity)
         end)
     end
 end
@@ -116,13 +115,10 @@ local function stopFly()
     if flyConnection then flyConnection:Disconnect(); flyConnection = nil end
     local char = player.Character
     if char then
-        local root = char:FindFirstChild("HumanoidRootPart")
-        local humanoid = char:FindFirstChild("Humanoid")
-        if root then
-            if root:FindFirstChild("BodyGyro") then root.BodyGyro:Destroy() end
-            if root:FindFirstChild("BodyVelocity") then root.BodyVelocity:Destroy() end
-        end
+        local humanoid = char:FindFirstChildOfClass("Humanoid")
+        local head = char:FindFirstChild("Head")
         if humanoid then humanoid.PlatformStand = false end
+        if head then head.Anchored = false end
     end
 end
 
@@ -324,6 +320,17 @@ FarmBox:AddToggle("Harvest", {
     Text = "Auto Harvest", Default = false,
     Callback = function(value) harvestEnabled = value end,
 })
+FarmBox:AddToggle("Steal", {
+    Text = "Auto Steal", Default = false, Risky = true,
+    Callback = function(value)
+        stealEnabled = value; stealTargets = {}
+        if not value then goHome() end
+    end,
+})
+FarmBox:AddDropdown("IgnoreList", {
+    Text = "Ignore List", Values = fruitNames, Multi = true,
+    Callback = function(selected) ignoredSeeds = selected end,
+})
 FarmBox:AddToggle("Sell", {
     Text = "Auto Sell", Default = false,
     Callback = function(value) sellEnabled = value end,
@@ -331,19 +338,6 @@ FarmBox:AddToggle("Sell", {
 FarmBox:AddToggle("SeedPack", {
     Text = "Auto Seed Pack", Default = false,
     Callback = function(value) seedPackEnabled = value end,
-})
-
-local StealBox = MainTab:AddGroupbox({ Name = "Steal", Side = 1 })
-StealBox:AddToggle("Steal", {
-    Text = "Auto Steal", Default = false, Risky = true,
-    Callback = function(value)
-        stealEnabled = value; stealTargets = {}
-        if not value then goHome() end
-    end,
-})
-StealBox:AddDropdown("IgnoreList", {
-    Text = "Ignore List", Values = fruitNames, Multi = true,
-    Callback = function(selected) ignoredSeeds = selected end,
 })
 
 local AntiBox = MainTab:AddGroupbox({ Name = "Anti", Side = 2 })
