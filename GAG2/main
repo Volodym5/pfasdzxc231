@@ -22,7 +22,7 @@ local fruitNames = {
     "Moon Bloom", "Dragon's Breath",
 }
 
--- Make harvest prompts instant only
+-- Make harvest prompts instant
 for _, prompt in ipairs(game:GetDescendants()) do
     if prompt:IsA("ProximityPrompt") and prompt.ActionText == "Harvest" then
         prompt.HoldDuration = 0
@@ -46,6 +46,15 @@ local lastSeedPack = 0
 local seedPackDelay = 1
 local homePosition = nil
 local ignoredSeeds = {}
+
+-- Steal
+local lastSteal = 0
+local stealDelay = 0.3
+local stealTargets = {}
+local stealIndex = 0
+
+-- Anti Cactus
+local antiCactusEnabled = false
 
 -- WalkSpeed
 local walkSpeedEnabled = false
@@ -86,10 +95,8 @@ local function startFly()
         local bodyGyro = Instance.new("BodyGyro")
         bodyGyro.P = 9e4
         bodyGyro.MaxTorque = Vector3.new(9e4, 9e4, 9e4)
-        bodyGyro.CFrame = root.CFrame
         bodyGyro.Parent = root
         local bodyVelocity = Instance.new("BodyVelocity")
-        bodyVelocity.Velocity = Vector3.zero
         bodyVelocity.MaxForce = Vector3.new(9e4, 9e4, 9e4)
         bodyVelocity.Parent = root
         humanoid.PlatformStand = true
@@ -98,14 +105,14 @@ local function startFly()
             if not flyEnabled then return end
             if not root or not root.Parent then return end
             bodyGyro.CFrame = workspace.CurrentCamera.CFrame
-            local moveVector = Vector3.zero
-            if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveVector = moveVector + workspace.CurrentCamera.CFrame.LookVector end
-            if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveVector = moveVector - workspace.CurrentCamera.CFrame.LookVector end
-            if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveVector = moveVector - workspace.CurrentCamera.CFrame.RightVector end
-            if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveVector = moveVector + workspace.CurrentCamera.CFrame.RightVector end
-            if UserInputService:IsKeyDown(Enum.KeyCode.Space) then moveVector = moveVector + Vector3.new(0, 1, 0) end
-            if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then moveVector = moveVector - Vector3.new(0, 1, 0) end
-            bodyVelocity.Velocity = moveVector.Magnitude > 0 and moveVector.Unit * flySpeed or Vector3.zero
+            local mv = Vector3.zero
+            if UserInputService:IsKeyDown(Enum.KeyCode.W) then mv += workspace.CurrentCamera.CFrame.LookVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.S) then mv -= workspace.CurrentCamera.CFrame.LookVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.A) then mv -= workspace.CurrentCamera.CFrame.RightVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.D) then mv += workspace.CurrentCamera.CFrame.RightVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.Space) then mv += Vector3.new(0, 1, 0) end
+            if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then mv -= Vector3.new(0, 1, 0) end
+            bodyVelocity.Velocity = mv.Magnitude > 0 and mv.Unit * flySpeed or Vector3.zero
         end)
     end
 end
@@ -122,11 +129,6 @@ local function stopFly()
         end
         if humanoid then humanoid.PlatformStand = false end
     end
-end
-
-local function isNightTime()
-    local night = game.ReplicatedStorage:FindFirstChild("Night")
-    return night and night:IsA("BoolValue") and night.Value == true
 end
 
 local function collectSeedPack()
@@ -190,57 +192,44 @@ local function doHarvest()
     end
 end
 
-local stealQueue = {}
-local stealQueueIndex = 0
-
 local function doSteal()
-    if not isNightTime() then return end
-    
     local char = player.Character
     if not char then return end
     local root = char:FindFirstChild("HumanoidRootPart")
     if not root then return end
     local myUserId = player.UserId
     
-    -- Build queue of all stealable fruits
-    if #stealQueue == 0 then
-        stealQueue = {}
+    if #stealTargets == 0 then
+        stealTargets = {}
         for _, obj in ipairs(workspace:GetDescendants()) do
             if obj.Name == "HarvestPart" and obj:IsA("BasePart") and obj.Parent then
                 local prompt = obj:FindFirstChildOfClass("ProximityPrompt")
                 if prompt and prompt.ActionText == "Steal" then
                     local fruitModel = obj.Parent
-                    local plant = fruitModel.Parent
-                    if plant then
-                        local userId = plant:GetAttribute("UserId")
+                    local plantModel = fruitModel.Parent and fruitModel.Parent.Parent
+                    if plantModel then
+                        local userId = plantModel:GetAttribute("UserId")
+                        local seedName = plantModel:GetAttribute("SeedName")
                         if userId and userId ~= myUserId then
-                            local seedName = plant:GetAttribute("SeedName")
                             if not seedName or not ignoredSeeds[seedName] then
-                                table.insert(stealQueue, {part = obj, prompt = prompt})
+                                table.insert(stealTargets, {part = obj, prompt = prompt})
                             end
                         end
                     end
                 end
             end
         end
-        stealQueueIndex = 0
+        stealIndex = 0
     end
     
-    if #stealQueue == 0 then return end
+    if #stealTargets == 0 then return end
     
-    -- Process one fruit per call
-    stealQueueIndex = stealQueueIndex + 1
-    if stealQueueIndex > #stealQueue then
-        stealQueueIndex = 1
-    end
+    stealIndex = stealIndex + 1
+    if stealIndex > #stealTargets then stealIndex = 1; stealTargets = {}; return end
     
-    local target = stealQueue[stealQueueIndex]
-    if not target or not target.part or not target.part.Parent then
-        stealQueue = {}
-        return
-    end
+    local target = stealTargets[stealIndex]
+    if not target.part or not target.part.Parent then stealTargets = {}; return end
     
-    -- Teleport and steal
     root.CFrame = target.part.CFrame * CFrame.new(0, 2, 2)
     
     fireproximityprompt(target.prompt)
@@ -265,15 +254,28 @@ RunService.Heartbeat:Connect(function()
     if harvestEnabled and now - lastHarvest > harvestDelay then
         lastHarvest = now; doHarvest()
     end
+    if stealEnabled and now - lastSteal > stealDelay then
+        lastSteal = now; doSteal()
+    end
     if sellEnabled and now - lastSell > sellDelay then
         lastSell = now; doSell()
     end
-    if stealEnabled then
-        doSteal()
-        task.wait(0.3)
-    end
     if seedPackEnabled and now - lastSeedPack > seedPackDelay then
         lastSeedPack = now; collectSeedPack()
+    end
+    if antiCactusEnabled then
+        local char = player.Character
+        if char then
+            local root = char:FindFirstChild("HumanoidRootPart")
+            if root then
+                local pos = root.Position
+                for _, part in ipairs(workspace:GetPartBoundsInRadius(pos, 20)) do
+                    if part.CanTouch and part.Parent and part.Parent.Name:find("Cactus") then
+                        part.CanTouch = false
+                    end
+                end
+            end
+        end
     end
 end)
 
@@ -293,7 +295,7 @@ FarmBox:AddToggle("Steal", {
     Risky = true,
     Callback = function(value)
         stealEnabled = value
-        stealQueue = {}
+        stealTargets = {}
         if not value then goHome() end
     end,
 })
@@ -369,4 +371,14 @@ MovementBox:AddKeyPicker("FlyKey", {
 MovementBox:AddKeyPicker("HomeKey", {
     Text = "Teleport Home", Default = "T", Mode = "Always",
     Callback = function() goHome() end,
+})
+
+-- Anti Tab
+local AntiTab = Window:AddTab("Anti")
+local AntiBox = AntiTab:AddGroupbox({ Name = "Protection", Side = 1 })
+
+AntiBox:AddToggle("AntiCactus", {
+    Text = "Anti Cactus",
+    Default = false,
+    Callback = function(value) antiCactusEnabled = value end,
 })
