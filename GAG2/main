@@ -1,11 +1,11 @@
 local UI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Volodym5/pfasdzxc231/main/lib/source.lua"))()
 
 local Window = UI:CreateWindow({
-    Title          = "Garden Cheats",
+    Title          = "GAG2",
     Size           = UDim2.fromOffset(500, 350),
     Center         = true,
     Resizable      = true,
-    ToggleKeybind  = Enum.KeyCode.RightControl,
+    ToggleKeybind  = Enum.KeyCode.RightShift,
     AutoShow       = true,
 })
 
