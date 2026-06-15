@@ -29,6 +29,7 @@ end)
 local harvestEnabled = false
 local stealEnabled = false
 local sellEnabled = false
+local seedPackEnabled = false
 local lastHarvest = 0
 local lastSell = 0
 local harvestDelay = 0.1
@@ -37,6 +38,8 @@ local lastSteal = 0
 local stealDelay = 0.1
 local stealIndex = 0
 local stealTargets = {}
+local lastSeedPack = 0
+local seedPackDelay = 1
 local homePosition = nil
 
 -- WalkSpeed (looped)
@@ -80,7 +83,6 @@ local function startFly()
     if flyConnection then return end
     local char = player.Character
     if char and char:FindFirstChild("HumanoidRootPart") then
-        -- Set up body gyro and velocity
         local root = char.HumanoidRootPart
         local humanoid = char.Humanoid
         
@@ -134,6 +136,28 @@ local function stopFly()
         if humanoid then
             humanoid.PlatformStand = false
         end
+    end
+end
+
+-- Seed Pack Collector
+local function collectSeedPack()
+    local char = player.Character
+    if not char then return end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+    
+    local seedPackPart = workspace.Map.SeedPackSpawnServerLocations:FindFirstChild("Part")
+    if seedPackPart and seedPackPart:IsA("BasePart") then
+        -- Teleport to it
+        root.CFrame = seedPackPart.CFrame * CFrame.new(0, 2, 2)
+        task.wait(0.1)
+        -- Try to interact with it
+        local prompt = seedPackPart:FindFirstChildOfClass("ProximityPrompt")
+        if prompt then
+            fireproximityprompt(prompt)
+        end
+        firetouchinterest(root, seedPackPart, 0)
+        firetouchinterest(root, seedPackPart, 1)
     end
 end
 
@@ -283,6 +307,10 @@ RunService.Heartbeat:Connect(function()
         lastSteal = now
         doSteal()
     end
+    if seedPackEnabled and now - lastSeedPack > seedPackDelay then
+        lastSeedPack = now
+        collectSeedPack()
+    end
 end)
 
 -- Farming Tab
@@ -315,6 +343,14 @@ FarmBox:AddToggle("Sell", {
     end,
 })
 
+FarmBox:AddToggle("SeedPack", {
+    Text = "Auto Seed Pack",
+    Default = false,
+    Callback = function(value)
+        seedPackEnabled = value
+    end,
+})
+
 -- Player Tab
 local PlayerTab = Window:AddTab("Player")
 local MovementBox = PlayerTab:AddGroupbox({ Name = "Movement", Side = 1 })
@@ -324,11 +360,7 @@ MovementBox:AddToggle("WalkSpeed", {
     Default = false,
     Callback = function(value)
         walkSpeedEnabled = value
-        if value then
-            startWalkSpeed()
-        else
-            stopWalkSpeed()
-        end
+        if value then startWalkSpeed() else stopWalkSpeed() end
     end,
 })
 
@@ -350,11 +382,7 @@ MovementBox:AddKeyPicker("WalkSpeedKey", {
     Callback = function()
         walkSpeedEnabled = not walkSpeedEnabled
         UI.Toggles.WalkSpeed:SetValue(walkSpeedEnabled)
-        if walkSpeedEnabled then
-            startWalkSpeed()
-        else
-            stopWalkSpeed()
-        end
+        if walkSpeedEnabled then startWalkSpeed() else stopWalkSpeed() end
     end,
 })
 
@@ -363,11 +391,7 @@ MovementBox:AddToggle("Fly", {
     Default = false,
     Callback = function(value)
         flyEnabled = value
-        if value then
-            startFly()
-        else
-            stopFly()
-        end
+        if value then startFly() else stopFly() end
     end,
 })
 
@@ -389,11 +413,7 @@ MovementBox:AddKeyPicker("FlyKey", {
     Callback = function()
         flyEnabled = not flyEnabled
         UI.Toggles.Fly:SetValue(flyEnabled)
-        if flyEnabled then
-            startFly()
-        else
-            stopFly()
-        end
+        if flyEnabled then startFly() else stopFly() end
     end,
 })
 
