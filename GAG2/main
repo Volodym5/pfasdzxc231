@@ -1,7 +1,7 @@
 local UI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Volodym5/pfasdzxc231/main/lib/source.lua"))()
 
 local Window = UI:CreateWindow({
-    Title          = "GAG2",
+    Title          = "Garden Cheats",
     Size           = UDim2.fromOffset(500, 450),
     Center         = true,
     Resizable      = true,
@@ -13,19 +13,35 @@ local player = game.Players.LocalPlayer
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local Networking = require(game.ReplicatedStorage.SharedModules.Networking)
-local SellValueData = require(game.ReplicatedStorage.SharedModules.SellValueData)
 
--- Sort fruits by price
-local sortedFruits = {}
-for name, price in pairs(SellValueData) do
-    table.insert(sortedFruits, {name = name, price = price})
-end
-table.sort(sortedFruits, function(a, b) return a.price < b.price end)
-
-local fruitNames = {}
-for _, fruit in ipairs(sortedFruits) do
-    table.insert(fruitNames, fruit.name)
-end
+-- Sorted by price (cheapest first)
+local fruitNames = {
+    "Carrot",
+    "Strawberry",
+    "Blueberry",
+    "Tulip",
+    "Tomato",
+    "Apple",
+    "Bamboo",
+    "Corn",
+    "Cactus",
+    "Pineapple",
+    "Mushroom",
+    "Green Bean",
+    "Banana",
+    "Grape",
+    "Coconut",
+    "Mango",
+    "Dragon Fruit",
+    "Acorn",
+    "Cherry",
+    "Sunflower",
+    "Venus Fly Trap",
+    "Pomegranate",
+    "Poison Apple",
+    "Moon Bloom",
+    "Dragon's Breath",
+}
 
 -- Make all prompts instant (except steal prompts)
 for _, prompt in ipairs(game:GetDescendants()) do
@@ -55,10 +71,6 @@ local lastSeedPack = 0
 local seedPackDelay = 1
 local homePosition = nil
 local ignoredSeeds = {}
-
--- Steal state
-local stealTargets = {}
-local stealIndex = 0
 local lastSteal = 0
 local stealDelay = 0.3
 
@@ -260,11 +272,9 @@ local function doSteal()
             local userId = plant:GetAttribute("UserId")
             if not userId or userId == myUserId then continue end
             
-            -- Check if seed is ignored
             local seedName = plant:GetAttribute("SeedName")
             if seedName and ignoredSeeds[seedName] then continue end
             
-            -- Check plot unlocked
             local current = obj
             local plotNum = nil
             while current do
@@ -276,16 +286,13 @@ local function doSteal()
             end
             if not plotNum or not isPlotUnlocked(plotNum) then continue end
             
-            -- Teleport to fruit
             root.CFrame = obj.CFrame * CFrame.new(0, 2, 2)
             task.wait(0.08)
             
-            -- Fire prompt
             fireproximityprompt(prompt)
             firetouchinterest(root, obj, 0)
             firetouchinterest(root, obj, 1)
             
-            -- Hold if needed
             if prompt.HoldDuration > 0 then
                 local holdEnd = tick() + prompt.HoldDuration
                 while tick() < holdEnd do
