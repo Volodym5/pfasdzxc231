@@ -1,11 +1,10 @@
 local UI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Volodym5/pfasdzxc231/main/lib/source.lua"))()
-
 local Window = UI:CreateWindow({
     Title          = "Garden Cheats",
     Size           = UDim2.fromOffset(500, 350),
     Center         = true,
     Resizable      = true,
-    ToggleKeybind  = Enum.KeyCode.RightShift,
+    ToggleKeybind  = Enum.KeyCode.RightControl,
     AutoShow       = true,
 })
 
@@ -33,9 +32,9 @@ local lastSell = 0
 local harvestDelay = 0.1
 local sellDelay = 2
 local lastSteal = 0
-local stealDelay = 0.5
-local stealPlotIndex = 0
-local unlockedPlots = {}
+local stealDelay = 0.1
+local stealIndex = 0
+local stealTargets = {}
 local homePosition = nil
 
 local function isPlotUnlocked(plotNum)
@@ -52,20 +51,31 @@ local function isPlotUnlocked(plotNum)
     return false
 end
 
-local function getUnlockedPlots()
-    local plots = {}
-    for _, plot in ipairs(workspace.Gardens:GetChildren()) do
-        if plot.Name:find("^Plot%d+$") then
-            local plotNum = tonumber(plot.Name:match("%d+$"))
-            local ownerId = plot:GetAttribute("OwnerUserId")
-            if plotNum and ownerId and ownerId ~= player.UserId then
-                if isPlotUnlocked(plotNum) then
-                    table.insert(plots, plot)
+local function getStealTargets()
+    local targets = {}
+    local myUserId = player.UserId
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj.Name == "HarvestPart" and obj:IsA("BasePart") and obj.Parent then
+            local prompt = obj:FindFirstChildOfClass("ProximityPrompt")
+            if not prompt or prompt.ActionText ~= "Steal" then continue end
+            local plant = obj.Parent
+            local userId = plant:GetAttribute("UserId")
+            if not userId or userId == myUserId then continue end
+            local current = obj
+            local plotNum = nil
+            while current do
+                if current.Name:find("^Plot%d+$") then
+                    plotNum = tonumber(current.Name:match("%d+$"))
+                    break
                 end
+                current = current.Parent
+            end
+            if plotNum and isPlotUnlocked(plotNum) then
+                table.insert(targets, obj)
             end
         end
     end
-    return plots
+    return targets
 end
 
 local function getHomePosition()
@@ -123,56 +133,36 @@ local function doSteal()
     local root = char:FindFirstChild("HumanoidRootPart")
     if not root then return end
     
-    if #unlockedPlots == 0 then
-        unlockedPlots = getUnlockedPlots()
-        stealPlotIndex = 0
-        if #unlockedPlots == 0 then return end
+    if #stealTargets == 0 then
+        stealTargets = getStealTargets()
+        stealIndex = 0
+        if #stealTargets == 0 then return end
     end
     
-    stealPlotIndex = stealPlotIndex + 1
-    if stealPlotIndex > #unlockedPlots then
-        stealPlotIndex = 1
-        unlockedPlots = getUnlockedPlots()
+    stealIndex = stealIndex + 1
+    if stealIndex > #stealTargets then
+        stealIndex = 1
+        stealTargets = getStealTargets()
     end
     
-    if #unlockedPlots == 0 then return end
+    if #stealTargets == 0 then return end
     
-    local plot = unlockedPlots[stealPlotIndex]
-    local plotNum = tonumber(plot.Name:match("%d+$"))
-    if not plotNum or not isPlotUnlocked(plotNum) then
-        unlockedPlots = getUnlockedPlots()
+    local target = stealTargets[stealIndex]
+    if not target or not target.Parent then
+        stealTargets = getStealTargets()
         return
     end
     
-    -- Teleport to plot
-    local sp = plot:FindFirstChild("SpawnPoint")
-    if sp and sp:IsA("BasePart") then
-        root.CFrame = CFrame.new(sp.Position + Vector3.new(0, 3, 0))
-    end
+    -- Teleport to fruit
+    root.CFrame = target.CFrame * CFrame.new(0, 2, 2)
     
-    -- Collect all fruits on this plot using same method as harvest
-    for _, obj in ipairs(workspace:GetDescendants()) do
-        if obj.Name == "HarvestPart" and obj:IsA("BasePart") and obj.Parent then
-            local prompt = obj:FindFirstChildOfClass("ProximityPrompt")
-            if prompt and prompt.ActionText == "Steal" then
-                -- Check if it belongs to this plot
-                local current = obj
-                local belongsToPlot = false
-                while current do
-                    if current == plot then
-                        belongsToPlot = true
-                        break
-                    end
-                    current = current.Parent
-                end
-                if belongsToPlot then
-                    fireproximityprompt(prompt)
-                    firetouchinterest(root, obj, 0)
-                    firetouchinterest(root, obj, 1)
-                end
-            end
-        end
+    -- Collect it
+    local prompt = target:FindFirstChildOfClass("ProximityPrompt")
+    if prompt then
+        fireproximityprompt(prompt)
     end
+    firetouchinterest(root, target, 0)
+    firetouchinterest(root, target, 1)
 end
 
 local function doSell()
@@ -214,7 +204,7 @@ Box:AddToggle("Steal", {
     Risky = true,
     Callback = function(value)
         stealEnabled = value
-        if not value then goHome() else unlockedPlots = {} end
+        if not value then goHome() else stealTargets = {} end
     end,
 })
 
