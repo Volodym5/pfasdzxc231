@@ -2,7 +2,7 @@ local UI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Volodym5/p
 
 local Window = UI:CreateWindow({
     Title          = "Garden Cheats",
-    Size           = UDim2.fromOffset(500, 350),
+    Size           = UDim2.fromOffset(500, 400),
     Center         = true,
     Resizable      = true,
     ToggleKeybind  = Enum.KeyCode.RightControl,
@@ -37,9 +37,70 @@ local stealDelay = 0.1
 local stealIndex = 0
 local stealTargets = {}
 local homePosition = nil
-local speedEnabled = false
-local speedValue = 24
-local defaultSpeed = 16
+
+-- WalkSpeed
+local walkSpeedEnabled = false
+local walkSpeedValue = 24
+local defaultWalkSpeed = 16
+
+local function updateWalkSpeed()
+    local char = player.Character
+    if char then
+        local humanoid = char:FindFirstChild("Humanoid")
+        if humanoid then
+            humanoid.WalkSpeed = walkSpeedEnabled and walkSpeedValue or defaultWalkSpeed
+        end
+    end
+end
+
+player.CharacterAdded:Connect(function(char)
+    task.wait(0.1)
+    updateWalkSpeed()
+end)
+
+-- CFrame Fly
+local flyEnabled = false
+local flySpeed = 24
+local flyConnection = nil
+local lastFlyReset = 0
+
+local function startFly()
+    if flyConnection then return end
+    flyConnection = RunService.RenderStepped:Connect(function()
+        if not flyEnabled then return end
+        local char = player.Character
+        if not char then return end
+        local root = char:FindFirstChild("HumanoidRootPart")
+        if not root then return end
+        local humanoid = char:FindFirstChild("Humanoid")
+        if not humanoid then return end
+        
+        if tick() - lastFlyReset > 5 then
+            lastFlyReset = tick()
+            local currentPos = root.Position
+            root.CFrame = CFrame.new(currentPos)
+        end
+        
+        local moveDir = humanoid.MoveDirection
+        if moveDir.Magnitude > 0 then
+            root.CFrame = root.CFrame + (moveDir * flySpeed * 0.01)
+        end
+    end)
+end
+
+local function stopFly()
+    if flyConnection then
+        flyConnection:Disconnect()
+        flyConnection = nil
+    end
+    local char = player.Character
+    if char then
+        local root = char:FindFirstChild("HumanoidRootPart")
+        if root then
+            root.CFrame = root.CFrame
+        end
+    end
+end
 
 local function isPlotUnlocked(plotNum)
     local plotGui = player.PlayerGui:FindFirstChild("Plot" .. plotNum)
@@ -173,20 +234,6 @@ local function doSell()
     end)
 end
 
-RunService.RenderStepped:Connect(function()
-    if not speedEnabled then return end
-    local char = player.Character
-    if not char then return end
-    local root = char:FindFirstChild("HumanoidRootPart")
-    if not root then return end
-    local humanoid = char:FindFirstChild("Humanoid")
-    if not humanoid or humanoid.MoveDirection.Magnitude == 0 then return end
-    
-    local moveDir = humanoid.MoveDirection
-    local speed = speedValue - defaultSpeed
-    root.CFrame = root.CFrame + (moveDir * speed * 0.01)
-end)
-
 RunService.Heartbeat:Connect(function()
     local now = tick()
     if harvestEnabled and now - lastHarvest > harvestDelay then
@@ -235,38 +282,82 @@ FarmBox:AddToggle("Sell", {
 
 -- Player Tab
 local PlayerTab = Window:AddTab("Player")
-local PlayerBox = PlayerTab:AddGroupbox({ Name = "Movement", Side = 1 })
+local MovementBox = PlayerTab:AddGroupbox({ Name = "Movement", Side = 1 })
 
-PlayerBox:AddToggle("Speed", {
-    Text = "CFrame Speed",
+MovementBox:AddToggle("WalkSpeed", {
+    Text = "WalkSpeed",
     Default = false,
     Callback = function(value)
-        speedEnabled = value
+        walkSpeedEnabled = value
+        updateWalkSpeed()
     end,
 })
 
-PlayerBox:AddSlider("SpeedValue", {
-    Text = "Speed",
+MovementBox:AddSlider("WalkSpeedValue", {
+    Text = "Walk Speed",
     Default = 24,
     Min = 16,
     Max = 200,
     Rounding = 0,
     Callback = function(value)
-        speedValue = value
+        walkSpeedValue = value
+        updateWalkSpeed()
     end,
 })
 
-PlayerBox:AddKeyPicker("SpeedKey", {
-    Text = "Speed Toggle",
+MovementBox:AddKeyPicker("WalkSpeedKey", {
+    Text = "WalkSpeed Toggle",
     Default = Enum.KeyCode.V,
     Mode = "Toggle",
     Callback = function()
-        speedEnabled = not speedEnabled
-        UI.Toggles.Speed:SetValue(speedEnabled)
+        walkSpeedEnabled = not walkSpeedEnabled
+        UI.Toggles.WalkSpeed:SetValue(walkSpeedEnabled)
+        updateWalkSpeed()
     end,
 })
 
-PlayerBox:AddKeyPicker("HomeKey", {
+MovementBox:AddToggle("Fly", {
+    Text = "CFrame Fly",
+    Default = false,
+    Callback = function(value)
+        flyEnabled = value
+        if value then
+            lastFlyReset = tick()
+            startFly()
+        else
+            stopFly()
+        end
+    end,
+})
+
+MovementBox:AddSlider("FlySpeed", {
+    Text = "Fly Speed",
+    Default = 24,
+    Min = 16,
+    Max = 200,
+    Rounding = 0,
+    Callback = function(value)
+        flySpeed = value
+    end,
+})
+
+MovementBox:AddKeyPicker("FlyKey", {
+    Text = "Fly Toggle",
+    Default = Enum.KeyCode.B,
+    Mode = "Toggle",
+    Callback = function()
+        flyEnabled = not flyEnabled
+        UI.Toggles.Fly:SetValue(flyEnabled)
+        if flyEnabled then
+            lastFlyReset = tick()
+            startFly()
+        else
+            stopFly()
+        end
+    end,
+})
+
+MovementBox:AddKeyPicker("HomeKey", {
     Text = "Teleport Home",
     Default = Enum.KeyCode.T,
     Mode = "Toggle",
