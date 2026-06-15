@@ -324,17 +324,6 @@ FarmBox:AddToggle("Harvest", {
     Text = "Auto Harvest", Default = false,
     Callback = function(value) harvestEnabled = value end,
 })
-FarmBox:AddToggle("Steal", {
-    Text = "Auto Steal", Default = false, Risky = true,
-    Callback = function(value)
-        stealEnabled = value; stealTargets = {}
-        if not value then goHome() end
-    end,
-})
-FarmBox:AddDropdown("IgnoreList", {
-    Text = "Ignore List", Values = fruitNames, Multi = true,
-    Callback = function(selected) ignoredSeeds = selected end,
-})
 FarmBox:AddToggle("Sell", {
     Text = "Auto Sell", Default = false,
     Callback = function(value) sellEnabled = value end,
@@ -342,6 +331,19 @@ FarmBox:AddToggle("Sell", {
 FarmBox:AddToggle("SeedPack", {
     Text = "Auto Seed Pack", Default = false,
     Callback = function(value) seedPackEnabled = value end,
+})
+
+local StealBox = MainTab:AddGroupbox({ Name = "Steal", Side = 1 })
+StealBox:AddToggle("Steal", {
+    Text = "Auto Steal", Default = false, Risky = true,
+    Callback = function(value)
+        stealEnabled = value; stealTargets = {}
+        if not value then goHome() end
+    end,
+})
+StealBox:AddDropdown("IgnoreList", {
+    Text = "Ignore List", Values = fruitNames, Multi = true,
+    Callback = function(selected) ignoredSeeds = selected end,
 })
 
 local AntiBox = MainTab:AddGroupbox({ Name = "Anti", Side = 2 })
