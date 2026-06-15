@@ -1,11 +1,11 @@
 local UI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Volodym5/pfasdzxc231/main/lib/source.lua"))()
 
 local Window = UI:CreateWindow({
-    Title          = "GAG2",
+    Title          = "Garden Cheats",
     Size           = UDim2.fromOffset(500, 350),
     Center         = true,
     Resizable      = true,
-    ToggleKeybind  = Enum.KeyCode.RightShift,
+    ToggleKeybind  = Enum.KeyCode.RightControl,
     AutoShow       = true,
 })
 
@@ -37,28 +37,17 @@ local stealDelay = 0.1
 local stealIndex = 0
 local stealTargets = {}
 local homePosition = nil
-local walkSpeedEnabled = false
-local walkSpeedValue = 24
-local defaultWalkSpeed = 16
+local speedEnabled = false
+local speedValue = 24
+local defaultSpeed = 16
 
--- WalkSpeed
-local function updateWalkSpeed()
-    local char = player.Character
-    if char then
-        local humanoid = char:FindFirstChild("Humanoid")
-        if humanoid then
-            if walkSpeedEnabled then
-                humanoid.WalkSpeed = walkSpeedValue
-            else
-                humanoid.WalkSpeed = defaultWalkSpeed
-            end
-        end
-    end
+-- CFrame Speed
+local function updateSpeed()
+    -- Just store the value, actual movement handled in loop
 end
 
 player.CharacterAdded:Connect(function()
     task.wait(0.1)
-    updateWalkSpeed()
 end)
 
 local function isPlotUnlocked(plotNum)
@@ -193,6 +182,23 @@ local function doSell()
     end)
 end
 
+-- CFrame speed boost
+local UserInputService = game:GetService("UserInputService")
+
+RunService.RenderStepped:Connect(function()
+    if not speedEnabled then return end
+    local char = player.Character
+    if not char then return end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+    local humanoid = char:FindFirstChild("Humanoid")
+    if not humanoid or humanoid.MoveDirection.Magnitude == 0 then return end
+    
+    local moveDir = humanoid.MoveDirection
+    local speed = speedValue - defaultSpeed
+    root.CFrame = root.CFrame + (moveDir * speed * 0.01)
+end)
+
 RunService.Heartbeat:Connect(function()
     local now = tick()
     if harvestEnabled and now - lastHarvest > harvestDelay then
@@ -243,24 +249,22 @@ FarmBox:AddToggle("Sell", {
 local PlayerTab = Window:AddTab("Player")
 local PlayerBox = PlayerTab:AddGroupbox({ Name = "Player", Side = 1 })
 
-PlayerBox:AddToggle("WalkSpeed", {
-    Text = "WalkSpeed",
+PlayerBox:AddToggle("Speed", {
+    Text = "CFrame Speed",
     Default = false,
     Callback = function(value)
-        walkSpeedEnabled = value
-        updateWalkSpeed()
+        speedEnabled = value
     end,
 })
 
-PlayerBox:AddSlider("WalkSpeedValue", {
+PlayerBox:AddSlider("SpeedValue", {
     Text = "Speed",
     Default = 24,
     Min = 16,
     Max = 200,
     Rounding = 0,
     Callback = function(value)
-        walkSpeedValue = value
-        updateWalkSpeed()
+        speedValue = value
     end,
 })
 
@@ -281,12 +285,11 @@ Window:AddKeybind("TeleportHomeKB", {
     end,
 })
 
-Window:AddKeybind("WalkSpeedKB", {
-    Text = "Toggle WalkSpeed",
+Window:AddKeybind("SpeedKB", {
+    Text = "Toggle CFrame Speed",
     Default = Enum.KeyCode.V,
     Callback = function()
-        walkSpeedEnabled = not walkSpeedEnabled
-        UI.Toggles.WalkSpeed:SetValue(walkSpeedEnabled)
-        updateWalkSpeed()
+        speedEnabled = not speedEnabled
+        UI.Toggles.Speed:SetValue(speedEnabled)
     end,
 })
