@@ -33,7 +33,7 @@ local lastSell = 0
 local harvestDelay = 0.1
 local sellDelay = 2
 local lastSteal = 0
-local stealDelay = 0.15
+local stealDelay = 0.5
 local stealPlotIndex = 0
 local unlockedPlots = {}
 local homePosition = nil
@@ -123,13 +123,53 @@ local function doSteal()
     local root = char:FindFirstChild("HumanoidRootPart")
     if not root then return end
     
+    if #unlockedPlots == 0 then
+        unlockedPlots = getUnlockedPlots()
+        stealPlotIndex = 0
+        if #unlockedPlots == 0 then return end
+    end
+    
+    stealPlotIndex = stealPlotIndex + 1
+    if stealPlotIndex > #unlockedPlots then
+        stealPlotIndex = 1
+        unlockedPlots = getUnlockedPlots()
+    end
+    
+    if #unlockedPlots == 0 then return end
+    
+    local plot = unlockedPlots[stealPlotIndex]
+    local plotNum = tonumber(plot.Name:match("%d+$"))
+    if not plotNum or not isPlotUnlocked(plotNum) then
+        unlockedPlots = getUnlockedPlots()
+        return
+    end
+    
+    -- Teleport to plot
+    local sp = plot:FindFirstChild("SpawnPoint")
+    if sp and sp:IsA("BasePart") then
+        root.CFrame = CFrame.new(sp.Position + Vector3.new(0, 3, 0))
+    end
+    
+    -- Collect all fruits on this plot using same method as harvest
     for _, obj in ipairs(workspace:GetDescendants()) do
         if obj.Name == "HarvestPart" and obj:IsA("BasePart") and obj.Parent then
             local prompt = obj:FindFirstChildOfClass("ProximityPrompt")
             if prompt and prompt.ActionText == "Steal" then
-                fireproximityprompt(prompt)
-                firetouchinterest(root, obj, 0)
-                firetouchinterest(root, obj, 1)
+                -- Check if it belongs to this plot
+                local current = obj
+                local belongsToPlot = false
+                while current do
+                    if current == plot then
+                        belongsToPlot = true
+                        break
+                    end
+                    current = current.Parent
+                end
+                if belongsToPlot then
+                    fireproximityprompt(prompt)
+                    firetouchinterest(root, obj, 0)
+                    firetouchinterest(root, obj, 1)
+                end
             end
         end
     end
@@ -174,7 +214,7 @@ Box:AddToggle("Steal", {
     Risky = true,
     Callback = function(value)
         stealEnabled = value
-        if not value then goHome() end
+        if not value then goHome() else unlockedPlots = {} end
     end,
 })
 
