@@ -2698,15 +2698,7 @@ function Library:MakeDraggable(window, dragHandle, maid, onStart)
         local delta = Vector2.new(input.Position.X, input.Position.Y) - dragStart
         local newX = windowStartPos.X.Offset + delta.X
         local newY = windowStartPos.Y.Offset + delta.Y
-        
-        -- Apply boundaries (optional)
-        local vp = Camera.ViewportSize
-        local windowSize = window.AbsoluteSize
-        local MIN_VISIBLE = 30
-        
-        newX = math.clamp(newX, -(windowSize.X - MIN_VISIBLE), vp.X - MIN_VISIBLE)
-        newY = math.clamp(newY, -(windowSize.Y - MIN_VISIBLE), vp.Y - MIN_VISIBLE)
-        
+
         -- Smooth follow
         animateToPosition(newX, newY)
     end)
@@ -5780,6 +5772,15 @@ local function PopulateBuiltinSettings(Window, Settings)
         Default  = true,
         Callback = function(v) Window:SetParticlesEnabled(v) end,
     })
+    Appearance:AddDropdown("nx_dpiScale", {
+        Text     = "DPI Scale",
+        Values   = { "50%", "75%", "100%", "125%", "150%" },
+        Default  = "100%",
+        Callback = function(v)
+            local pct = tonumber(v:match("(%d+)"))
+            if pct then UI:SetDPIScale(pct) end
+        end,
+    })
 
     -- ── Keybinds ─────────────────────────────────────────────────────────
     local Keybinds = Settings:AddRightGroupbox("Keybinds")
@@ -5977,6 +5978,14 @@ function Library:CreateWindow(info)
     New("UICorner",  { CornerRadius = UDim.new(0, CR), Parent = mainFrame })
     New("UIStroke",  { Color = "BorderColor", Thickness = 1, Transparency = 0.5, Parent = mainFrame })
     ZManager.Apply(mainFrame, "float")
+
+    -- DPI Scale instance — driven by Library:SetDPIScale()
+    local dpiScaleInst = Instance.new("UIScale")
+    dpiScaleInst.Scale  = Library.DPIScale
+    dpiScaleInst.Parent = mainFrame
+    windowMaid:Give(EventBus:On("dpiChange", function(s)
+        TweenService:Create(dpiScaleInst, TweenInfo.new(0.18, Enum.EasingStyle.Quad), { Scale = s }):Play()
+    end))
 
     -- Frosted glass layers: stacked semi-transparent tints to fake acrylic blur
     -- localized to the menu (Roblox BlurEffect is screen-wide, so this is the
@@ -7450,3 +7459,5 @@ end
 if getgenv then
     getgenv().NexusUI = Library
 end
+
+return Library
