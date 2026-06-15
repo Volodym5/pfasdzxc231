@@ -306,8 +306,8 @@ MovementBox:AddSlider("WalkSpeedValue", {
 })
 
 MovementBox:AddKeyPicker("WalkSpeedKey", {
-    Text = "WalkSpeed Toggle",
-    Default = Enum.KeyCode.V,
+    Text = "WalkSpeed",
+    Default = "V",
     Mode = "Toggle",
     Callback = function()
         walkSpeedEnabled = not walkSpeedEnabled
@@ -342,8 +342,8 @@ MovementBox:AddSlider("FlySpeed", {
 })
 
 MovementBox:AddKeyPicker("FlyKey", {
-    Text = "Fly Toggle",
-    Default = Enum.KeyCode.B,
+    Text = "Fly",
+    Default = "B",
     Mode = "Toggle",
     Callback = function()
         flyEnabled = not flyEnabled
@@ -359,8 +359,8 @@ MovementBox:AddKeyPicker("FlyKey", {
 
 MovementBox:AddKeyPicker("HomeKey", {
     Text = "Teleport Home",
-    Default = Enum.KeyCode.T,
-    Mode = "Toggle",
+    Default = "T",
+    Mode = "Always",
     Callback = function()
         goHome()
     end,
