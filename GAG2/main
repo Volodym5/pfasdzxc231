@@ -1,17 +1,16 @@
 local UI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Volodym5/pfasdzxc231/main/lib/source.lua"))()
 
 local Window = UI:CreateWindow({
-    Title          = "GAG2",
+    Title          = "Garden Cheats",
     Size           = UDim2.fromOffset(500, 350),
     Center         = true,
     Resizable      = true,
-    ToggleKeybind  = Enum.KeyCode.RightShift,
+    ToggleKeybind  = Enum.KeyCode.RightControl,
     AutoShow       = true,
 })
 
 local player = game.Players.LocalPlayer
 local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
 local Networking = require(game.ReplicatedStorage.SharedModules.Networking)
 
 -- Make all prompts instant
@@ -210,18 +209,6 @@ RunService.Heartbeat:Connect(function()
     end
 end)
 
--- Keybinds
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
-    if gameProcessed then return end
-    if input.KeyCode == Enum.KeyCode.T then
-        goHome()
-    elseif input.KeyCode == Enum.KeyCode.V then
-        walkSpeedEnabled = not walkSpeedEnabled
-        UI.Toggles.WalkSpeed:SetValue(walkSpeedEnabled)
-        updateWalkSpeed()
-    end
-end)
-
 -- Farming Tab
 local FarmTab = Window:AddTab("Farming")
 local FarmBox = FarmTab:AddGroupbox({ Name = "Auto Farm", Side = 1 })
@@ -257,7 +244,7 @@ local PlayerTab = Window:AddTab("Player")
 local PlayerBox = PlayerTab:AddGroupbox({ Name = "Player", Side = 1 })
 
 PlayerBox:AddToggle("WalkSpeed", {
-    Text = "WalkSpeed [V]",
+    Text = "WalkSpeed",
     Default = false,
     Callback = function(value)
         walkSpeedEnabled = value
@@ -278,9 +265,28 @@ PlayerBox:AddSlider("WalkSpeedValue", {
 })
 
 PlayerBox:AddButton("TeleportHome", {
-    Text = "Teleport Home [T]",
+    Text = "Teleport Home",
     Variant = "Secondary",
     Callback = function()
         goHome()
+    end,
+})
+
+-- Keybinds
+Window:AddKeybind("TeleportHomeKB", {
+    Text = "Teleport Home",
+    Default = Enum.KeyCode.T,
+    Callback = function()
+        goHome()
+    end,
+})
+
+Window:AddKeybind("WalkSpeedKB", {
+    Text = "Toggle WalkSpeed",
+    Default = Enum.KeyCode.V,
+    Callback = function()
+        walkSpeedEnabled = not walkSpeedEnabled
+        UI.Toggles.WalkSpeed:SetValue(walkSpeedEnabled)
+        updateWalkSpeed()
     end,
 })
