@@ -42,19 +42,13 @@ local autoBuySeeds = {}
 local buyIndex = 0
 local lastHarvest = 0
 local lastSell = 0
-local harvestDelay = 0.05
+local harvestDelay = 0.1
 local sellDelay = 2
 local lastSeedPack = 0
-local seedPackDelay = 0.02
+local seedPackDelay = 0.01
 local lastAutoBuy = 0
 local autoBuyDelay = 0.2
-local homePosition = nil
 local ignoredSeeds = {}
-
-local lastSteal = 0
-local stealDelay = 0.3
-local stealTargets = {}
-local stealIndex = 0
 
 local antiCactusEnabled = false
 
@@ -134,15 +128,35 @@ local function isPlotUnlocked(plotNum)
     return false
 end
 
-local function getPlotNumber(harvestPart)
-    local current = harvestPart
-    while current do
-        if current.Name:find("^Plot%d+$") then
-            return tonumber(current.Name:match("%d+$"))
+local function getMyPlotMidpoint()
+    local myUserId = player.UserId
+    for _, plot in ipairs(workspace.Gardens:GetChildren()) do
+        if plot.Name:find("^Plot%d+$") then
+            local ownerId = plot:GetAttribute("OwnerUserId")
+            if ownerId == myUserId then
+                local visual = plot:FindFirstChild("Visual")
+                if visual then
+                    local col1 = visual:FindFirstChild("PlantAreaColumn1")
+                    local col2 = visual:FindFirstChild("PlantAreaColumn2")
+                    if col1 and col2 and col1:IsA("BasePart") and col2:IsA("BasePart") then
+                        return (col1.Position + col2.Position) / 2
+                    end
+                end
+            end
         end
-        current = current.Parent
     end
     return nil
+end
+
+local function goHome()
+    local char = player.Character
+    if not char then return end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+    local homePos = getMyPlotMidpoint()
+    if homePos then
+        root.CFrame = CFrame.new(homePos + Vector3.new(0, 3, 0))
+    end
 end
 
 local function collectSeedPack()
@@ -159,34 +173,6 @@ local function collectSeedPack()
         firetouchinterest(root, part, 0)
         firetouchinterest(root, part, 1)
     end
-end
-
-local function getHomePosition()
-    local myUserId = player.UserId
-    for _, plot in ipairs(workspace.Gardens:GetChildren()) do
-        local plants = plot:FindFirstChild("Plants")
-        if plants then
-            for _, plant in ipairs(plants:GetChildren()) do
-                if plant:GetAttribute("UserId") == myUserId then
-                    local sp = plot:FindFirstChild("SpawnPoint")
-                    if sp and sp:IsA("BasePart") then
-                        return sp.Position + Vector3.new(0, 3, 0)
-                    end
-                end
-                break
-            end
-        end
-    end
-    return nil
-end
-
-local function goHome()
-    local char = player.Character
-    if not char then return end
-    local root = char:FindFirstChild("HumanoidRootPart")
-    if not root then return end
-    if not homePosition then homePosition = getHomePosition() end
-    if homePosition then root.CFrame = CFrame.new(homePosition) end
 end
 
 local function doHarvest()
@@ -206,29 +192,66 @@ local function doHarvest()
     end
 end
 
-local function doSteal()
+-- Steal system
+local function getUnlockedPlots()
+    local myUserId = player.UserId
+    local plots = {}
+    for _, plot in ipairs(workspace.Gardens:GetChildren()) do
+        if plot.Name:find("^Plot%d+$") then
+            local plotNum = tonumber(plot.Name:match("%d+$"))
+            local ownerId = plot:GetAttribute("OwnerUserId")
+            if ownerId and ownerId ~= myUserId and isPlotUnlocked(plotNum) then
+                local visual = plot:FindFirstChild("Visual")
+                if visual then
+                    local col1 = visual:FindFirstChild("PlantAreaColumn1")
+                    local col2 = visual:FindFirstChild("PlantAreaColumn2")
+                    if col1 and col2 and col1:IsA("BasePart") and col2:IsA("BasePart") then
+                        local midPoint = (col1.Position + col2.Position) / 2
+                        table.insert(plots, {
+                            plotNum = plotNum,
+                            position = midPoint + Vector3.new(0, -7, 0)
+                        })
+                    end
+                end
+            end
+        end
+    end
+    return plots
+end
+
+local function collectFruitsOnPlot(plotNum)
     local char = player.Character
     if not char then return end
     local root = char:FindFirstChild("HumanoidRootPart")
     if not root then return end
     local myUserId = player.UserId
     
-    if #stealTargets == 0 then
-        stealTargets = {}
-        for _, obj in ipairs(workspace:GetDescendants()) do
-            if obj.Name == "HarvestPart" and obj:IsA("BasePart") and obj.Parent then
-                local prompt = obj:FindFirstChildOfClass("ProximityPrompt")
-                if prompt and prompt.ActionText == "Steal" then
-                    local fruitModel = obj.Parent
-                    local plantModel = fruitModel.Parent and fruitModel.Parent.Parent
-                    if plantModel then
-                        local userId = plantModel:GetAttribute("UserId")
-                        local seedName = plantModel:GetAttribute("SeedName")
-                        if userId and userId ~= myUserId then
-                            if not seedName or not ignoredSeeds[seedName] then
-                                local plotNum = getPlotNumber(obj)
-                                if plotNum and isPlotUnlocked(plotNum) then
-                                    table.insert(stealTargets, {part = obj, prompt = prompt})
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj.Name == "HarvestPart" and obj:IsA("BasePart") and obj.Parent then
+            local prompt = obj:FindFirstChildOfClass("ProximityPrompt")
+            if prompt and prompt.ActionText == "Steal" then
+                local fruitModel = obj.Parent
+                local plantModel = fruitModel.Parent and fruitModel.Parent.Parent
+                if plantModel then
+                    local userId = plantModel:GetAttribute("UserId")
+                    local seedName = plantModel:GetAttribute("SeedName")
+                    if userId and userId ~= myUserId then
+                        if not seedName or not ignoredSeeds[seedName] then
+                            local current = obj
+                            local fruitPlotNum = nil
+                            while current do
+                                if current.Name:find("^Plot%d+$") then
+                                    fruitPlotNum = tonumber(current.Name:match("%d+$"))
+                                    break
+                                end
+                                current = current.Parent
+                            end
+                            if fruitPlotNum == plotNum then
+                                fireproximityprompt(prompt)
+                                firetouchinterest(root, obj, 0)
+                                firetouchinterest(root, obj, 1)
+                                if prompt.HoldDuration > 0 then
+                                    fireproximityprompt(prompt)
                                 end
                             end
                         end
@@ -236,29 +259,38 @@ local function doSteal()
                 end
             end
         end
-        stealIndex = 0
+    end
+end
+
+local function doStealCycle()
+    local plots = getUnlockedPlots()
+    if #plots == 0 then return end
+    
+    -- Shuffle
+    for i = #plots, 2, -1 do
+        local j = math.random(1, i)
+        plots[i], plots[j] = plots[j], plots[i]
     end
     
-    if #stealTargets == 0 then return end
-    
-    stealIndex = stealIndex + 1
-    if stealIndex > #stealTargets then stealIndex = 1; stealTargets = {}; return end
-    
-    local target = stealTargets[stealIndex]
-    if not target.part or not target.part.Parent then stealTargets = {}; return end
-    
-    root.CFrame = target.part.CFrame * CFrame.new(0, 2, 2)
-    
-    fireproximityprompt(target.prompt)
-    firetouchinterest(root, target.part, 0)
-    firetouchinterest(root, target.part, 1)
-    
-    if target.prompt.HoldDuration > 0 then
-        local holdEnd = tick() + target.prompt.HoldDuration
-        while tick() < holdEnd do
-            fireproximityprompt(target.prompt)
+    for _, plot in ipairs(plots) do
+        if not stealEnabled then break end
+        local char = player.Character
+        if char then
+            local root = char:FindFirstChild("HumanoidRootPart")
+            if root then
+                root.CFrame = CFrame.new(plot.position)
+            end
+        end
+        
+        local endTime = tick() + 2
+        while tick() < endTime and stealEnabled do
+            collectFruitsOnPlot(plot.plotNum)
             task.wait(0.1)
         end
+    end
+    
+    if stealEnabled then
+        goHome()
     end
 end
 
@@ -267,33 +299,20 @@ local function doSell()
 end
 
 local function doAutoBuy()
-    -- Get current selected seeds list
     local buyList = {}
     for seed, enabled in pairs(autoBuySeeds) do
-        if enabled then
-            table.insert(buyList, seed)
-        end
+        if enabled then table.insert(buyList, seed) end
     end
-    
     if #buyList == 0 then return end
-    
-    -- Cycle through each selected seed
     buyIndex = buyIndex + 1
     if buyIndex > #buyList then buyIndex = 1 end
-    
-    local seedToBuy = buyList[buyIndex]
-    pcall(function()
-        Networking.SeedShop.PurchaseSeed:Fire(seedToBuy)
-    end)
+    pcall(function() Networking.SeedShop.PurchaseSeed:Fire(buyList[buyIndex]) end)
 end
 
 RunService.Heartbeat:Connect(function()
     local now = tick()
     if harvestEnabled and now - lastHarvest > harvestDelay then
         lastHarvest = now; doHarvest()
-    end
-    if stealEnabled and now - lastSteal > stealDelay then
-        lastSteal = now; doSteal()
     end
     if sellEnabled and now - lastSell > sellDelay then
         lastSell = now; doSell()
@@ -336,6 +355,16 @@ RunService.Heartbeat:Connect(function()
     end
 end)
 
+-- Steal runs in its own thread
+task.spawn(function()
+    while true do
+        if stealEnabled then
+            doStealCycle()
+        end
+        task.wait(1)
+    end
+end)
+
 -- Main Tab
 local MainTab = Window:AddTab("Main")
 
@@ -357,7 +386,7 @@ local StealBox = MainTab:AddGroupbox({ Name = "Steal", Side = 2 })
 StealBox:AddToggle("Steal", {
     Text = "Auto Steal", Default = false, Risky = false,
     Callback = function(value)
-        stealEnabled = value; stealTargets = {}
+        stealEnabled = value
         if not value then goHome() end
     end,
 })
