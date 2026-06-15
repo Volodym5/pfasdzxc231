@@ -22,7 +22,6 @@ local fruitNames = {
     "Moon Bloom", "Dragon's Breath",
 }
 
--- Make harvest prompts instant
 for _, prompt in ipairs(game:GetDescendants()) do
     if prompt:IsA("ProximityPrompt") and prompt.ActionText == "Harvest" then
         prompt.HoldDuration = 0
@@ -47,16 +46,13 @@ local seedPackDelay = 1
 local homePosition = nil
 local ignoredSeeds = {}
 
--- Steal
 local lastSteal = 0
 local stealDelay = 0.3
 local stealTargets = {}
 local stealIndex = 0
 
--- Anti Cactus
 local antiCactusEnabled = false
 
--- WalkSpeed
 local walkSpeedEnabled = false
 local walkSpeedValue = 24
 local walkSpeedConnection = nil
@@ -81,7 +77,6 @@ local function stopWalkSpeed()
     end
 end
 
--- Fly
 local flyEnabled = false
 local flySpeed = 50
 local flyConnection = nil
@@ -294,8 +289,7 @@ RunService.Heartbeat:Connect(function()
         if char then
             local root = char:FindFirstChild("HumanoidRootPart")
             if root then
-                local pos = root.Position
-                for _, part in ipairs(workspace:GetPartBoundsInRadius(pos, 20)) do
+                for _, part in ipairs(workspace:GetPartBoundsInRadius(root.Position, 20)) do
                     if part.CanTouch and part.Parent and part.Parent.Name:find("Cactus") then
                         part.CanTouch = false
                     end
@@ -305,9 +299,9 @@ RunService.Heartbeat:Connect(function()
     end
 end)
 
--- Farming Tab
-local FarmTab = Window:AddTab("Farming")
-local FarmBox = FarmTab:AddGroupbox({ Name = "Auto Farm", Side = 1 })
+-- Main Tab
+local MainTab = Window:AddTab("Main")
+local FarmBox = MainTab:AddGroupbox({ Name = "Auto Farm", Side = 1 })
 
 FarmBox:AddToggle("Harvest", {
     Text = "Auto Harvest",
