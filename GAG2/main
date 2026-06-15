@@ -39,7 +39,7 @@ local stealDelay = 0.1
 local stealIndex = 0
 local stealTargets = {}
 local lastSeedPack = 0
-local seedPackDelay = 1
+local seedPackDelay = 0.5
 local homePosition = nil
 
 -- WalkSpeed (looped)
