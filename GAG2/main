@@ -281,35 +281,45 @@ local function doSteal()
     local root = char:FindFirstChild("HumanoidRootPart")
     if not root then return end
     
-    if #stealTargets == 0 then
-        stealTargets = getStealTargets()
-        stealIndex = 0
-        if #stealTargets == 0 then return end
+    -- Find all steal prompts on unlocked plots
+    local myUserId = player.UserId
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj.Name == "HarvestPart" and obj:IsA("BasePart") and obj.Parent then
+            local prompt = obj:FindFirstChildOfClass("ProximityPrompt")
+            if not prompt or prompt.ActionText ~= "Steal" then continue end
+            
+            local fruitModel = obj.Parent
+            local plant = fruitModel.Parent
+            if not plant then continue end
+            
+            local userId = plant:GetAttribute("UserId")
+            if not userId or userId == myUserId then continue end
+            
+            -- Check plot unlocked
+            local current = obj
+            local plotNum = nil
+            while current do
+                if current.Name:find("^Plot%d+$") then
+                    plotNum = tonumber(current.Name:match("%d+$"))
+                    break
+                end
+                current = current.Parent
+            end
+            if not plotNum or not isPlotUnlocked(plotNum) then continue end
+            
+            -- Teleport to fruit, fire prompt, teleport back
+            local savedCFrame = root.CFrame
+            root.CFrame = obj.CFrame * CFrame.new(0, 2, 2)
+            task.wait(0.05)
+            
+            fireproximityprompt(prompt)
+            firetouchinterest(root, obj, 0)
+            firetouchinterest(root, obj, 1)
+            
+            task.wait(0.05)
+            root.CFrame = savedCFrame
+        end
     end
-    
-    stealIndex = stealIndex + 1
-    if stealIndex > #stealTargets then
-        stealIndex = 1
-        stealTargets = getStealTargets()
-    end
-    
-    if #stealTargets == 0 then return end
-    
-    local target = stealTargets[stealIndex]
-    if not target or not target.part or not target.part.Parent then
-        stealTargets = getStealTargets()
-        return
-    end
-    
-    -- Use BeginSteal + CompleteSteal packets like the game does
-    Networking.Steal.BeginSteal:Fire(target.userId, target.plantId, target.fruitId)
-    Networking.Steal.CompleteSteal:Fire()
-end
-
-local function doSell()
-    pcall(function()
-        Networking.NPCS.SellAll:Fire()
-    end)
 end
 
 RunService.Heartbeat:Connect(function()
