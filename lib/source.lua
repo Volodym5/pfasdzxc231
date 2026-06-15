@@ -1,4184 +1,7452 @@
 --[[
+    NexusUI — How to Use
+    =====================
 
-	Rayfield Interface Suite
-	by Sirius
+    ── 1. STARTUP ──────────────────────────────────────────────────────────────
+    Load the library and create a window. Everything is built off the window.
 
-	shlex  | Designing + Programming
-	iRay   | Programming
-	Max    | Programming
-	Damian | Programming
+        local UI = loadstring(game:HttpGet("YOUR_RAW_URL"))()
 
+        local Window = UI:CreateWindow({
+            Title          = "My Menu",
+            Size           = UDim2.fromOffset(760, 540),
+            Center         = true,
+            Resizable      = true,
+            ToggleKeybind  = Enum.KeyCode.RightControl,
+            AutoShow       = true,
+        })
+
+        -- Add a tab, then a groupbox inside it (Side = 1 for left, 2 for right)
+        local Tab = Window:AddTab("Main")
+        local Box = Tab:AddGroupbox({ Name = "Settings", Side = 1 })
+
+    ── 2. BUTTON ────────────────────────────────────────────────────────────────
+        Box:AddButton("myButton", {
+            Text     = "Click Me",
+            Variant  = "Primary",   -- "Primary" | "Secondary" | "Danger"
+            Callback = function()
+                print("Button clicked!")
+            end,
+        })
+
+    ── 3. TOGGLE ────────────────────────────────────────────────────────────────
+        Box:AddToggle("myToggle", {
+            Text     = "Enable Feature",
+            Default  = false,
+            Risky    = false,       -- true = shows a red warning style
+            Callback = function(value)
+                print("Toggle is now:", value)
+            end,
+        })
+
+        -- Read or set the value later:
+        print(UI.Toggles.myToggle.Value)
+        UI.Toggles.myToggle:SetValue(true)
+
+    ── 4. SLIDER ────────────────────────────────────────────────────────────────
+        Box:AddSlider("mySlider", {
+            Text     = "Walk Speed",
+            Default  = 16,
+            Min      = 0,
+            Max      = 100,
+            Rounding = 0,           -- decimal places (0 = integer)
+            Callback = function(value)
+                print("Slider value:", value)
+            end,
+        })
+
+        -- Read or set the value later:
+        print(UI.Options.mySlider.Value)
+        UI.Options.mySlider:SetValue(50)
+
+    ── 5. COLOR PICKER ──────────────────────────────────────────────────────────
+        Box:AddColorPicker("myColor", {
+            Text     = "Highlight Color",
+            Default  = Color3.fromRGB(108, 82, 246),
+            Callback = function(color)
+                print("Color changed:", color)
+            end,
+        })
+
+        -- Read or set the value later:
+        print(UI.Options.myColor.Value)
+        UI.Options.myColor:SetValue(Color3.fromRGB(255, 0, 0))
+
+    ── 6. DROPDOWN ──────────────────────────────────────────────────────────────
+        Box:AddDropdown("myDropdown", {
+            Text     = "Select Mode",
+            Values   = { "Off", "Low", "Medium", "High" },
+            Default  = "Off",
+            Callback = function(value)
+                print("Selected:", value)
+            end,
+        })
+
+        -- Read or set the value later:
+        print(UI.Options.myDropdown.Value)
+        UI.Options.myDropdown:SetValue("High")
+
+    ── 7. MULTI-DROPDOWN ────────────────────────────────────────────────────────
+        Box:AddDropdown("myMulti", {
+            Text   = "Select Features",
+            Values = { "Aimbot", "ESP", "Wallhack", "Speedhack" },
+            Multi  = true,          -- enables multi-select mode
+            Callback = function(selectedTable)
+                -- selectedTable is a dict: { ["ESP"] = true, ... }
+                for name, enabled in pairs(selectedTable) do
+                    print(name, enabled)
+                end
+            end,
+        })
+
+        -- Set a default selection explicitly (Multi ignores the Default field):
+        UI.Options.myMulti:SetValue("ESP")
+
+        -- Read current selections:
+        for name, enabled in pairs(UI.Options.myMulti.Value) do
+            print(name, enabled)
+        end
+
+    ── NOTES ────────────────────────────────────────────────────────────────────
+    • All component keys (first argument) must be unique across the whole menu.
+    • Toggles are accessed via UI.Toggles.<key>
+    • Sliders, dropdowns, color pickers, inputs are accessed via UI.Options.<key>
+    • Toggle keybind: RightControl by default (change via ToggleKeybind in CreateWindow)
+    • Built-in Settings tab (Appearance, Keybinds, Configs, Misc) is added automatically.
 ]]
 
-if debugX then
-	warn('Initialising Rayfield')
-end
+-- ─── Service Acquisition ───────────────────────────────────────────────────
+local cloneref = (cloneref or clonereference or function(i) return i end)
+local CoreGui           = cloneref(game:GetService("CoreGui"))
+local Players           = cloneref(game:GetService("Players"))
+local RunService        = cloneref(game:GetService("RunService"))
+local UserInputService  = cloneref(game:GetService("UserInputService"))
+local TweenService      = cloneref(game:GetService("TweenService"))
+local TextService       = cloneref(game:GetService("TextService"))
+local SoundService      = cloneref(game:GetService("SoundService"))
+local Teams             = cloneref(game:GetService("Teams"))
+local HttpService        = cloneref(game:GetService("HttpService"))
 
+local getgenv           = getgenv   or function() return shared end
+local setclipboard      = setclipboard or function() end
+local protectgui        = protectgui or (syn and syn.protect_gui) or function() end
+local gethui            = gethui    or function() return CoreGui end
 
+local LocalPlayer = Players.LocalPlayer or Players.PlayerAdded:Wait()
+local Mouse       = cloneref(LocalPlayer:GetMouse())
+local Camera      = workspace.CurrentCamera
 
-local function getService(name)
-	local service = game:GetService(name)
-	return if cloneref then cloneref(service) else service
-end
+-- ─── Constants ─────────────────────────────────────────────────────────────
+local LIBRARY_VERSION   = "2.0.0"
+local POOL_MAX          = 64
+local SPRING_DAMPING    = 20
+local SPRING_STIFFNESS  = 200
+local ANIM_FPS_LOW      = 30
+local ANIM_FPS_CRIT     = 20
+local RIPPLE_DURATION   = 0.5
+local TOAST_DURATION    = 4.0
+local TOAST_FADE        = 0.3
+local PERF_SAMPLE_RATE  = 60  -- frames
 
--- Services
-local UserInputService = getService("UserInputService")
-local TweenService = getService("TweenService")
-local Players = getService("Players")
-local CoreGui = getService("CoreGui")
+-- ─── Design Tokens ─────────────────────────────────────────────────────────
+local Tokens = {
+    -- Spacing
+    SpaceXS   = 2,
+    SpaceSM   = 4,
+    SpaceMD   = 8,
+    SpaceLG   = 12,
+    SpaceXL   = 16,
+    Space2XL  = 24,
+    Space3XL  = 32,
 
--- Loads and executes a function hosted on a remote URL. Cancels the request if the requested URL takes too long to respond.
--- Errors with the function are caught and logged to the output
-local function loadWithTimeout(url: string, timeout: number?): ...any
-	assert(type(url) == "string", "Expected string, got " .. type(url))
-	timeout = timeout or 5
-	local requestCompleted = false
-	local success, result = false, nil
+    -- Typography
+    FontSize = {
+        XS   = 11,
+        SM   = 12,
+        MD   = 13,
+        LG   = 14,
+        XL   = 15,
+        H3   = 17,
+        H2   = 19,
+        H1   = 22,
+    },
+    FontWeight = {
+        Regular  = Enum.FontWeight.Regular,
+        Medium   = Enum.FontWeight.Medium,
+        SemiBold = Enum.FontWeight.SemiBold,
+        Bold     = Enum.FontWeight.Bold,
+    },
 
-	local requestThread = task.spawn(function()
-		local fetchSuccess, fetchResult = pcall(game.HttpGet, game, url) -- game:HttpGet(url)
-		-- If the request fails the content can be empty, even if fetchSuccess is true
-		if not fetchSuccess or #fetchResult == 0 then
-			if #fetchResult == 0 then
-				fetchResult = "Empty response" -- Set the error message
-			end
-			success, result = false, fetchResult
-			requestCompleted = true
-			return
-		end
-		local content = fetchResult -- Fetched content
-		local execSuccess, execResult = pcall(function()
-			return loadstring(content)()
-		end)
-		success, result = execSuccess, execResult
-		requestCompleted = true
-	end)
+    -- Radii — slightly more rounded for a modern feel
+    RadiusXS   = 3,
+    RadiusSM   = 5,
+    RadiusMD   = 7,
+    RadiusLG   = 10,
+    RadiusFull = 999,
 
-	local timeoutThread = task.delay(timeout, function()
-		if not requestCompleted then
-			warn("Request for " .. url .. " timed out after " .. tostring(timeout) .. " seconds")
-			task.cancel(requestThread)
-			result = "Request timed out"
-			requestCompleted = true
-		end
-	end)
+    -- Animation
+    DurationFast    = 0.10,
+    DurationNormal  = 0.16,
+    DurationSlow    = 0.28,
+    DurationSlower  = 0.45,
 
-	-- Wait for completion or timeout
-	while not requestCompleted do
-		task.wait()
-	end
-	-- Cancel timeout thread if still running when request completes
-	if coroutine.status(timeoutThread) ~= "dead" then
-		task.cancel(timeoutThread)
-	end
-	if not success then
-		warn("Failed to process " .. tostring(url) .. ": " .. tostring(result))
-	end
-	return if success then result else nil
-end
-
-local _getgenv = rawget(_G, "getgenv")
-local requestsDisabled = false
-local customAssetId = nil
-local secureMode = false
-if _getgenv then
-	local ok, result = pcall(function() return _getgenv().DISABLE_RAYFIELD_REQUESTS end)
-	if ok and result then requestsDisabled = true end
-	local ok2, result2 = pcall(function() return _getgenv().RAYFIELD_ASSET_ID end)
-	if ok2 and type(result2) == "number" then customAssetId = result2 end
-	local ok3, result3 = pcall(function() return _getgenv().RAYFIELD_SECURE end)
-	if ok3 and result3 then secureMode = true end
-end
-
-if secureMode then
-	local _error = error
-	local _assert = assert
-	warn = function(...) end
-	print = function(...) end
-	error = function(_, level) _error("", level) end
-	assert = function(v, ...) return _assert(v) end
-end
-
-local secureWarnings = {}
-local customAssets = {}
-
-local function secureNotify(wType, title, content)
-	if secureWarnings[wType] then return end
-	secureWarnings[wType] = true
-	task.spawn(function()
-		while not RayfieldLibrary or not RayfieldLibrary.Notify do task.wait(0.5) end
-		RayfieldLibrary:Notify({
-			Title = title,
-			Content = content,
-			Duration = 8,
-		})
-	end)
-end
-local InterfaceBuild = 'UU2NX'
-local Release = "Build 1.746"
-local RayfieldFolder = "Rayfield"
-local ConfigurationFolder = RayfieldFolder.."/Configurations"
-local ConfigurationExtension = ".rfld"
-local settingsTable = {
-	General = {
-		-- if needs be in order just make getSetting(name)
-		rayfieldOpen = {Type = 'bind', Value = 'K', Name = 'Rayfield Keybind'},
-		-- buildwarnings
-		-- rayfieldprompts
-
-	},
-	System = {
-		usageAnalytics = {Type = 'toggle', Value = true, Name = 'Anonymised Analytics'},
-	}
+    -- Z-Layers
+    LayerBase      = 1,
+    LayerFloat     = 10,
+    LayerDropdown  = 50,
+    LayerModal     = 100,
+    LayerToast     = 200,
+    LayerCursor    = 500,
+    LayerDebug     = 999,
 }
 
--- Settings that have been overridden by the developer. These will not be saved to the user's configuration file
--- Overridden settings always take precedence over settings in the configuration file, and are cleared if the user changes the setting in the UI
-local overriddenSettings: { [string]: any } = {} -- For example, overriddenSettings["System.rayfieldOpen"] = "J"
-local function overrideSetting(category: string, name: string, value: any)
-	overriddenSettings[category .. "." .. name] = value
-end
-
-local function getSetting(category: string, name: string): any
-	if overriddenSettings[category .. "." .. name] ~= nil then
-		return overriddenSettings[category .. "." .. name]
-	elseif settingsTable[category][name] ~= nil then
-		return settingsTable[category][name].Value
-	end
-end
-
--- If requests/analytics have been disabled by developer, set the user-facing setting to false as well
-if requestsDisabled then
-	overrideSetting("System", "usageAnalytics", false)
-end
-
-local HttpService = getService('HttpService')
-local RunService = getService('RunService')
-
--- Environment Check
-local useStudio = RunService:IsStudio() or false
-
-local settingsCreated = false
-local settingsInitialized = false -- Whether the UI elements in the settings page have been set to the proper values
-local prompt = useStudio and require(script.Parent.prompt) or loadWithTimeout('https://raw.githubusercontent.com/SiriusSoftwareLtd/Sirius/refs/heads/request/prompt.lua')
-local requestFunc = (syn and syn.request) or (fluxus and fluxus.request) or (http and http.request) or http_request or request
-
--- Validate prompt loaded correctly
-if not prompt and not useStudio then
-	warn("Failed to load prompt library, using fallback")
-	prompt = {
-		create = function() end -- No-op fallback
-	}
-end
-
-
--- The function below provides a safe alternative for calling error-prone functions
--- Especially useful for filesystem function (writefile, makefolder, etc.)
-local function callSafely(func, ...)
-	if func then
-		local success, result = pcall(func, ...)
-		if not success then
-			warn("Rayfield | Function failed with error: ", result)
-			return false
-		else
-			return result
-		end
-	end
-end
-
--- Ensures a folder exists by creating it if needed
-local function ensureFolder(folderPath)
-	if isfolder and not callSafely(isfolder, folderPath) then
-		callSafely(makefolder, folderPath)
-	end
-end
-
-local function loadSettings()
-	local file = nil
-
-	local success, result =	pcall(function()
-		if callSafely(isfolder, RayfieldFolder) then
-			if callSafely(isfile, RayfieldFolder..'/settings'..ConfigurationExtension) then
-				file = callSafely(readfile, RayfieldFolder..'/settings'..ConfigurationExtension)
-			end
-		end
-
-		-- for debug in studio
-		if useStudio then
-			file = [[
-	{"General":{"rayfieldOpen":{"Value":"K","Type":"bind","Name":"Rayfield Keybind","Element":{"HoldToInteract":false,"Ext":true,"Name":"Rayfield Keybind","Set":null,"CallOnChange":true,"Callback":null,"CurrentKeybind":"K"}}},"System":{"usageAnalytics":{"Value":false,"Type":"toggle","Name":"Anonymised Analytics","Element":{"Ext":true,"Name":"Anonymised Analytics","Set":null,"CurrentValue":false,"Callback":null}}}}
+-- ─── Theme Engine ──────────────────────────────────────────────────────────
+--[[
+    Themes define raw color values.
+    AccentVariants are auto-generated from the primary accent.
+    Supports Dark / Light and smooth interpolation between them.
 ]]
-		end
-
-		if file then
-			local decodeSuccess, decodedFile = pcall(function() return HttpService:JSONDecode(file) end)
-			if decodeSuccess then
-				file = decodedFile
-			else
-				file = {}
-			end
-		else
-			file = {}
-		end
-
-
-		if not settingsCreated then
-			return
-		end
-
-		if next(file) ~= nil then
-			for categoryName, settingCategory in pairs(settingsTable) do
-				if file[categoryName] then
-					for settingName, setting in pairs(settingCategory) do
-						if file[categoryName][settingName] then
-							setting.Value = file[categoryName][settingName].Value
-							setting.Element:Set(getSetting(categoryName, settingName))
-						end
-					end
-				end
-			end
-		-- If no settings saved, apply overridden settings only
-		else
-			for settingName, settingValue in overriddenSettings do
-				local split = string.split(settingName, ".")
-				assert(#split == 2, "Rayfield | Invalid overridden setting name: " .. settingName)
-				local categoryName = split[1]
-				local settingNameOnly = split[2]
-				if settingsTable[categoryName] and settingsTable[categoryName][settingNameOnly] then
-					settingsTable[categoryName][settingNameOnly].Element:Set(settingValue)
-				end
-			end
-		end
-		settingsInitialized = true
-	end)
-
-	if not success then 
-		if writefile then
-			warn('Rayfield had an issue accessing configuration saving capability.')
-		end
-	end
-end
-
-if debugX then
-	warn('Now Loading Settings Configuration')
-end
-
-loadSettings()
-
-if debugX then
-	warn('Settings Loaded')
-end
-
-local ANALYTICS_TOKEN = "05de7f9fd320d3b8428cd1c77014a337b85b6c8efee2c5914f5ab5700c354b9a"
-
-local reporter = nil
-if not requestsDisabled and not useStudio then
-	local fetchSuccess, fetchResult = pcall((game :: any).HttpGet, game, "https://raw.githubusercontent.com/SiriusSoftwareLtd/Rayfield/refs/heads/main/reporter.lua")
-	if fetchSuccess and #fetchResult > 0 then
-		local execSuccess, Analytics = pcall(function()
-			return (loadstring(fetchResult) :: any)()
-		end)
-		if execSuccess and Analytics then
-			pcall(function()
-				reporter = Analytics.new({
-					url          = "https://rayfield-collect.sirius-software-ltd.workers.dev",
-					token        = ANALYTICS_TOKEN,
-					product_name = "Rayfield",
-					category     = "UILibrary",
-				})
-			end)
-		end
-	end
-end
-
-local promptUser = 2
-
-if promptUser == 1 and prompt and type(prompt.create) == "function" then
-	prompt.create(
-		'Be cautious when running scripts',
-	    [[Please be careful when running scripts from unknown developers. This script has already been ran.
-
-<font transparency='0.3'>Some scripts may steal your items or in-game goods.</font>]],
-		'Okay',
-		'',
-		function()
-
-		end
-	)
-end
-
-if debugX then
-	warn('Moving on to continue initialisation')
-end
-
-local RayfieldLibrary = {
-	Flags = {},
-	Theme = {
-		Default = {
-			-- Obsidian — deep near-black with amber/gold accent
-			TextColor = Color3.fromRGB(238, 238, 242),
-
-			Background = Color3.fromRGB(14, 14, 18),
-			Topbar = Color3.fromRGB(14, 14, 18),
-			Shadow = Color3.fromRGB(0, 0, 0),
-
-			NotificationBackground = Color3.fromRGB(28, 28, 36),
-			NotificationActionsBackground = Color3.fromRGB(36, 36, 46),
-
-			TabBackground = Color3.fromRGB(20, 20, 26),
-			TabStroke = Color3.fromRGB(27, 27, 33),
-			TabBackgroundSelected = Color3.fromRGB(34, 27, 15),
-			TabTextColor = Color3.fromRGB(144, 144, 164),
-			SelectedTabTextColor = Color3.fromRGB(212, 168, 83),
-
-			ElementBackground = Color3.fromRGB(20, 20, 26),
-			ElementBackgroundHover = Color3.fromRGB(28, 28, 36),
-			SecondaryElementBackground = Color3.fromRGB(14, 14, 18),
-			ElementStroke = Color3.fromRGB(27, 27, 33),
-			SecondaryElementStroke = Color3.fromRGB(27, 27, 33),
-
-			SliderBackground = Color3.fromRGB(36, 36, 46),
-			SliderProgress = Color3.fromRGB(212, 168, 83),
-			SliderStroke = Color3.fromRGB(140, 100, 32),
-
-			ToggleBackground = Color3.fromRGB(36, 36, 46),
-			ToggleEnabled = Color3.fromRGB(212, 168, 83),
-			ToggleDisabled = Color3.fromRGB(82, 82, 106),
-			ToggleEnabledStroke = Color3.fromRGB(184, 137, 58),
-			ToggleDisabledStroke = Color3.fromRGB(46, 46, 58),
-			ToggleEnabledOuterStroke = Color3.fromRGB(140, 100, 32),
-			ToggleDisabledOuterStroke = Color3.fromRGB(36, 36, 46),
-
-			DropdownSelected = Color3.fromRGB(36, 36, 46),
-			DropdownUnselected = Color3.fromRGB(20, 20, 26),
-
-			InputBackground = Color3.fromRGB(20, 20, 26),
-			InputStroke = Color3.fromRGB(27, 27, 33),
-			PlaceholderColor = Color3.fromRGB(54, 54, 72)
-		},
-
-		Obsidian = {
-			-- Obsidian — deep near-black with amber/gold accent (same as Default)
-			TextColor = Color3.fromRGB(238, 238, 242),
-
-			Background = Color3.fromRGB(14, 14, 18),
-			Topbar = Color3.fromRGB(14, 14, 18),
-			Shadow = Color3.fromRGB(0, 0, 0),
-
-			NotificationBackground = Color3.fromRGB(28, 28, 36),
-			NotificationActionsBackground = Color3.fromRGB(36, 36, 46),
-
-			TabBackground = Color3.fromRGB(20, 20, 26),
-			TabStroke = Color3.fromRGB(27, 27, 33),
-			TabBackgroundSelected = Color3.fromRGB(34, 27, 15),
-			TabTextColor = Color3.fromRGB(144, 144, 164),
-			SelectedTabTextColor = Color3.fromRGB(212, 168, 83),
-
-			ElementBackground = Color3.fromRGB(20, 20, 26),
-			ElementBackgroundHover = Color3.fromRGB(28, 28, 36),
-			SecondaryElementBackground = Color3.fromRGB(14, 14, 18),
-			ElementStroke = Color3.fromRGB(27, 27, 33),
-			SecondaryElementStroke = Color3.fromRGB(27, 27, 33),
-
-			SliderBackground = Color3.fromRGB(36, 36, 46),
-			SliderProgress = Color3.fromRGB(212, 168, 83),
-			SliderStroke = Color3.fromRGB(140, 100, 32),
-
-			ToggleBackground = Color3.fromRGB(36, 36, 46),
-			ToggleEnabled = Color3.fromRGB(212, 168, 83),
-			ToggleDisabled = Color3.fromRGB(82, 82, 106),
-			ToggleEnabledStroke = Color3.fromRGB(184, 137, 58),
-			ToggleDisabledStroke = Color3.fromRGB(46, 46, 58),
-			ToggleEnabledOuterStroke = Color3.fromRGB(140, 100, 32),
-			ToggleDisabledOuterStroke = Color3.fromRGB(36, 36, 46),
-
-			DropdownSelected = Color3.fromRGB(36, 36, 46),
-			DropdownUnselected = Color3.fromRGB(20, 20, 26),
-
-			InputBackground = Color3.fromRGB(20, 20, 26),
-			InputStroke = Color3.fromRGB(27, 27, 33),
-			PlaceholderColor = Color3.fromRGB(54, 54, 72)
-		},
-
-		Ocean = {
-			TextColor = Color3.fromRGB(230, 240, 240),
-
-			Background = Color3.fromRGB(20, 30, 30),
-			Topbar = Color3.fromRGB(25, 40, 40),
-			Shadow = Color3.fromRGB(15, 20, 20),
-
-			NotificationBackground = Color3.fromRGB(25, 35, 35),
-			NotificationActionsBackground = Color3.fromRGB(230, 240, 240),
-
-			TabBackground = Color3.fromRGB(40, 60, 60),
-			TabStroke = Color3.fromRGB(50, 70, 70),
-			TabBackgroundSelected = Color3.fromRGB(100, 180, 180),
-			TabTextColor = Color3.fromRGB(210, 230, 230),
-			SelectedTabTextColor = Color3.fromRGB(20, 50, 50),
-
-			ElementBackground = Color3.fromRGB(30, 50, 50),
-			ElementBackgroundHover = Color3.fromRGB(40, 60, 60),
-			SecondaryElementBackground = Color3.fromRGB(30, 45, 45),
-			ElementStroke = Color3.fromRGB(45, 70, 70),
-			SecondaryElementStroke = Color3.fromRGB(40, 65, 65),
-
-			SliderBackground = Color3.fromRGB(0, 110, 110),
-			SliderProgress = Color3.fromRGB(0, 140, 140),
-			SliderStroke = Color3.fromRGB(0, 160, 160),
-
-			ToggleBackground = Color3.fromRGB(30, 50, 50),
-			ToggleEnabled = Color3.fromRGB(0, 130, 130),
-			ToggleDisabled = Color3.fromRGB(70, 90, 90),
-			ToggleEnabledStroke = Color3.fromRGB(0, 160, 160),
-			ToggleDisabledStroke = Color3.fromRGB(85, 105, 105),
-			ToggleEnabledOuterStroke = Color3.fromRGB(50, 100, 100),
-			ToggleDisabledOuterStroke = Color3.fromRGB(45, 65, 65),
-
-			DropdownSelected = Color3.fromRGB(30, 60, 60),
-			DropdownUnselected = Color3.fromRGB(25, 40, 40),
-
-			InputBackground = Color3.fromRGB(30, 50, 50),
-			InputStroke = Color3.fromRGB(50, 70, 70),
-			PlaceholderColor = Color3.fromRGB(140, 160, 160)
-		},
-
-		AmberGlow = {
-			TextColor = Color3.fromRGB(255, 245, 230),
-
-			Background = Color3.fromRGB(45, 30, 20),
-			Topbar = Color3.fromRGB(55, 40, 25),
-			Shadow = Color3.fromRGB(35, 25, 15),
-
-			NotificationBackground = Color3.fromRGB(50, 35, 25),
-			NotificationActionsBackground = Color3.fromRGB(245, 230, 215),
-
-			TabBackground = Color3.fromRGB(75, 50, 35),
-			TabStroke = Color3.fromRGB(90, 60, 45),
-			TabBackgroundSelected = Color3.fromRGB(230, 180, 100),
-			TabTextColor = Color3.fromRGB(250, 220, 200),
-			SelectedTabTextColor = Color3.fromRGB(50, 30, 10),
-
-			ElementBackground = Color3.fromRGB(60, 45, 35),
-			ElementBackgroundHover = Color3.fromRGB(70, 50, 40),
-			SecondaryElementBackground = Color3.fromRGB(55, 40, 30),
-			ElementStroke = Color3.fromRGB(85, 60, 45),
-			SecondaryElementStroke = Color3.fromRGB(75, 50, 35),
-
-			SliderBackground = Color3.fromRGB(220, 130, 60),
-			SliderProgress = Color3.fromRGB(250, 150, 75),
-			SliderStroke = Color3.fromRGB(255, 170, 85),
-
-			ToggleBackground = Color3.fromRGB(55, 40, 30),
-			ToggleEnabled = Color3.fromRGB(240, 130, 30),
-			ToggleDisabled = Color3.fromRGB(90, 70, 60),
-			ToggleEnabledStroke = Color3.fromRGB(255, 160, 50),
-			ToggleDisabledStroke = Color3.fromRGB(110, 85, 75),
-			ToggleEnabledOuterStroke = Color3.fromRGB(200, 100, 50),
-			ToggleDisabledOuterStroke = Color3.fromRGB(75, 60, 55),
-
-			DropdownSelected = Color3.fromRGB(70, 50, 40),
-			DropdownUnselected = Color3.fromRGB(55, 40, 30),
-
-			InputBackground = Color3.fromRGB(60, 45, 35),
-			InputStroke = Color3.fromRGB(90, 65, 50),
-			PlaceholderColor = Color3.fromRGB(190, 150, 130)
-		},
-
-		Light = {
-			TextColor = Color3.fromRGB(40, 40, 40),
-
-			Background = Color3.fromRGB(245, 245, 245),
-			Topbar = Color3.fromRGB(230, 230, 230),
-			Shadow = Color3.fromRGB(200, 200, 200),
-
-			NotificationBackground = Color3.fromRGB(250, 250, 250),
-			NotificationActionsBackground = Color3.fromRGB(240, 240, 240),
-
-			TabBackground = Color3.fromRGB(235, 235, 235),
-			TabStroke = Color3.fromRGB(215, 215, 215),
-			TabBackgroundSelected = Color3.fromRGB(255, 255, 255),
-			TabTextColor = Color3.fromRGB(80, 80, 80),
-			SelectedTabTextColor = Color3.fromRGB(0, 0, 0),
-
-			ElementBackground = Color3.fromRGB(240, 240, 240),
-			ElementBackgroundHover = Color3.fromRGB(225, 225, 225),
-			SecondaryElementBackground = Color3.fromRGB(235, 235, 235),
-			ElementStroke = Color3.fromRGB(210, 210, 210),
-			SecondaryElementStroke = Color3.fromRGB(210, 210, 210),
-
-			SliderBackground = Color3.fromRGB(150, 180, 220),
-			SliderProgress = Color3.fromRGB(100, 150, 200), 
-			SliderStroke = Color3.fromRGB(120, 170, 220),
-
-			ToggleBackground = Color3.fromRGB(220, 220, 220),
-			ToggleEnabled = Color3.fromRGB(0, 146, 214),
-			ToggleDisabled = Color3.fromRGB(150, 150, 150),
-			ToggleEnabledStroke = Color3.fromRGB(0, 170, 255),
-			ToggleDisabledStroke = Color3.fromRGB(170, 170, 170),
-			ToggleEnabledOuterStroke = Color3.fromRGB(100, 100, 100),
-			ToggleDisabledOuterStroke = Color3.fromRGB(180, 180, 180),
-
-			DropdownSelected = Color3.fromRGB(230, 230, 230),
-			DropdownUnselected = Color3.fromRGB(220, 220, 220),
-
-			InputBackground = Color3.fromRGB(240, 240, 240),
-			InputStroke = Color3.fromRGB(180, 180, 180),
-			PlaceholderColor = Color3.fromRGB(140, 140, 140)
-		},
-
-		Amethyst = {
-			TextColor = Color3.fromRGB(240, 240, 240),
-
-			Background = Color3.fromRGB(30, 20, 40),
-			Topbar = Color3.fromRGB(40, 25, 50),
-			Shadow = Color3.fromRGB(20, 15, 30),
-
-			NotificationBackground = Color3.fromRGB(35, 20, 40),
-			NotificationActionsBackground = Color3.fromRGB(240, 240, 250),
-
-			TabBackground = Color3.fromRGB(60, 40, 80),
-			TabStroke = Color3.fromRGB(70, 45, 90),
-			TabBackgroundSelected = Color3.fromRGB(180, 140, 200),
-			TabTextColor = Color3.fromRGB(230, 230, 240),
-			SelectedTabTextColor = Color3.fromRGB(50, 20, 50),
-
-			ElementBackground = Color3.fromRGB(45, 30, 60),
-			ElementBackgroundHover = Color3.fromRGB(50, 35, 70),
-			SecondaryElementBackground = Color3.fromRGB(40, 30, 55),
-			ElementStroke = Color3.fromRGB(70, 50, 85),
-			SecondaryElementStroke = Color3.fromRGB(65, 45, 80),
-
-			SliderBackground = Color3.fromRGB(100, 60, 150),
-			SliderProgress = Color3.fromRGB(130, 80, 180),
-			SliderStroke = Color3.fromRGB(150, 100, 200),
-
-			ToggleBackground = Color3.fromRGB(45, 30, 55),
-			ToggleEnabled = Color3.fromRGB(120, 60, 150),
-			ToggleDisabled = Color3.fromRGB(94, 47, 117),
-			ToggleEnabledStroke = Color3.fromRGB(140, 80, 170),
-			ToggleDisabledStroke = Color3.fromRGB(124, 71, 150),
-			ToggleEnabledOuterStroke = Color3.fromRGB(90, 40, 120),
-			ToggleDisabledOuterStroke = Color3.fromRGB(80, 50, 110),
-
-			DropdownSelected = Color3.fromRGB(50, 35, 70),
-			DropdownUnselected = Color3.fromRGB(35, 25, 50),
-
-			InputBackground = Color3.fromRGB(45, 30, 60),
-			InputStroke = Color3.fromRGB(80, 50, 110),
-			PlaceholderColor = Color3.fromRGB(178, 150, 200)
-		},
-
-		Green = {
-			TextColor = Color3.fromRGB(30, 60, 30),
-
-			Background = Color3.fromRGB(235, 245, 235),
-			Topbar = Color3.fromRGB(210, 230, 210),
-			Shadow = Color3.fromRGB(200, 220, 200),
-
-			NotificationBackground = Color3.fromRGB(240, 250, 240),
-			NotificationActionsBackground = Color3.fromRGB(220, 235, 220),
-
-			TabBackground = Color3.fromRGB(215, 235, 215),
-			TabStroke = Color3.fromRGB(190, 210, 190),
-			TabBackgroundSelected = Color3.fromRGB(245, 255, 245),
-			TabTextColor = Color3.fromRGB(50, 80, 50),
-			SelectedTabTextColor = Color3.fromRGB(20, 60, 20),
-
-			ElementBackground = Color3.fromRGB(225, 240, 225),
-			ElementBackgroundHover = Color3.fromRGB(210, 225, 210),
-			SecondaryElementBackground = Color3.fromRGB(235, 245, 235), 
-			ElementStroke = Color3.fromRGB(180, 200, 180),
-			SecondaryElementStroke = Color3.fromRGB(180, 200, 180),
-
-			SliderBackground = Color3.fromRGB(90, 160, 90),
-			SliderProgress = Color3.fromRGB(70, 130, 70),
-			SliderStroke = Color3.fromRGB(100, 180, 100),
-
-			ToggleBackground = Color3.fromRGB(215, 235, 215),
-			ToggleEnabled = Color3.fromRGB(60, 130, 60),
-			ToggleDisabled = Color3.fromRGB(150, 175, 150),
-			ToggleEnabledStroke = Color3.fromRGB(80, 150, 80),
-			ToggleDisabledStroke = Color3.fromRGB(130, 150, 130),
-			ToggleEnabledOuterStroke = Color3.fromRGB(100, 160, 100),
-			ToggleDisabledOuterStroke = Color3.fromRGB(160, 180, 160),
-
-			DropdownSelected = Color3.fromRGB(225, 240, 225),
-			DropdownUnselected = Color3.fromRGB(210, 225, 210),
-
-			InputBackground = Color3.fromRGB(235, 245, 235),
-			InputStroke = Color3.fromRGB(180, 200, 180),
-			PlaceholderColor = Color3.fromRGB(120, 140, 120)
-		},
-
-		Bloom = {
-			TextColor = Color3.fromRGB(60, 40, 50),
-
-			Background = Color3.fromRGB(255, 240, 245),
-			Topbar = Color3.fromRGB(250, 220, 225),
-			Shadow = Color3.fromRGB(230, 190, 195),
-
-			NotificationBackground = Color3.fromRGB(255, 235, 240),
-			NotificationActionsBackground = Color3.fromRGB(245, 215, 225),
-
-			TabBackground = Color3.fromRGB(240, 210, 220),
-			TabStroke = Color3.fromRGB(230, 200, 210),
-			TabBackgroundSelected = Color3.fromRGB(255, 225, 235),
-			TabTextColor = Color3.fromRGB(80, 40, 60),
-			SelectedTabTextColor = Color3.fromRGB(50, 30, 50),
-
-			ElementBackground = Color3.fromRGB(255, 235, 240),
-			ElementBackgroundHover = Color3.fromRGB(245, 220, 230),
-			SecondaryElementBackground = Color3.fromRGB(255, 235, 240), 
-			ElementStroke = Color3.fromRGB(230, 200, 210),
-			SecondaryElementStroke = Color3.fromRGB(230, 200, 210),
-
-			SliderBackground = Color3.fromRGB(240, 130, 160),
-			SliderProgress = Color3.fromRGB(250, 160, 180),
-			SliderStroke = Color3.fromRGB(255, 180, 200),
-
-			ToggleBackground = Color3.fromRGB(240, 210, 220),
-			ToggleEnabled = Color3.fromRGB(255, 140, 170),
-			ToggleDisabled = Color3.fromRGB(200, 180, 185),
-			ToggleEnabledStroke = Color3.fromRGB(250, 160, 190),
-			ToggleDisabledStroke = Color3.fromRGB(210, 180, 190),
-			ToggleEnabledOuterStroke = Color3.fromRGB(220, 160, 180),
-			ToggleDisabledOuterStroke = Color3.fromRGB(190, 170, 180),
-
-			DropdownSelected = Color3.fromRGB(250, 220, 225),
-			DropdownUnselected = Color3.fromRGB(240, 210, 220),
-
-			InputBackground = Color3.fromRGB(255, 235, 240),
-			InputStroke = Color3.fromRGB(220, 190, 200),
-			PlaceholderColor = Color3.fromRGB(170, 130, 140)
-		},
-
-		DarkBlue = {
-			TextColor = Color3.fromRGB(230, 230, 230),
-
-			Background = Color3.fromRGB(20, 25, 30),
-			Topbar = Color3.fromRGB(30, 35, 40),
-			Shadow = Color3.fromRGB(15, 20, 25),
-
-			NotificationBackground = Color3.fromRGB(25, 30, 35),
-			NotificationActionsBackground = Color3.fromRGB(45, 50, 55),
-
-			TabBackground = Color3.fromRGB(35, 40, 45),
-			TabStroke = Color3.fromRGB(45, 50, 60),
-			TabBackgroundSelected = Color3.fromRGB(40, 70, 100),
-			TabTextColor = Color3.fromRGB(200, 200, 200),
-			SelectedTabTextColor = Color3.fromRGB(255, 255, 255),
-
-			ElementBackground = Color3.fromRGB(30, 35, 40),
-			ElementBackgroundHover = Color3.fromRGB(40, 45, 50),
-			SecondaryElementBackground = Color3.fromRGB(35, 40, 45), 
-			ElementStroke = Color3.fromRGB(45, 50, 60),
-			SecondaryElementStroke = Color3.fromRGB(40, 45, 55),
-
-			SliderBackground = Color3.fromRGB(0, 90, 180),
-			SliderProgress = Color3.fromRGB(0, 120, 210),
-			SliderStroke = Color3.fromRGB(0, 150, 240),
-
-			ToggleBackground = Color3.fromRGB(35, 40, 45),
-			ToggleEnabled = Color3.fromRGB(0, 120, 210),
-			ToggleDisabled = Color3.fromRGB(70, 70, 80),
-			ToggleEnabledStroke = Color3.fromRGB(0, 150, 240),
-			ToggleDisabledStroke = Color3.fromRGB(75, 75, 85),
-			ToggleEnabledOuterStroke = Color3.fromRGB(20, 100, 180), 
-			ToggleDisabledOuterStroke = Color3.fromRGB(55, 55, 65),
-
-			DropdownSelected = Color3.fromRGB(30, 70, 90),
-			DropdownUnselected = Color3.fromRGB(25, 30, 35),
-
-			InputBackground = Color3.fromRGB(25, 30, 35),
-			InputStroke = Color3.fromRGB(45, 50, 60), 
-			PlaceholderColor = Color3.fromRGB(150, 150, 160)
-		},
-
-		Serenity = {
-			TextColor = Color3.fromRGB(50, 55, 60),
-			Background = Color3.fromRGB(240, 245, 250),
-			Topbar = Color3.fromRGB(215, 225, 235),
-			Shadow = Color3.fromRGB(200, 210, 220),
-
-			NotificationBackground = Color3.fromRGB(210, 220, 230),
-			NotificationActionsBackground = Color3.fromRGB(225, 230, 240),
-
-			TabBackground = Color3.fromRGB(200, 210, 220),
-			TabStroke = Color3.fromRGB(180, 190, 200),
-			TabBackgroundSelected = Color3.fromRGB(175, 185, 200),
-			TabTextColor = Color3.fromRGB(50, 55, 60),
-			SelectedTabTextColor = Color3.fromRGB(30, 35, 40),
-
-			ElementBackground = Color3.fromRGB(210, 220, 230),
-			ElementBackgroundHover = Color3.fromRGB(220, 230, 240),
-			SecondaryElementBackground = Color3.fromRGB(200, 210, 220),
-			ElementStroke = Color3.fromRGB(190, 200, 210),
-			SecondaryElementStroke = Color3.fromRGB(180, 190, 200),
-
-			SliderBackground = Color3.fromRGB(200, 220, 235),  -- Lighter shade
-			SliderProgress = Color3.fromRGB(70, 130, 180),
-			SliderStroke = Color3.fromRGB(150, 180, 220),
-
-			ToggleBackground = Color3.fromRGB(210, 220, 230),
-			ToggleEnabled = Color3.fromRGB(70, 160, 210),
-			ToggleDisabled = Color3.fromRGB(180, 180, 180),
-			ToggleEnabledStroke = Color3.fromRGB(60, 150, 200),
-			ToggleDisabledStroke = Color3.fromRGB(140, 140, 140),
-			ToggleEnabledOuterStroke = Color3.fromRGB(100, 120, 140),
-			ToggleDisabledOuterStroke = Color3.fromRGB(120, 120, 130),
-
-			DropdownSelected = Color3.fromRGB(220, 230, 240),
-			DropdownUnselected = Color3.fromRGB(200, 210, 220),
-
-			InputBackground = Color3.fromRGB(220, 230, 240),
-			InputStroke = Color3.fromRGB(180, 190, 200),
-			PlaceholderColor = Color3.fromRGB(150, 150, 150)
-		},
-	}
-}
-
-
-
-
--- Interface Management
-
-local RayfieldAssetId = customAssetId or 10804731440
-local Rayfield = useStudio and script.Parent:FindFirstChild('Rayfield') or game:GetObjects("rbxassetid://"..RayfieldAssetId)[1]
-local buildAttempts = 0
-local correctBuild = false
-local warned
-local globalLoaded
-local rayfieldDestroyed = false -- True when RayfieldLibrary:Destroy() is called
-
-repeat
-	if Rayfield:FindFirstChild('Build') and Rayfield.Build.Value == InterfaceBuild then
-		correctBuild = true
-		break
-	end
-
-	correctBuild = false
-
-	if not warned then
-		warn('Rayfield | Build Mismatch')
-		print('Rayfield may encounter issues as you are running an incompatible interface version ('.. ((Rayfield:FindFirstChild('Build') and Rayfield.Build.Value) or 'No Build') ..').\n\nThis version of Rayfield is intended for interface build '..InterfaceBuild..'.')
-		warned = true
-	end
-
-	local toDestroy
-	toDestroy, Rayfield = Rayfield, useStudio and script.Parent:FindFirstChild('Rayfield') or game:GetObjects("rbxassetid://"..RayfieldAssetId)[1]
-	if toDestroy and not useStudio then toDestroy:Destroy() end
-
-	buildAttempts = buildAttempts + 1
-until buildAttempts >= 2
-
-Rayfield.Enabled = false
-
-if gethui then
-	Rayfield.Parent = gethui()
-elseif syn and syn.protect_gui then 
-	syn.protect_gui(Rayfield)
-	Rayfield.Parent = CoreGui
-elseif not useStudio and CoreGui:FindFirstChild("RobloxGui") then
-	Rayfield.Parent = CoreGui:FindFirstChild("RobloxGui")
-elseif not useStudio then
-	Rayfield.Parent = CoreGui
-end
-
-if gethui then
-	for _, Interface in ipairs(gethui():GetChildren()) do
-		if Interface.Name == Rayfield.Name and Interface ~= Rayfield then
-			Interface.Enabled = false
-			Interface.Name = "Rayfield-Old"
-		end
-	end
-elseif not useStudio then
-	for _, Interface in ipairs(CoreGui:GetChildren()) do
-		if Interface.Name == Rayfield.Name and Interface ~= Rayfield then
-			Interface.Enabled = false
-			Interface.Name = "Rayfield-Old"
-		end
-	end
-end
-
-if secureMode and not customAssetId then
-	secureNotify("default_asset", "Secure Mode", "You are using the default Rayfield asset ID. Set RAYFIELD_ASSET_ID to a custom upload to avoid detection.")
-end
-
+local ThemeEngine = {}
 do
-	local AssetPath = RayfieldFolder.."/Assets"
-	local AssetBaseURL = "https://github.com/SiriusSoftwareLtd/Rayfield/blob/main/assets/"
+    -- Perceptual color interpolation (linear RGB)
+    local function LerpColor(a, b, t)
+        -- Convert to linear light
+        local function toLinear(c) return c^2.2 end
+        local function fromLinear(c) return c^(1/2.2) end
+        return Color3.new(
+            fromLinear(toLinear(a.R)*(1-t) + toLinear(b.R)*t),
+            fromLinear(toLinear(a.G)*(1-t) + toLinear(b.G)*t),
+            fromLinear(toLinear(a.B)*(1-t) + toLinear(b.B)*t)
+        )
+    end
 
-	local assetFiles = {
-		["111263549366178"] = AssetBaseURL.."111263549366178.png?raw=true",
-		["77891951053543"] = AssetBaseURL.."77891951053543.png?raw=true",
-		["78137979054938"] = AssetBaseURL.."78137979054938.png?raw=true",
-		["80503127983237"] = AssetBaseURL.."80503127983237.png?raw=true",
-		["10137832201"] = AssetBaseURL.."10137832201.png?raw=true",
-		["10137941941"] = AssetBaseURL.."10137941941.png?raw=true",
-		["11036884234"] = AssetBaseURL.."11036884234.png?raw=true",
-		["11413591840"] = AssetBaseURL.."11413591840.png?raw=true",
-		["11745872910"] = AssetBaseURL.."11745872910.png?raw=true",
-		["12577727209"] = AssetBaseURL.."12577727209.png?raw=true",
-		["18458939117"] = AssetBaseURL.."18458939117.png?raw=true",
-		["3259050989"] = AssetBaseURL.."3259050989.png?raw=true",
-		["3523728077"] = AssetBaseURL.."3523728077.png?raw=true",
-		["3602733521"] = AssetBaseURL.."3602733521.png?raw=true",
-		["IconChevronTopMedium"] = AssetBaseURL.."IconChevronTopMedium.png?raw=true",
-		["4483362458"] = AssetBaseURL.."4483362458.png?raw=true",
-		["5587865193"] = AssetBaseURL.."5587865193.png?raw=true",
-		["IconMagnifyingGlass2"] = AssetBaseURL.."IconMagnifyingGlass2.png?raw=true",
-	}
+    -- Generate hover/active/subtle variants from an accent color
+    local function GenerateAccentVariants(accent)
+        local H, S, V = accent:ToHSV()
+        return {
+            Base     = accent,
+            Hover    = Color3.fromHSV(H, S, math.min(1, V + 0.12)),
+            Active   = Color3.fromHSV(H, math.min(1, S + 0.05), math.max(0, V - 0.08)),
+            Subtle   = Color3.fromHSV(H, S * 0.3, math.min(1, V + 0.05)),
+            Glow     = Color3.fromHSV(H, S * 0.6, 1),
+        }
+    end
 
-	for id, _ in assetFiles do
-		customAssets[tostring(id)] = ""
-	end
+    local function GenerateNeutralScale(base, isLight)
+        local H, S, V = base:ToHSV()
+        if isLight then
+            return {
+                N900 = Color3.fromHSV(H, S*0.1, 0.05),
+                N800 = Color3.fromHSV(H, S*0.1, 0.12),
+                N700 = Color3.fromHSV(H, S*0.1, 0.22),
+                N600 = Color3.fromHSV(H, S*0.1, 0.36),
+                N500 = Color3.fromHSV(H, S*0.1, 0.50),
+                N400 = Color3.fromHSV(H, S*0.1, 0.65),
+                N300 = Color3.fromHSV(H, S*0.1, 0.78),
+                N200 = Color3.fromHSV(H, S*0.1, 0.88),
+                N100 = Color3.fromHSV(H, S*0.1, 0.94),
+                N050 = Color3.fromHSV(H, S*0.1, 0.98),
+            }
+        else
+            return {
+                N900 = Color3.fromHSV(H, S*0.1, 0.98),
+                N800 = Color3.fromHSV(H, S*0.1, 0.90),
+                N700 = Color3.fromHSV(H, S*0.1, 0.78),
+                N600 = Color3.fromHSV(H, S*0.1, 0.60),
+                N500 = Color3.fromHSV(H, S*0.1, 0.45),
+                N400 = Color3.fromHSV(H, S*0.1, 0.30),
+                N300 = Color3.fromHSV(H, S*0.1, 0.22),
+                N200 = Color3.fromHSV(H, S*0.1, 0.15),
+                N100 = Color3.fromHSV(H, S*0.1, 0.10),
+                N050 = Color3.fromHSV(H, S*0.1, 0.06),
+            }
+        end
+    end
 
-	local hasCustomAsset = type(getcustomasset) == "function"
-	local hasFilesystem = type(writefile) == "function" and type(makefolder) == "function" and type(isfile) == "function" and type(isfolder) == "function"
+    local BuiltinThemes = {
+        Dark = {
+            IsLight  = false,
+            Accent   = Color3.fromRGB(108, 82, 246),   -- refined purple
+            Neutral  = Color3.fromRGB(14, 14, 18),      -- warm near-black
+            Success  = Color3.fromRGB(34, 197, 94),
+            Warning  = Color3.fromRGB(234, 179, 8),
+            Danger   = Color3.fromRGB(239, 68, 68),
+            Info     = Color3.fromRGB(59, 130, 246),
+        },
+        Midnight = {
+            IsLight  = false,
+            Accent   = Color3.fromRGB(0, 195, 240),     -- cyan
+            Neutral  = Color3.fromRGB(7, 8, 14),
+            Success  = Color3.fromRGB(20, 225, 105),
+            Warning  = Color3.fromRGB(255, 200, 30),
+            Danger   = Color3.fromRGB(255, 60, 70),
+            Info     = Color3.fromRGB(80, 160, 255),
+        },
+        Ember = {
+            IsLight  = false,
+            Accent   = Color3.fromRGB(248, 92, 36),     -- warm orange
+            Neutral  = Color3.fromRGB(13, 9, 7),
+            Success  = Color3.fromRGB(40, 210, 100),
+            Warning  = Color3.fromRGB(255, 200, 30),
+            Danger   = Color3.fromRGB(240, 50, 50),
+            Info     = Color3.fromRGB(80, 170, 255),
+        },
+        Jade = {
+            IsLight  = false,
+            Accent   = Color3.fromRGB(52, 211, 153),    -- emerald green
+            Neutral  = Color3.fromRGB(10, 14, 12),
+            Success  = Color3.fromRGB(52, 211, 153),
+            Warning  = Color3.fromRGB(251, 191, 36),
+            Danger   = Color3.fromRGB(248, 113, 113),
+            Info     = Color3.fromRGB(96, 165, 250),
+        },
+        Rose = {
+            IsLight  = false,
+            Accent   = Color3.fromRGB(244, 63, 94),     -- rose/pink
+            Neutral  = Color3.fromRGB(14, 10, 12),
+            Success  = Color3.fromRGB(52, 211, 153),
+            Warning  = Color3.fromRGB(251, 191, 36),
+            Danger   = Color3.fromRGB(248, 113, 113),
+            Info     = Color3.fromRGB(96, 165, 250),
+        },
+    }
 
-	if hasCustomAsset and hasFilesystem then
-		local ok, err = pcall(function()
-			ensureFolder(RayfieldFolder)
-			ensureFolder(AssetPath)
+    ThemeEngine.LerpColor     = LerpColor
+    ThemeEngine.BuiltinThemes = BuiltinThemes
 
-			local function nextMissing()
-				for id, _ in assetFiles do
-					if not isfile(AssetPath.."/"..tostring(id)..".png") then
-						return id
-					end
-				end
-				return nil
-			end
+    function ThemeEngine:Build(themeData)
+        local isLight = themeData.IsLight
+        local neutral = GenerateNeutralScale(themeData.Neutral, isLight)
+        local accent  = GenerateAccentVariants(themeData.Accent)
 
-			if nextMissing() then
-				task.spawn(function()
-					while true do
-						local id = nextMissing()
-						if not id then break end
-						writefile(AssetPath.."/"..tostring(id)..".png", requestFunc({Url = assetFiles[id], Method = "GET"}).Body)
-						task.wait()
-					end
-				end)
+        return {
+            IsLight          = isLight,
+            AccentColor      = accent.Base,
+            AccentHover      = accent.Hover,
+            AccentActive     = accent.Active,
+            AccentSubtle     = accent.Subtle,
+            AccentGlow       = accent.Glow,
 
-				while nextMissing() do
-					task.wait(0.1)
-				end
-			end
+            BackgroundColor  = neutral.N050,
+            SurfaceColor     = neutral.N100,
+            SurfaceAltColor  = neutral.N200,
+            BorderColor      = neutral.N300,
+            MutedColor       = neutral.N400,
 
-			for id, _ in assetFiles do
-				local success, asset = pcall(getcustomasset, AssetPath.."/"..tostring(id)..".png")
-				if success then
-					customAssets[tostring(id)] = asset
-				else
-					warn("Rayfield | Failed to load custom asset: "..tostring(id).." - "..tostring(asset))
-				end
-			end
-		end)
+            TextPrimary      = neutral.N900,
+            TextSecondary    = neutral.N700,
+            TextMuted        = neutral.N500,
+            TextDisabled     = neutral.N400,
 
-		if not ok then
-			warn("Rayfield | Failed to load custom assets: "..tostring(err))
-			secureNotify("asset_load_fail", "Rayfield", "Failed to load custom assets. UI images may not display correctly.")
-		end
-	else
-		secureNotify("no_getcustomasset", "Rayfield", "Your executor does not support getcustomasset. Some UI images may not render correctly.")
-	end
+            SuccessColor     = themeData.Success,
+            WarningColor     = themeData.Warning,
+            DangerColor      = themeData.Danger,
+            InfoColor        = themeData.Info,
 
+            ShadowColor      = Color3.new(0, 0, 0),
 
-	Rayfield.Main.Shadow.Image.Image = customAssets[tostring(5587865193)]
-	Rayfield.Main.Topbar.Hide.Image = customAssets[tostring(10137832201)]
-	Rayfield.Main.Topbar.ChangeSize.Image = customAssets[tostring(10137941941)]
-	Rayfield.Main.Topbar.Settings.Image = customAssets[tostring(80503127983237)]
-	Rayfield.Main.Topbar.Icon.Image = customAssets[tostring(78137979054938)]
-	Rayfield.Main.Topbar.Search.Image = customAssets["IconMagnifyingGlass2"]
-	Rayfield.Main.Topbar.Search.ImageRectOffset = Vector2.new(0, 0)
-	Rayfield.Main.Topbar.Search.ImageRectSize = Vector2.new(0, 0)
-	Rayfield.Main.Elements.Template.Toggle.Switch.Shadow.Image = customAssets[tostring(3602733521)]
-	Rayfield.Main.Elements.Template.Slider.Main.Shadow.Image = customAssets[tostring(3602733521)]
-	Rayfield.Main.Elements.Template.Dropdown.Toggle.Image = customAssets["IconChevronTopMedium"]
-	Rayfield.Main.Elements.Template.Dropdown.Toggle.ImageRectOffset = Vector2.new(0, 0)
-	Rayfield.Main.Elements.Template.Dropdown.Toggle.ImageRectSize = Vector2.new(0, 0)
-	Rayfield.Main.Elements.Template.Label.Icon.Image = customAssets[tostring(11745872910)]
-	Rayfield.Main.Elements.Template.ColorPicker.CPBackground.MainCP.Image = customAssets[tostring(11413591840)]
-	Rayfield.Main.Elements.Template.ColorPicker.CPBackground.MainCP.MainPoint.Image = customAssets[tostring(3259050989)]
-	Rayfield.Main.Elements.Template.ColorPicker.ColorSlider.SliderPoint.Image = customAssets[tostring(3259050989)]
-	Rayfield.Main.TabList.Template.Image.Image = customAssets[tostring(4483362458)]
-	Rayfield.Main.Search.Search.Image = customAssets[tostring(18458939117)]
-	Rayfield.Main.Search.Shadow.Image = customAssets[tostring(5587865193)]
-	Rayfield.Notifications.Template.Icon.Image = customAssets[tostring(77891951053543)]
-	Rayfield.Notifications.Template.Shadow.Image = customAssets[tostring(3523728077)]
-	Rayfield.Loading.Banner.Image = customAssets[tostring(111263549366178)]
+            Font             = Font.fromEnum(Enum.Font.Gotham),
+            FontBold         = Font.fromEnum(Enum.Font.Gotham),
 
-end -- custom asset block
+            -- Legacy aliases for drop-in compat
+            MainColor        = neutral.N100,
+            OutlineColor     = neutral.N300,
+            FontColor        = neutral.N900,
+            DarkColor        = Color3.new(0, 0, 0),
+            WhiteColor       = Color3.new(1, 1, 1),
+            RedColor         = themeData.Danger,
+            DestructiveColor = themeData.Danger,
+        }
+    end
 
-local minSize = Vector2.new(1024, 768)
-local useMobileSizing
+    -- Interpolate between two built theme tables for smooth transition
+    function ThemeEngine:Interpolate(from, to, t)
+        local result = {}
+        for k, v in pairs(to) do
+            if typeof(v) == "Color3" and typeof(from[k]) == "Color3" then
+                result[k] = LerpColor(from[k], v, t)
+            else
+                result[k] = (t >= 0.5) and v or from[k]
+            end
+        end
+        return result
+    end
 
-if Rayfield.AbsoluteSize.X < minSize.X and Rayfield.AbsoluteSize.Y < minSize.Y then
-	useMobileSizing = true
+    ThemeEngine.CurrentScheme = ThemeEngine:Build(BuiltinThemes.Dark)
+    ThemeEngine.ActiveThemeName = "Dark"
 end
 
-local useMobilePrompt = false
-if UserInputService.TouchEnabled then
-	useMobilePrompt = true
+-- ─── Spring Solver ─────────────────────────────────────────────────────────
+--[[
+    Semi-implicit Euler spring (also called symplectic Euler).
+    v_new = v + (-k*(x-t) - c*v) * dt
+    x_new = x + v_new * dt          ← uses updated velocity, not old
+    This is unconditionally stable for any dt and feels smooth at 60fps.
+    Supports interruption: new target preserves current velocity.
+]]
+local SpringSolver = {}
+do
+    -- Step one scalar channel; returns new_pos, new_vel
+    local function stepScalar(pos, vel, target, k, c, dt)
+        local a    = -k * (pos - target) - c * vel
+        local nvel = vel + a * dt
+        local npos = pos + nvel * dt   -- semi-implicit: use updated vel
+        return npos, nvel
+    end
+
+    function SpringSolver.New(stiffness, damping, initialValue)
+        local s = {
+            k    = stiffness or SPRING_STIFFNESS,
+            c    = damping   or SPRING_DAMPING,
+            pos  = initialValue,
+            tgt  = initialValue,
+            vx   = 0, vy = 0, vz = 0, vw = 0,
+            done = false,
+        }
+        return setmetatable(s, { __index = SpringSolver })
+    end
+
+    function SpringSolver:SetTarget(t)
+        self.tgt  = t
+        self.done = false
+    end
+
+    function SpringSolver:IsSettled()
+        local THRESH = 0.0015
+        local p, t = self.pos, self.tgt
+        local tp = typeof(p)
+        if tp == "number" then
+            return math.abs(p-t) < THRESH and math.abs(self.vx) < THRESH
+        elseif tp == "Color3" then
+            return math.abs(p.R-t.R)+math.abs(p.G-t.G)+math.abs(p.B-t.B) < THRESH
+        elseif tp == "UDim2" then
+            return math.abs(p.X.Offset-t.X.Offset) < THRESH
+               and math.abs(p.Y.Offset-t.Y.Offset) < THRESH
+               and math.abs(self.vx) < THRESH and math.abs(self.vy) < THRESH
+        end
+        return true
+    end
+
+    function SpringSolver:Step(dt)
+        if self.done then return self.pos end
+        local k, c = self.k, self.c
+        local tp = typeof(self.pos)
+
+        if tp == "number" then
+            local np, nv = stepScalar(self.pos, self.vx, self.tgt, k, c, dt)
+            self.pos = np;  self.vx = nv
+
+        elseif tp == "Color3" then
+            local r, vr = stepScalar(self.pos.R, self.vx, self.tgt.R, k, c, dt)
+            local g, vg = stepScalar(self.pos.G, self.vy, self.tgt.G, k, c, dt)
+            local b, vb = stepScalar(self.pos.B, self.vz, self.tgt.B, k, c, dt)
+            self.pos = Color3.new(math.clamp(r,0,1), math.clamp(g,0,1), math.clamp(b,0,1))
+            self.vx = vr;  self.vy = vg;  self.vz = vb
+
+        elseif tp == "UDim2" then
+            local p, t = self.pos, self.tgt
+            local xo, vx = stepScalar(p.X.Offset, self.vx, t.X.Offset, k, c, dt)
+            local yo, vy = stepScalar(p.Y.Offset, self.vy, t.Y.Offset, k, c, dt)
+            local xs, vxs = stepScalar(p.X.Scale,  self.vz, t.X.Scale,  k, c, dt)
+            local ys, vys = stepScalar(p.Y.Scale,  self.vw, t.Y.Scale,  k, c, dt)
+            self.pos = UDim2.new(xs, math.round(xo), ys, math.round(yo))
+            self.vx = vx;  self.vy = vy;  self.vz = vxs;  self.vw = vys
+        end
+
+        if self:IsSettled() then
+            self.pos  = self.tgt
+            self.done = true
+        end
+        return self.pos
+    end
+
+    -- Legacy compat shim (old code used .Position / .Target)
+    local mt = getmetatable(SpringSolver.New(200, 20, 0))
+    local orig = mt.__index
+    mt.__index = function(self, k)
+        if k == "Position" then return self.pos end
+        if k == "Target"   then return self.tgt end
+        if k == "_done"    then return self.done end
+        return orig[k]
+    end
+    mt.__newindex = function(self, k, v)
+        if k == "Position" then self.pos  = v
+        elseif k == "Target"   then self.tgt  = v
+        elseif k == "_done"    then self.done = v
+        else rawset(self, k, v) end
+    end
 end
 
+-- ─── Global Animation Engine ───────────────────────────────────────────────
+--[[
+    Single Heartbeat drives all springs and fixed-duration tweens.
+    No throttle, no adaptive-speed multiplier — both caused jitter.
+    dt is clamped to 1/30 max so a lag spike doesn't explode springs.
 
--- Object Variables
+    Performance notes:
+      • A single pcall wraps each animation's apply/onDone instead of two
+        separate pcalls per entry — halves call overhead in the hot path.
+      • Finished entries are removed in-place during iteration (Lua allows
+        setting the current key to nil mid `pairs` traversal) instead of
+        building a fresh `remove` table every frame.
+      • The perf-sample ring buffer uses a fixed-size array + cursor instead
+        of table.insert/table.remove(1), avoiding O(n) shifts every frame.
+]]
+local AnimEngine = {}
+do
+    local anims     = {}   -- id → entry
+    local counter   = 0
+    local lastFPS   = 60
+    local budgetMs  = 0
 
-local Main = Rayfield.Main
-local MPrompt = Rayfield:FindFirstChild('Prompt')
-local Topbar = Main.Topbar
-local Elements = Main.Elements
-local LoadingFrame = Main.LoadingFrame
-local TabList = Main.TabList
-local dragBar = Rayfield:FindFirstChild('Drag')
-local dragInteract = dragBar and dragBar.Interact or nil
-local dragBarCosmetic = dragBar and dragBar.Drag or nil
+    local SAMPLE_COUNT = 60
+    local samples   = table.create and table.create(SAMPLE_COUNT, 0) or {}
+    local sampleIdx = 0
+    local sampleLen = 0
+    for i = 1, SAMPLE_COUNT do samples[i] = 0 end
 
-local dragOffset = 255
-local dragOffsetMobile = 150
+    local function newId()
+        counter += 1
+        return counter
+    end
 
-Rayfield.DisplayOrder = 100
-LoadingFrame.Version.Text = Release
+    local function runEntry(id, a, dt)
+        local done
+        if a.spring then
+            local v = a.spring:Step(dt)
+            a.apply(v)
+            done = a.spring.done
+        else
+            a.elapsed = a.elapsed + dt
+            local prog  = a.elapsed / a.dur
+            if prog > 1 then prog = 1 end
+            local eased = a.ease and a.ease(prog) or prog
+            a.apply(eased)
+            done = prog >= 1
+        end
 
--- Thanks to Latte Softworks for the Lucide integration for Roblox
-local Icons = useStudio and require(script.Parent.icons) or loadWithTimeout('https://raw.githubusercontent.com/SiriusSoftwareLtd/Rayfield/refs/heads/main/icons.lua')
--- Variables
+        if done then
+            if a.onDone then a.onDone() end
+            anims[id] = nil
+        end
+    end
 
-local CFileName = nil
-local CEnabled = false
-local Minimised = false
-local Hidden = false
-local Debounce = false
-local searchOpen = false
-local Notifications = Rayfield.Notifications
-local keybindConnections = {} -- For storing keybind connections to disconnect when Rayfield is destroyed
+    RunService.Heartbeat:Connect(function(rawDt)
+        local dt = rawDt < 1/30 and rawDt or 1/30   -- clamp: never let a lag spike explode springs
+        lastFPS = (1/rawDt) * 0.1 + lastFPS * 0.9
 
-local SelectedTheme = RayfieldLibrary.Theme.Default
+        local t0 = tick()
 
-local function ChangeTheme(Theme)
-	if typeof(Theme) == 'string' then
-		SelectedTheme = RayfieldLibrary.Theme[Theme]
-	elseif typeof(Theme) == 'table' then
-		SelectedTheme = Theme
-	end
+        for id, a in pairs(anims) do
+            -- Single pcall boundary per entry: protects against bad apply/
+            -- onDone callbacks (e.g. a destroyed Instance) without paying
+            -- for two pcalls per animation per frame.
+            local ok, err = pcall(runEntry, id, a, dt)
+            if not ok then
+                anims[id] = nil -- drop broken animations instead of spamming errors every frame
+            end
+        end
 
-	-- Core window
-	Rayfield.Main.BackgroundColor3 = SelectedTheme.Background
-	Rayfield.Main.Topbar.BackgroundColor3 = SelectedTheme.Topbar
-	Rayfield.Main.Topbar.CornerRepair.BackgroundColor3 = SelectedTheme.Topbar
-	Rayfield.Main.Shadow.Image.ImageColor3 = SelectedTheme.Shadow
+        budgetMs = (tick() - t0) * 1000
 
-	-- Topbar buttons — use muted icon colour, not full TextColor
-	local topbarIconColor = SelectedTheme.TabTextColor or SelectedTheme.TextColor
-	Rayfield.Main.Topbar.ChangeSize.ImageColor3 = topbarIconColor
-	Rayfield.Main.Topbar.Hide.ImageColor3 = topbarIconColor
-	Rayfield.Main.Topbar.Search.ImageColor3 = topbarIconColor
-	if Topbar:FindFirstChild('Settings') then
-		Rayfield.Main.Topbar.Settings.ImageColor3 = topbarIconColor
-		Rayfield.Main.Topbar.Divider.BackgroundColor3 = SelectedTheme.ElementStroke
-	end
+        sampleIdx = (sampleIdx % SAMPLE_COUNT) + 1
+        samples[sampleIdx] = budgetMs
+        if sampleLen < SAMPLE_COUNT then sampleLen += 1 end
+    end)
 
-	-- Topbar UIStroke — subtle border
-	if Topbar:FindFirstChildWhichIsA('UIStroke') then
-		Topbar:FindFirstChildWhichIsA('UIStroke').Color = SelectedTheme.ElementStroke
-	end
+    -- Spring animation — returns a cancel function
 
-	-- Search bar — proper muted palette
-	Main.Search.BackgroundColor3 = SelectedTheme.ElementBackground
-	Main.Search.Shadow.ImageColor3 = SelectedTheme.Shadow
-	Main.Search.Search.ImageColor3 = SelectedTheme.PlaceholderColor or topbarIconColor
-	Main.Search.Input.PlaceholderColor3 = SelectedTheme.PlaceholderColor or topbarIconColor
-	Main.Search.Input.TextColor3 = SelectedTheme.TextColor
-	Main.Search.UIStroke.Color = SelectedTheme.ElementStroke
+    -- Each call creates a fresh spring from `from` targeting `to`.
+    -- Interruption is safe: just call again with the current value as `from`.
+    function AnimEngine.Spring(params)
+        local sp = SpringSolver.New(params.stiffness, params.damping, params.from)
+        sp:SetTarget(params.to)
+        local id = newId()
+        anims[id] = { spring = sp, apply = params.apply, onDone = params.onDone }
+        return function() anims[id] = nil end
+    end
 
-	-- Notice banner
-	if Main:FindFirstChild('Notice') then
-		Main.Notice.BackgroundColor3 = SelectedTheme.Background
-	end
+    -- Fixed-duration tween with easing
+    function AnimEngine.Tween(params)
+        local id = newId()
+        anims[id] = {
+            dur     = params.duration or 0.18,
+            ease    = params.easing,
+            apply   = params.apply,
+            onDone  = params.onDone,
+            elapsed = 0,
+        }
+        return function() anims[id] = nil end
+    end
 
-	-- All text labels/boxes in the main UI (skip notification templates)
-	for _, text in ipairs(Rayfield:GetDescendants()) do
-		if text.Parent.Parent ~= Notifications then
-			if text:IsA('TextLabel') or text:IsA('TextBox') then
-				text.TextColor3 = SelectedTheme.TextColor
-			end
-		end
-	end
+    function AnimEngine.GetFPS()     return lastFPS  end
+    function AnimEngine.GetBudget()  return budgetMs end
 
-	-- Topbar title stays as primary TextColor
-	if Topbar:FindFirstChild('Title') then
-		Topbar.Title.TextColor3 = SelectedTheme.TextColor
-	end
+    -- Number of currently-active spring/tween animations (for the debug overlay)
+    function AnimEngine.GetActiveCount()
+        local n = 0
+        for _ in pairs(anims) do n += 1 end
+        return n
+    end
 
-	-- Element rows
-	for _, TabPage in ipairs(Elements:GetChildren()) do
-		for _, Element in ipairs(TabPage:GetChildren()) do
-			if Element.ClassName == "Frame" and Element.Name ~= "Placeholder" and Element.Name ~= "SectionSpacing" and Element.Name ~= "Divider" and Element.Name ~= "SectionTitle" and Element.Name ~= "SearchTitle-fsefsefesfsefesfesfThanks" then
-				Element.BackgroundColor3 = SelectedTheme.ElementBackground
-				Element.UIStroke.Color = SelectedTheme.ElementStroke
-			end
-		end
-	end
+    -- Returns perf samples in chronological order (oldest first), reading
+    -- the fixed-size ring buffer used by the Heartbeat loop above.
+    function AnimEngine.GetPerfSamples()
+        if sampleLen < SAMPLE_COUNT then
+            local out = {}
+            for i = 1, sampleLen do out[i] = samples[i] end
+            return out
+        end
+        local out = {}
+        for i = 1, SAMPLE_COUNT do
+            local pos = ((sampleIdx + i - 1) % SAMPLE_COUNT) + 1
+            out[i] = samples[pos]
+        end
+        return out
+    end
 
-	-- dragBar cosmetic pill colour
-	if dragBarCosmetic then
-		dragBarCosmetic.BackgroundColor3 = SelectedTheme.TabTextColor or SelectedTheme.TextColor
-	end
+    -- Easing library
+    AnimEngine.Easing = {
+        Linear    = function(t) return t end,
+        EaseIn    = function(t) return t*t end,
+        EaseOut   = function(t) return 1-(1-t)^2 end,
+        EaseInOut = function(t) return t<.5 and 2*t*t or 1-2*(1-t)^2 end,
+        EaseOutBack = function(t)
+            local c1,c3 = 1.70158, 2.70158
+            return 1 + c3*(t-1)^3 + c1*(t-1)^2
+        end,
+        EaseOutBounce = function(t)
+            local n1,d1 = 7.5625, 2.75
+            if t < 1/d1 then return n1*t*t
+            elseif t < 2/d1 then t=t-1.5/d1;  return n1*t*t+0.75
+            elseif t < 2.5/d1 then t=t-2.25/d1; return n1*t*t+0.9375
+            else t=t-2.625/d1; return n1*t*t+0.984375 end
+        end,
+    }
 end
 
-local function getIcon(name : string): {id: number, imageRectSize: Vector2, imageRectOffset: Vector2}
-	if not Icons then
-		warn("Lucide Icons: Cannot use icons as icons library is not loaded")
-		return
-	end
-	name = string.match(string.lower(name), "^%s*(.*)%s*$") :: string
-	local sizedicons = Icons['48px']
-	local r = sizedicons[name]
-	if not r then
-		error("Lucide Icons: Failed to find icon by the name of \"" .. name .. "\"", 2)
-	end
+-- ─── Object Pooling ────────────────────────────────────────────────────────
+local ObjectPool = {}
+do
+    local pools = {}  -- { className → { freeList } }
 
-	local rirs = r[2]
-	local riro = r[3]
+    local function getPool(className)
+        if not pools[className] then
+            pools[className] = { free = {}, count = 0 }
+        end
+        return pools[className]
+    end
 
-	if type(r[1]) ~= "number" or type(rirs) ~= "table" or type(riro) ~= "table" then
-		error("Lucide Icons: Internal error: Invalid auto-generated asset entry")
-	end
+    function ObjectPool.Get(className, properties)
+        local pool = getPool(className)
+        local obj
+        if #pool.free > 0 then
+            obj = table.remove(pool.free)
+        else
+            obj = Instance.new(className)
+            pool.count += 1
+        end
+        if properties then
+            for k, v in pairs(properties) do
+                pcall(function() obj[k] = v end)
+            end
+        end
+        return obj
+    end
 
-	local irs = Vector2.new(rirs[1], rirs[2])
-	local iro = Vector2.new(riro[1], riro[2])
+    function ObjectPool.Release(instance)
+        if not instance or not instance.ClassName then return end
+        local pool = getPool(instance.ClassName)
+        if #pool.free >= POOL_MAX then
+            instance:Destroy()
+            return
+        end
+        -- Reset common properties
+        pcall(function()
+            instance.Parent = nil
+            if instance:IsA("GuiObject") then
+                instance.Visible = false
+            end
+        end)
+        table.insert(pool.free, instance)
+    end
 
-	local asset = {
-		id = r[1],
-		imageRectSize = irs,
-		imageRectOffset = iro,
-	}
-
-	return asset
-end
-local function getAssetUri(id: any): string
-	local assetUri = ""
-	if type(id) == "number" then
-		assetUri = "rbxassetid://" .. id
-	elseif type(id) == "string" and not Icons then
-		warn("Rayfield | Cannot use Lucide icons as icons library is not loaded")
-	else
-		warn("Rayfield | The icon argument must either be an icon ID (number) or a Lucide icon name (string)")
-	end
-	return assetUri
-end
-
-local function isCustomAsset(value)
-	return type(value) == "string" and (string.find(value, "rbxasset://") == 1 or string.find(value, "rbxthumb://") == 1)
-end
-
-local function resolveIcon(icon)
-	if not icon or icon == 0 then
-		return "", nil, nil
-	end
-
-	if isCustomAsset(icon) then
-		return icon, nil, nil
-	end
-
-	if secureMode then
-		secureNotify("icon_blocked", "Secure Mode", "Element icons using asset IDs or Lucide names are blocked. Use getcustomasset() for icons to stay undetected.")
-		return "", nil, nil
-	end
-
-	if typeof(icon) == "string" and Icons then
-		local asset = getIcon(icon)
-		return "rbxassetid://" .. asset.id, asset.imageRectOffset, asset.imageRectSize
-	else
-		return getAssetUri(icon), nil, nil
-	end
+    function ObjectPool.Stats()
+        local s = {}
+        for k, v in pairs(pools) do
+            s[k] = { free = #v.free, total = v.count }
+        end
+        return s
+    end
 end
 
-local function makeDraggable(object, dragObject, enableTaptic, tapticOffset)
-	local dragging = false
-	local relative = nil
+-- ─── Maid (Connection Manager) ─────────────────────────────────────────────
+--[[
+    Automatic cleanup of RBXScriptConnections, Instances, and functions.
+    Used everywhere to prevent memory leaks.
+]]
+local Maid = {}
+Maid.__index = Maid
 
-	local offset = Vector2.zero
-	local screenGui = object:FindFirstAncestorWhichIsA("ScreenGui")
-	if screenGui and screenGui.IgnoreGuiInset then
-		offset += getService('GuiService'):GetGuiInset()
-	end
-
-	local function connectFunctions()
-		if dragBar and enableTaptic then
-			dragBar.MouseEnter:Connect(function()
-				if not dragging and not Hidden then
-					TweenService:Create(dragBarCosmetic, TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {BackgroundTransparency = 0.5, Size = UDim2.new(0, 120, 0, 4)}):Play()
-				end
-			end)
-
-			dragBar.MouseLeave:Connect(function()
-				if not dragging and not Hidden then
-					TweenService:Create(dragBarCosmetic, TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {BackgroundTransparency = 0.7, Size = UDim2.new(0, 100, 0, 4)}):Play()
-				end
-			end)
-		end
-	end
-
-	connectFunctions()
-
-	dragObject.InputBegan:Connect(function(input, processed)
-		if processed then return end
-
-		local inputType = input.UserInputType.Name
-		if inputType == "MouseButton1" or inputType == "Touch" then
-			dragging = true
-
-			relative = object.AbsolutePosition + object.AbsoluteSize * object.AnchorPoint - UserInputService:GetMouseLocation()
-			if enableTaptic and not Hidden then
-				TweenService:Create(dragBarCosmetic, TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size = UDim2.new(0, 110, 0, 4), BackgroundTransparency = 0}):Play()
-			end
-		end
-	end)
-
-	local inputEnded = UserInputService.InputEnded:Connect(function(input)
-		if not dragging then return end
-
-		local inputType = input.UserInputType.Name
-		if inputType == "MouseButton1" or inputType == "Touch" then
-			dragging = false
-
-			if enableTaptic and not Hidden then
-				TweenService:Create(dragBarCosmetic, TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size = UDim2.new(0, 100, 0, 4), BackgroundTransparency = 0.7}):Play()
-			end
-		end
-	end)
-
-	local renderStepped = RunService.RenderStepped:Connect(function()
-		if dragging and not Hidden then
-			local position = UserInputService:GetMouseLocation() + relative + offset
-			if enableTaptic and tapticOffset then
-				TweenService:Create(object, TweenInfo.new(0.4, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {Position = UDim2.fromOffset(position.X, position.Y)}):Play()
-				TweenService:Create(dragObject.Parent, TweenInfo.new(0.05, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {Position = UDim2.fromOffset(position.X, position.Y + ((useMobileSizing and tapticOffset[2]) or tapticOffset[1]))}):Play()
-			else
-				if dragBar and tapticOffset then
-					dragBar.Position = UDim2.fromOffset(position.X, position.Y + ((useMobileSizing and tapticOffset[2]) or tapticOffset[1]))
-				end
-				object.Position = UDim2.fromOffset(position.X, position.Y)
-			end
-		end
-	end)
-
-	object.Destroying:Connect(function()
-		if inputEnded then inputEnded:Disconnect() end
-		if renderStepped then renderStepped:Disconnect() end
-	end)
+function Maid.New()
+    return setmetatable({ _tasks = {} }, Maid)
 end
 
-
-local function PackColor(Color)
-	return {R = Color.R * 255, G = Color.G * 255, B = Color.B * 255}
-end    
-
-local function UnpackColor(Color)
-	return Color3.fromRGB(Color.R, Color.G, Color.B)
+function Maid:Give(task)
+    if task then
+        table.insert(self._tasks, task)
+    end
+    return task
 end
 
-local function LoadConfiguration(Configuration)
-	local success, Data = pcall(function() return HttpService:JSONDecode(Configuration) end)
-	local changed
-
-	if not success then warn('Rayfield had an issue decoding the configuration file, please try delete the file and reopen Rayfield.') return end
-
-	-- Iterate through current UI elements' flags
-	for FlagName, Flag in pairs(RayfieldLibrary.Flags) do
-		local FlagValue = Data[FlagName]
-
-		if (typeof(FlagValue) == 'boolean' and FlagValue == false) or FlagValue then
-			task.spawn(function()
-				if Flag.Type == "ColorPicker" then
-					changed = true
-					Flag:Set(UnpackColor(FlagValue))
-				else
-					if (Flag.CurrentValue or Flag.CurrentKeybind or Flag.CurrentOption or Flag.Color) ~= FlagValue then 
-						changed = true
-						Flag:Set(FlagValue) 	
-					end
-				end
-			end)
-		else
-			warn("Rayfield | Unable to find '"..FlagName.. "' in the save file.")
-			print("The error above may not be an issue if new elements have been added or not been set values.")
-			--RayfieldLibrary:Notify({Title = "Rayfield Flags", Content = "Rayfield was unable to find '"..FlagName.. "' in the save file. Check sirius.menu/discord for help.", Image = 3944688398})
-		end
-	end
-
-	return changed
+function Maid:GiveMany(...)
+    for _, t in ipairs({...}) do self:Give(t) end
 end
 
-local function SaveConfiguration()
-	if not CEnabled or not globalLoaded then return end
-
-	if debugX then
-		print('Saving')
-	end
-
-	local Data = {}
-	for i, v in pairs(RayfieldLibrary.Flags) do
-		if v.Type == "ColorPicker" then
-			Data[i] = PackColor(v.Color)
-		else
-			if typeof(v.CurrentValue) == 'boolean' then
-				if v.CurrentValue == false then
-					Data[i] = false
-				else
-					Data[i] = v.CurrentValue or v.CurrentKeybind or v.CurrentOption or v.Color
-				end
-			else
-				Data[i] = v.CurrentValue or v.CurrentKeybind or v.CurrentOption or v.Color
-			end
-		end
-	end
-
-	if useStudio then
-		if script.Parent:FindFirstChild('configuration') then script.Parent.configuration:Destroy() end
-
-		local ScreenGui = Instance.new("ScreenGui")
-		ScreenGui.Parent = script.Parent
-		ScreenGui.Name = 'configuration'
-
-		local TextBox = Instance.new("TextBox")
-		TextBox.Parent = ScreenGui
-		TextBox.Size = UDim2.new(0, 800, 0, 50)
-		TextBox.AnchorPoint = Vector2.new(0.5, 0)
-		TextBox.Position = UDim2.new(0.5, 0, 0, 30)
-		TextBox.Text = HttpService:JSONEncode(Data)
-		TextBox.ClearTextOnFocus = false
-	end
-
-	if debugX then
-		warn(HttpService:JSONEncode(Data))
-	end
-
-
-	callSafely(writefile, ConfigurationFolder .. "/" .. CFileName .. ConfigurationExtension, tostring(HttpService:JSONEncode(Data)))
+-- Convenience: connect and auto-manage
+function Maid:Connect(signal, fn)
+    return self:Give(signal:Connect(fn))
 end
 
-function RayfieldLibrary:Notify(data) -- action e.g open messages
-	task.spawn(function()
-
-		-- Notification Object Creation
-		local newNotification = Notifications.Template:Clone()
-		newNotification.Name = data.Title or 'No Title Provided'
-		newNotification.Parent = Notifications
-		newNotification.LayoutOrder = #Notifications:GetChildren()
-		newNotification.Visible = false
-
-		-- Set Data
-		newNotification.Title.Text = data.Title or "Unknown Title"
-		newNotification.Description.Text = data.Content or "Unknown Content"
-
-		if data.Image then
-			local img, rectOffset, rectSize = resolveIcon(data.Image)
-			newNotification.Icon.Image = img
-			if rectOffset then newNotification.Icon.ImageRectOffset = rectOffset end
-			if rectSize then newNotification.Icon.ImageRectSize = rectSize end
-		else
-			newNotification.Icon.Image = ""
-		end
-
-		-- Set initial transparency values
-
-		newNotification.Title.TextColor3 = SelectedTheme.TextColor
-		newNotification.Description.TextColor3 = SelectedTheme.TextColor
-		newNotification.BackgroundColor3 = SelectedTheme.NotificationBackground or SelectedTheme.Background
-		newNotification.UIStroke.Color = SelectedTheme.ElementStroke
-		newNotification.Icon.ImageColor3 = SelectedTheme.SelectedTabTextColor or SelectedTheme.TextColor
-
-		newNotification.BackgroundTransparency = 1
-		newNotification.Title.TextTransparency = 1
-		newNotification.Description.TextTransparency = 1
-		newNotification.UIStroke.Transparency = 1
-		newNotification.Shadow.ImageTransparency = 1
-		newNotification.Size = UDim2.new(1, 0, 0, 800)
-		newNotification.Icon.ImageTransparency = 1
-		newNotification.Icon.BackgroundTransparency = 1
-
-		task.wait()
-
-		newNotification.Visible = true
-
-		if data.Actions then
-			warn('Rayfield | Not seeing your actions in notifications?')
-			print("Notification Actions are being sunset for now, keep up to date on when they're back in the discord. (sirius.menu/discord)")
-		end
-
-		-- Calculate textbounds and set initial values
-		local bounds = {newNotification.Title.TextBounds.Y, newNotification.Description.TextBounds.Y}
-		newNotification.Size = UDim2.new(1, -60, 0, -Notifications:FindFirstChild("UIListLayout").Padding.Offset)
-
-		newNotification.Icon.Size = UDim2.new(0, 32, 0, 32)
-		newNotification.Icon.Position = UDim2.new(0, 20, 0.5, 0)
-
-		TweenService:Create(newNotification, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Size = UDim2.new(1, 0, 0, math.max(bounds[1] + bounds[2] + 31, 60))}):Play()
-
-		task.wait(0.15)
-		TweenService:Create(newNotification, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0.45}):Play()
-		TweenService:Create(newNotification.Title, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()
-
-		task.wait(0.05)
-
-		TweenService:Create(newNotification.Icon, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {ImageTransparency = 0}):Play()
-
-		task.wait(0.05)
-		TweenService:Create(newNotification.Description, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {TextTransparency = 0.35}):Play()
-		TweenService:Create(newNotification.UIStroke, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {Transparency = 0.95}):Play()
-		TweenService:Create(newNotification.Shadow, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {ImageTransparency = 0.82}):Play()
-
-		local waitDuration = math.min(math.max((#newNotification.Description.Text * 0.1) + 2.5, 3), 10)
-		task.wait(data.Duration or waitDuration)
-
-		newNotification.Icon.Visible = false
-		TweenService:Create(newNotification, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {BackgroundTransparency = 1}):Play()
-		TweenService:Create(newNotification.UIStroke, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
-		TweenService:Create(newNotification.Shadow, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {ImageTransparency = 1}):Play()
-		TweenService:Create(newNotification.Title, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {TextTransparency = 1}):Play()
-		TweenService:Create(newNotification.Description, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {TextTransparency = 1}):Play()
-
-		TweenService:Create(newNotification, TweenInfo.new(1, Enum.EasingStyle.Exponential), {Size = UDim2.new(1, -90, 0, 0)}):Play()
-
-		task.wait(1)
-
-		TweenService:Create(newNotification, TweenInfo.new(1, Enum.EasingStyle.Exponential), {Size = UDim2.new(1, -90, 0, -Notifications:FindFirstChild("UIListLayout").Padding.Offset)}):Play()
-
-		newNotification.Visible = false
-		newNotification:Destroy()
-	end)
+function Maid:Once(signal, fn)
+    return self:Give(signal:Once(fn))
 end
 
-local function openSearch()
-	searchOpen = true
-
-	Main.Search.BackgroundTransparency = 1
-	Main.Search.Shadow.ImageTransparency = 1
-	Main.Search.Input.TextTransparency = 1
-	Main.Search.Search.ImageTransparency = 1
-	Main.Search.UIStroke.Transparency = 1
-	Main.Search.Size = UDim2.new(1, 0, 0, 80)
-	Main.Search.Position = UDim2.new(0.5, 0, 0, 70)
-
-	Main.Search.Input.Interactable = true
-
-	Main.Search.Visible = true
-
-	for _, tabbtn in ipairs(TabList:GetChildren()) do
-		if tabbtn.ClassName == "Frame" and tabbtn.Name ~= "Placeholder" then
-			tabbtn.Interact.Visible = false
-			TweenService:Create(tabbtn, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {BackgroundTransparency = 1}):Play()
-			TweenService:Create(tabbtn.Title, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {TextTransparency = 1}):Play()
-			TweenService:Create(tabbtn.Image, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {ImageTransparency = 1}):Play()
-			TweenService:Create(tabbtn.UIStroke, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
-		end
-	end
-
-	Main.Search.Input:CaptureFocus()
-	TweenService:Create(Main.Search.Shadow, TweenInfo.new(0.05, Enum.EasingStyle.Quint), {ImageTransparency = 0.95}):Play()
-	TweenService:Create(Main.Search, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {Position = UDim2.new(0.5, 0, 0, 57), BackgroundTransparency = 0.9}):Play()
-	TweenService:Create(Main.Search.UIStroke, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {Transparency = 0.8}):Play()
-	TweenService:Create(Main.Search.Input, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {TextTransparency = 0.2}):Play()
-	TweenService:Create(Main.Search.Search, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {ImageTransparency = 0.5}):Play()
-	TweenService:Create(Main.Search, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = UDim2.new(1, -35, 0, 35)}):Play()
+function Maid:Clean()
+    for i = #self._tasks, 1, -1 do
+        local task = table.remove(self._tasks, i)
+        if typeof(task) == "RBXScriptConnection" then
+            if task.Connected then task:Disconnect() end
+        elseif typeof(task) == "Instance" then
+            task:Destroy()
+        elseif typeof(task) == "function" then
+            pcall(task)
+        elseif typeof(task) == "table" and task.Clean then
+            task:Clean()
+        end
+    end
 end
 
-local function closeSearch()
-	searchOpen = false
-
-	TweenService:Create(Main.Search, TweenInfo.new(0.35, Enum.EasingStyle.Quint), {BackgroundTransparency = 1, Size = UDim2.new(1, -55, 0, 30)}):Play()
-	TweenService:Create(Main.Search.Search, TweenInfo.new(0.15, Enum.EasingStyle.Quint), {ImageTransparency = 1}):Play()
-	TweenService:Create(Main.Search.Shadow, TweenInfo.new(0.15, Enum.EasingStyle.Quint), {ImageTransparency = 1}):Play()
-	TweenService:Create(Main.Search.UIStroke, TweenInfo.new(0.15, Enum.EasingStyle.Quint), {Transparency = 1}):Play()
-	TweenService:Create(Main.Search.Input, TweenInfo.new(0.15, Enum.EasingStyle.Quint), {TextTransparency = 1}):Play()
-
-	for _, tabbtn in ipairs(TabList:GetChildren()) do
-		if tabbtn.ClassName == "Frame" and tabbtn.Name ~= "Placeholder" then
-			tabbtn.Interact.Visible = true
-			if tostring(Elements.UIPageLayout.CurrentPage) == tabbtn.Title.Text then
-				TweenService:Create(tabbtn, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
-				TweenService:Create(tabbtn.Image, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {ImageTransparency = 0}):Play()
-				TweenService:Create(tabbtn.Title, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()
-				TweenService:Create(tabbtn.UIStroke, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
-			else
-				TweenService:Create(tabbtn, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0.7}):Play()
-				TweenService:Create(tabbtn.Image, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {ImageTransparency = 0.2}):Play()
-				TweenService:Create(tabbtn.Title, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {TextTransparency = 0.2}):Play()
-				TweenService:Create(tabbtn.UIStroke, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {Transparency = 0.5}):Play()
-			end
-		end
-	end
-
-	Main.Search.Input.Text = ''
-	Main.Search.Input.Interactable = false
+function Maid:Destroy()
+    self:Clean()
 end
 
--- Sets element visibility across all tab pages (used by Hide, Unhide, Maximise, Minimise)
-local function setElementsVisible(show)
-	for _, tab in ipairs(Elements:GetChildren()) do
-		if tab.Name ~= "Template" and tab.ClassName == "ScrollingFrame" and tab.Name ~= "Placeholder" then
-			for _, element in ipairs(tab:GetChildren()) do
-				if element.ClassName == "Frame" then
-					if element.Name ~= "SectionSpacing" and element.Name ~= "Placeholder" then
-						if element.Name == "SectionTitle" or element.Name == 'SearchTitle-fsefsefesfsefesfesfThanks' then
-							TweenService:Create(element.Title, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {TextTransparency = show and 0 or 1}):Play()
-						elseif element.Name == 'Divider' then
-							TweenService:Create(element.Divider, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {BackgroundTransparency = show and 0.85 or 1}):Play()
-						else
-							local bgTarget = element:GetAttribute("BackgroundTransparencyTarget") or 0
-							local strokeTarget = element:GetAttribute("UIStrokeTransparencyTarget") or 0
-							local titleTarget = element:GetAttribute("TitleTextTransparencyTarget") or 0
-							TweenService:Create(element, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {BackgroundTransparency = show and bgTarget or 1}):Play()
-							TweenService:Create(element.UIStroke, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {Transparency = show and strokeTarget or 1}):Play()
-							TweenService:Create(element.Title, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {TextTransparency = show and titleTarget or 1}):Play()
-						end
-						for _, child in ipairs(element:GetChildren()) do
-							if child.ClassName == "Frame" or child.ClassName == "TextLabel" or child.ClassName == "TextBox" or child.ClassName == "ImageButton" or child.ClassName == "ImageLabel" then
-								child.Visible = show
-							end
-						end
-					end
-				end
-			end
-		end
-	end
+-- ─── Reactive State Management ─────────────────────────────────────────────
+--[[
+    Signal  – a typed event emitter
+    State   – a reactive value that notifies observers on change
+    Computed– a derived value that recomputes when dependencies change
+    Effect  – a side-effect that re-runs when dependencies change
+]]
+local Reactive = {}
+do
+    -- Signal
+    local Signal = {}
+    Signal.__index = Signal
+
+    function Signal.New()
+        return setmetatable({ _listeners = {} }, Signal)
+    end
+
+    function Signal:Fire(...)
+        for _, fn in ipairs(self._listeners) do
+            pcall(fn, ...)
+        end
+    end
+
+    function Signal:Connect(fn)
+        table.insert(self._listeners, fn)
+        local idx = #self._listeners
+        return {
+            Disconnect = function()
+                table.remove(self._listeners, idx)
+            end,
+            Connected = true,
+        }
+    end
+
+    function Signal:Once(fn)
+        local conn
+        conn = self:Connect(function(...)
+            conn:Disconnect()
+            fn(...)
+        end)
+        return conn
+    end
+
+    function Signal:Wait()
+        local thread = coroutine.running()
+        local conn
+        conn = self:Connect(function(...)
+            conn:Disconnect()
+            task.spawn(thread, ...)
+        end)
+        return coroutine.yield()
+    end
+
+    -- State
+    local State = {}
+    State.__index = State
+
+    function State.New(initialValue, validator)
+        local s = setmetatable({
+            _value    = initialValue,
+            _changed  = Signal.New(),
+            _validator= validator,
+        }, State)
+        return s
+    end
+
+    function State:Get()
+        return self._value
+    end
+
+    function State:Set(newValue)
+        if self._validator then
+            local ok, err = self._validator(newValue)
+            if not ok then
+                warn("State validation failed:", err)
+                return false
+            end
+        end
+        if newValue == self._value then return true end
+        local old = self._value
+        self._value = newValue
+        self._changed:Fire(newValue, old)
+        return true
+    end
+
+    function State:OnChanged(fn)
+        return self._changed:Connect(fn)
+    end
+
+    -- Computed
+    local function Computed(dependencies, compute)
+        local s = State.New(compute())
+        for _, dep in ipairs(dependencies) do
+            dep:OnChanged(function()
+                s:Set(compute())
+            end)
+        end
+        return s
+    end
+
+    -- Effect
+    local function Effect(dependencies, fn)
+        fn()  -- run immediately
+        local conns = {}
+        for _, dep in ipairs(dependencies) do
+            table.insert(conns, dep:OnChanged(fn))
+        end
+        return {
+            Destroy = function()
+                for _, c in ipairs(conns) do c:Disconnect() end
+            end
+        }
+    end
+
+    Reactive.Signal   = Signal
+    Reactive.State    = State
+    Reactive.Computed = Computed
+    Reactive.Effect   = Effect
 end
 
--- Sets tab button visibility (used by Hide, Unhide, Maximise, Minimise)
-local function setTabButtonsVisible(show)
-	for _, tabbtn in ipairs(TabList:GetChildren()) do
-		if tabbtn.ClassName == "Frame" and tabbtn.Name ~= "Placeholder" then
-			if show then
-				if tostring(Elements.UIPageLayout.CurrentPage) == tabbtn.Title.Text then
-					TweenService:Create(tabbtn, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
-					TweenService:Create(tabbtn.Image, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {ImageTransparency = 0}):Play()
-					TweenService:Create(tabbtn.Title, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()
-					TweenService:Create(tabbtn.UIStroke, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
-				else
-					TweenService:Create(tabbtn, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0.7}):Play()
-					TweenService:Create(tabbtn.Image, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {ImageTransparency = 0.2}):Play()
-					TweenService:Create(tabbtn.Title, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {TextTransparency = 0.2}):Play()
-					TweenService:Create(tabbtn.UIStroke, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {Transparency = 0.5}):Play()
-				end
-			else
-				TweenService:Create(tabbtn, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {BackgroundTransparency = 1}):Play()
-				TweenService:Create(tabbtn.Title, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {TextTransparency = 1}):Play()
-				TweenService:Create(tabbtn.Image, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {ImageTransparency = 1}):Play()
-				TweenService:Create(tabbtn.UIStroke, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
-			end
-		end
-	end
+-- ─── Event Bus ─────────────────────────────────────────────────────────────
+--[[
+    Global pub/sub: decouple components completely.
+    Any component can emit or subscribe without holding references.
+]]
+local EventBus = {}
+do
+    local channels = {}
+
+    function EventBus:Emit(channel, ...)
+        if not channels[channel] then return end
+        for _, fn in ipairs(channels[channel]) do
+            pcall(fn, ...)
+        end
+    end
+
+    function EventBus:On(channel, fn)
+        if not channels[channel] then
+            channels[channel] = {}
+        end
+        table.insert(channels[channel], fn)
+        local idx = #channels[channel]
+        return {
+            Disconnect = function()
+                table.remove(channels[channel], idx)
+            end
+        }
+    end
+
+    function EventBus:Once(channel, fn)
+        local conn
+        conn = self:On(channel, function(...)
+            conn:Disconnect()
+            fn(...)
+        end)
+        return conn
+    end
 end
 
-local function Hide(notify: boolean?)
-	if MPrompt then
-		MPrompt.Title.TextColor3 = Color3.fromRGB(255, 255, 255)
-		MPrompt.Position = UDim2.new(0.5, 0, 0, -50)
-		MPrompt.Size = UDim2.new(0, 40, 0, 10)
-		MPrompt.BackgroundTransparency = 1
-		MPrompt.Title.TextTransparency = 1
-		MPrompt.Visible = true
-	end
+-- ─── Z-Index Manager ───────────────────────────────────────────────────────
+--[[
+    Assign logical layers instead of raw ZIndex values.
+    Prevents stacking order conflicts globally.
+]]
+local ZManager = {}
+do
+    local layerBase = {
+        base     = 1,
+        content  = 5,
+        float    = 10,
+        dropdown = 50,
+        tooltip  = 80,
+        modal    = 100,
+        toast    = 200,
+        cursor   = 500,
+        debug    = 999,
+    }
 
-	task.spawn(closeSearch)
+    function ZManager.Get(layer)
+        return layerBase[layer] or 1
+    end
 
-	Debounce = true
-	if notify then
-		if useMobilePrompt then 
-			RayfieldLibrary:Notify({Title = "Interface Hidden", Content = "The interface has been hidden, you can unhide the interface by tapping 'Show'.", Duration = 7, Image = 4400697855})
-		else
-			RayfieldLibrary:Notify({Title = "Interface Hidden", Content = "The interface has been hidden, you can unhide the interface by tapping " .. tostring(getSetting("General", "rayfieldOpen")) .. ".", Duration = 7, Image = 4400697855})
-		end
-	end
+    function ZManager.Apply(instance, layer, offset)
+        local z = ZManager.Get(layer) + (offset or 0)
+        pcall(function() instance.ZIndex = z end)
+        return z
+    end
 
-	TweenService:Create(Main, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = UDim2.new(0, 470, 0, 0)}):Play()
-	TweenService:Create(Main.Topbar, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = UDim2.new(0, 470, 0, 45)}):Play()
-	TweenService:Create(Main, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {BackgroundTransparency = 1}):Play()
-	TweenService:Create(Main.Topbar, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {BackgroundTransparency = 1}):Play()
-	TweenService:Create(Main.Topbar.Divider, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {BackgroundTransparency = 1}):Play()
-	TweenService:Create(Main.Topbar.CornerRepair, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {BackgroundTransparency = 1}):Play()
-	TweenService:Create(Main.Topbar.Title, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {TextTransparency = 1}):Play()
-	TweenService:Create(Main.Shadow.Image, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {ImageTransparency = 1}):Play()
-	TweenService:Create(Topbar.UIStroke, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
-	if dragBarCosmetic then
-		TweenService:Create(dragBarCosmetic, TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {BackgroundTransparency = 1}):Play()
-	end
-
-	if useMobilePrompt and MPrompt then
-		TweenService:Create(MPrompt, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = UDim2.new(0, 120, 0, 30), Position = UDim2.new(0.5, 0, 0, 20), BackgroundTransparency = 0.3}):Play()
-		TweenService:Create(MPrompt.Title, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {TextTransparency = 0.3}):Play()
-	end
-
-	for _, TopbarButton in ipairs(Topbar:GetChildren()) do
-		if TopbarButton.ClassName == "ImageButton" then
-			TweenService:Create(TopbarButton, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {ImageTransparency = 1}):Play()
-		end
-	end
-
-	setTabButtonsVisible(false)
-
-	if dragInteract then dragInteract.Visible = false end
-
-	setElementsVisible(false)
-
-	task.wait(0.5)
-	Main.Visible = false
-	Debounce = false
+    function ZManager.ApplyTree(root, layer, offset)
+        local z = ZManager.Get(layer) + (offset or 0)
+        pcall(function()
+            for _, desc in ipairs(root:GetDescendants()) do
+                if desc:IsA("GuiObject") then
+                    desc.ZIndex = z
+                end
+            end
+            root.ZIndex = z
+        end)
+    end
 end
 
-local function Maximise()
-	Debounce = true
-	Topbar.ChangeSize.Image = customAssets[tostring(10137941941)]
+-- ─── Focus Manager ─────────────────────────────────────────────────────────
+--[[
+    Proper keyboard navigation between focusable elements.
+    Tab to move forward, Shift+Tab to move backward.
+    Escape to close/dismiss.
+]]
+local FocusManager = {}
+do
+    local focusables = {}  -- ordered list of { element, onFocus, onBlur }
+    local currentIdx = 0
+    local maid = Maid.New()
 
-	TweenService:Create(Topbar.UIStroke, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
-	TweenService:Create(Main.Shadow.Image, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {ImageTransparency = 0.6}):Play()
-	TweenService:Create(Topbar.CornerRepair, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
-	TweenService:Create(Topbar.Divider, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
-	TweenService:Create(dragBarCosmetic, TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {BackgroundTransparency = 0.7}):Play()
-	TweenService:Create(Main, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = useMobileSizing and UDim2.new(0, 500, 0, 275) or UDim2.new(0, 500, 0, 475)}):Play()
-	TweenService:Create(Topbar, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = UDim2.new(0, 500, 0, 45)}):Play()
-	TabList.Visible = true
-	task.wait(0.2)
+    function FocusManager.Register(element, onFocus, onBlur, priority)
+        table.insert(focusables, {
+            element   = element,
+            onFocus   = onFocus,
+            onBlur    = onBlur,
+            priority  = priority or 0,
+        })
+        table.sort(focusables, function(a, b) return a.priority < b.priority end)
+    end
 
-	Elements.Visible = true
+    function FocusManager.Unregister(element)
+        for i, f in ipairs(focusables) do
+            if f.element == element then
+                table.remove(focusables, i)
+                return
+            end
+        end
+    end
 
-	setElementsVisible(true)
+    function FocusManager.Focus(element)
+        for i, f in ipairs(focusables) do
+            if f.element == element then
+                if currentIdx ~= 0 and focusables[currentIdx] then
+                    pcall(focusables[currentIdx].onBlur)
+                end
+                currentIdx = i
+                pcall(f.onFocus)
+                return
+            end
+        end
+    end
 
-	task.wait(0.1)
+    function FocusManager.Next()
+        if #focusables == 0 then return end
+        if currentIdx > 0 and focusables[currentIdx] then
+            pcall(focusables[currentIdx].onBlur)
+        end
+        currentIdx = (currentIdx % #focusables) + 1
+        pcall(focusables[currentIdx].onFocus)
+    end
 
-	setTabButtonsVisible(true)
+    function FocusManager.Prev()
+        if #focusables == 0 then return end
+        if currentIdx > 0 and focusables[currentIdx] then
+            pcall(focusables[currentIdx].onBlur)
+        end
+        currentIdx = ((currentIdx - 2 + #focusables) % #focusables) + 1
+        pcall(focusables[currentIdx].onFocus)
+    end
 
-	task.wait(0.5)
-	Debounce = false
+    function FocusManager.Clear()
+        if currentIdx > 0 and focusables[currentIdx] then
+            pcall(focusables[currentIdx].onBlur)
+        end
+        currentIdx = 0
+    end
+
+    -- Handle Tab / Shift+Tab
+    maid:Connect(UserInputService.InputBegan, function(input, gpe)
+        if gpe then return end
+        if input.KeyCode == Enum.KeyCode.Tab then
+            if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
+              or UserInputService:IsKeyDown(Enum.KeyCode.RightShift) then
+                FocusManager.Prev()
+            else
+                FocusManager.Next()
+            end
+        end
+    end)
 end
 
+-- ─── Interaction Manager ───────────────────────────────────────────────────
+--[[
+    Prevents multiple popups, dropdowns, context menus from fighting.
+    Only one "exclusive" layer is active at a time.
+]]
+local InteractionManager = {}
+do
+    local stack = {}  -- stack of { id, dismiss }
 
-local function Unhide()
-	Debounce = true
-	Main.Position = UDim2.new(0.5, 0, 0.5, 0)
-	Main.Visible = true
-	TweenService:Create(Main, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = useMobileSizing and UDim2.new(0, 500, 0, 275) or UDim2.new(0, 500, 0, 475)}):Play()
-	TweenService:Create(Main.Topbar, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = UDim2.new(0, 500, 0, 45)}):Play()
-	TweenService:Create(Main.Shadow.Image, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {ImageTransparency = 0.6}):Play()
-	TweenService:Create(Main, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
-	TweenService:Create(Main.Topbar, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
-	TweenService:Create(Main.Topbar.Divider, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
-	TweenService:Create(Main.Topbar.CornerRepair, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
-	TweenService:Create(Main.Topbar.Title, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()
+    function InteractionManager.Push(id, dismissFn)
+        -- dismiss current top if same type
+        if #stack > 0 and stack[#stack].id == id then
+            InteractionManager.Pop()
+        end
+        table.insert(stack, { id = id, dismiss = dismissFn })
+    end
 
-	if MPrompt then
-		TweenService:Create(MPrompt, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = UDim2.new(0, 40, 0, 10), Position = UDim2.new(0.5, 0, 0, -50), BackgroundTransparency = 1}):Play()
-		TweenService:Create(MPrompt.Title, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {TextTransparency = 1}):Play()
+    function InteractionManager.Pop()
+        if #stack > 0 then
+            local entry = table.remove(stack)
+            if entry.dismiss then pcall(entry.dismiss) end
+        end
+    end
 
-		task.spawn(function()
-			task.wait(0.5)
-			MPrompt.Visible = false
-		end)
-	end
+    function InteractionManager.DismissAll()
+        while #stack > 0 do
+            InteractionManager.Pop()
+        end
+    end
 
-	if Minimised then
-		task.spawn(Maximise)
-	end
-
-	dragBar.Position = useMobileSizing and UDim2.new(0.5, 0, 0.5, dragOffsetMobile) or UDim2.new(0.5, 0, 0.5, dragOffset)
-
-	dragInteract.Visible = true
-
-	for _, TopbarButton in ipairs(Topbar:GetChildren()) do
-		if TopbarButton.ClassName == "ImageButton" then
-			if TopbarButton.Name == 'Icon' then
-				TweenService:Create(TopbarButton, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {ImageTransparency = 0}):Play()
-			else
-				TweenService:Create(TopbarButton, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {ImageTransparency = 0.8}):Play()
-			end
-
-		end
-	end
-
-	setTabButtonsVisible(true)
-
-	setElementsVisible(true)
-
-	TweenService:Create(dragBarCosmetic, TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {BackgroundTransparency = 0.5}):Play()
-
-	task.wait(0.5)
-	Minimised = false
-	Debounce = false
+    function InteractionManager.Current()
+        return stack[#stack]
+    end
 end
 
-local function Minimise()
-	Debounce = true
-	Topbar.ChangeSize.Image = customAssets[tostring(11036884234)]
+-- ─── Async Task Manager ────────────────────────────────────────────────────
+--[[
+    Lightweight Promise-like system for async operations.
+    Wraps coroutines with resolve/reject/finally semantics.
+]]
+local AsyncTask = {}
+do
+    local TaskStatus = { Pending = "Pending", Fulfilled = "Fulfilled", Rejected = "Rejected" }
 
-	Topbar.UIStroke.Color = SelectedTheme.ElementStroke
+    local Promise = {}
+    Promise.__index = Promise
 
-	task.spawn(closeSearch)
+    function Promise.New(executor)
+        local self = setmetatable({
+            _status  = TaskStatus.Pending,
+            _value   = nil,
+            _reason  = nil,
+            _onFulfill = {},
+            _onReject  = {},
+        }, Promise)
 
-	setTabButtonsVisible(false)
+        task.spawn(function()
+            local ok, result = pcall(function()
+                executor(
+                    function(v) self:_resolve(v) end,
+                    function(r) self:_reject(r)  end
+                )
+            end)
+            if not ok then self:_reject(result) end
+        end)
 
-	setElementsVisible(false)
+        return self
+    end
 
-	TweenService:Create(dragBarCosmetic, TweenInfo.new(0.25, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {BackgroundTransparency = 1}):Play()
-	TweenService:Create(Topbar.UIStroke, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Transparency = 0}):Play()
-	TweenService:Create(Main.Shadow.Image, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {ImageTransparency = 1}):Play()
-	TweenService:Create(Topbar.CornerRepair, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {BackgroundTransparency = 1}):Play()
-	TweenService:Create(Topbar.Divider, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {BackgroundTransparency = 1}):Play()
-	TweenService:Create(Main, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = UDim2.new(0, 495, 0, 45)}):Play()
-	TweenService:Create(Topbar, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = UDim2.new(0, 495, 0, 45)}):Play()
+    function Promise:_resolve(value)
+        if self._status ~= TaskStatus.Pending then return end
+        self._status = TaskStatus.Fulfilled
+        self._value  = value
+        for _, fn in ipairs(self._onFulfill) do pcall(fn, value) end
+    end
 
-	task.wait(0.3)
+    function Promise:_reject(reason)
+        if self._status ~= TaskStatus.Pending then return end
+        self._status = TaskStatus.Rejected
+        self._reason = reason
+        for _, fn in ipairs(self._onReject) do pcall(fn, reason) end
+    end
 
-	Elements.Visible = false
-	TabList.Visible = false
+    function Promise:Then(onFulfill, onReject)
+        if self._status == TaskStatus.Fulfilled then
+            if onFulfill then pcall(onFulfill, self._value) end
+        elseif self._status == TaskStatus.Rejected then
+            if onReject then pcall(onReject, self._reason) end
+        else
+            if onFulfill then table.insert(self._onFulfill, onFulfill) end
+            if onReject  then table.insert(self._onReject,  onReject)  end
+        end
+        return self
+    end
 
-	task.wait(0.2)
-	Debounce = false
+    function Promise:Catch(fn)
+        return self:Then(nil, fn)
+    end
+
+    function Promise:Finally(fn)
+        self:Then(fn, fn)
+        return self
+    end
+
+    -- Await a promise (yields coroutine)
+    function Promise:Await()
+        if self._status == TaskStatus.Fulfilled then return true, self._value end
+        if self._status == TaskStatus.Rejected  then return false, self._reason end
+        local thread = coroutine.running()
+        self:Then(
+            function(v) task.spawn(thread, true,  v) end,
+            function(r) task.spawn(thread, false, r) end
+        )
+        return coroutine.yield()
+    end
+
+    AsyncTask.Promise = Promise
+    AsyncTask.Status  = TaskStatus
+
+    function AsyncTask.Delay(t)
+        return Promise.New(function(resolve)
+            task.delay(t, resolve)
+        end)
+    end
+
+    function AsyncTask.All(promises)
+        return Promise.New(function(resolve, reject)
+            local results = {}
+            local count   = #promises
+            if count == 0 then resolve(results); return end
+            for i, p in ipairs(promises) do
+                p:Then(function(v)
+                    results[i] = v
+                    count -= 1
+                    if count == 0 then resolve(results) end
+                end, reject)
+            end
+        end)
+    end
 end
 
-local function saveSettings() -- Save settings to config file
-	local encoded
-	local success, err = pcall(function()
-		encoded = HttpService:JSONEncode(settingsTable)
-	end)
+-- ─── Undo / Redo Manager ───────────────────────────────────────────────────
+local UndoManager = {}
+do
+    local stacks   = {}  -- per-context stacks
+    local MAX_HIST = 50
 
-	if success then
-		if useStudio then
-			if script.Parent['get.val'] then
-				script.Parent['get.val'].Value = encoded
-			end
-		end
-		callSafely(writefile, RayfieldFolder..'/settings'..ConfigurationExtension, encoded)
-	end
+    function UndoManager.GetStack(ctx)
+        if not stacks[ctx] then
+            stacks[ctx] = { past = {}, future = {} }
+        end
+        return stacks[ctx]
+    end
+
+    function UndoManager.Push(ctx, undoFn, redoFn, description)
+        local s = UndoManager.GetStack(ctx)
+        if #s.past >= MAX_HIST then
+            table.remove(s.past, 1)
+        end
+        table.insert(s.past, { undo = undoFn, redo = redoFn, desc = description })
+        s.future = {}  -- clear redo stack on new action
+    end
+
+    function UndoManager.Undo(ctx)
+        local s = UndoManager.GetStack(ctx)
+        if #s.past == 0 then return false end
+        local entry = table.remove(s.past)
+        pcall(entry.undo)
+        table.insert(s.future, entry)
+        EventBus:Emit("undo", ctx, entry.desc)
+        return true
+    end
+
+    function UndoManager.Redo(ctx)
+        local s = UndoManager.GetStack(ctx)
+        if #s.future == 0 then return false end
+        local entry = table.remove(s.future)
+        pcall(entry.redo)
+        table.insert(s.past, entry)
+        EventBus:Emit("redo", ctx, entry.desc)
+        return true
+    end
+
+    function UndoManager.CanUndo(ctx)
+        return #UndoManager.GetStack(ctx).past > 0
+    end
+
+    function UndoManager.CanRedo(ctx)
+        return #UndoManager.GetStack(ctx).future > 0
+    end
 end
 
-local function updateSetting(category: string, setting: string, value: any)
-	if not settingsInitialized then
-		return
-	end
-	settingsTable[category][setting].Value = value
-	overriddenSettings[category .. "." .. setting] = nil -- If user changes an overriden setting, remove the override
-	saveSettings()
+-- ─── Navigation History ────────────────────────────────────────────────────
+local NavHistory = {}
+do
+    local history  = {}
+    local current  = 0
+    local MAX_NAV  = 20
+
+    function NavHistory.Push(entry)
+        -- discard forward history
+        while #history > current do
+            table.remove(history)
+        end
+        if #history >= MAX_NAV then
+            table.remove(history, 1)
+        end
+        table.insert(history, entry)
+        current = #history
+    end
+
+    function NavHistory.Back()
+        if current <= 1 then return nil end
+        current -= 1
+        return history[current]
+    end
+
+    function NavHistory.Forward()
+        if current >= #history then return nil end
+        current += 1
+        return history[current]
+    end
+
+    function NavHistory.CanGoBack()
+        return current > 1
+    end
+
+    function NavHistory.CanGoForward()
+        return current < #history
+    end
 end
 
-local function createSettings(window)
-	if not (writefile and isfile and readfile and isfolder and makefolder) and not useStudio then
-		if Topbar['Settings'] then Topbar.Settings.Visible = false end
-		Topbar['Search'].Position = UDim2.new(1, -75, 0.5, 0)
-		warn('Can\'t create settings as no file-saving functionality is available.')
-		return
-	end
+-- ─── Performance Profiler ──────────────────────────────────────────────────
+local Profiler = {}
+do
+    local timers  = {}  -- name → { start, total, count }
+    local enabled = false
 
-	local newTab = window:CreateTab('Rayfield Settings', 0, true)
+    function Profiler.Enable()  enabled = true  end
+    function Profiler.Disable() enabled = false end
+    function Profiler.IsEnabled() return enabled end
 
-	if TabList['Rayfield Settings'] then
-		TabList['Rayfield Settings'].LayoutOrder = 1000
-	end
+    function Profiler.Begin(name)
+        if not enabled then return end
+        timers[name] = timers[name] or { total = 0, count = 0 }
+        timers[name].start = tick()
+    end
 
-	if Elements['Rayfield Settings'] then
-		Elements['Rayfield Settings'].LayoutOrder = 1000
-	end
+    function Profiler.End(name)
+        if not enabled or not timers[name] then return end
+        local elapsed = tick() - (timers[name].start or tick())
+        timers[name].total += elapsed
+        timers[name].count += 1
+    end
 
-	-- Create sections and elements
-	for categoryName, settingCategory in pairs(settingsTable) do
-		newTab:CreateSection(categoryName)
+    function Profiler.GetReport()
+        local report = {}
+        for name, data in pairs(timers) do
+            report[name] = {
+                total   = data.total,
+                count   = data.count,
+                average = data.count > 0 and data.total / data.count or 0,
+            }
+        end
+        return report
+    end
 
-		for settingName, setting in pairs(settingCategory) do
-			if setting.Type == 'input' then
-				setting.Element = newTab:CreateInput({
-					Name = setting.Name,
-					CurrentValue = setting.Value,
-					PlaceholderText = setting.Placeholder,
-					Ext = true,
-					RemoveTextAfterFocusLost = setting.ClearOnFocus,
-					Callback = function(Value)
-						updateSetting(categoryName, settingName, Value)
-					end,
-				})
-			elseif setting.Type == 'toggle' then
-				setting.Element = newTab:CreateToggle({
-					Name = setting.Name,
-					CurrentValue = setting.Value,
-					Ext = true,
-					Callback = function(Value)
-						updateSetting(categoryName, settingName, Value)
-					end,
-				})
-			elseif setting.Type == 'bind' then
-				setting.Element = newTab:CreateKeybind({
-					Name = setting.Name,
-					CurrentKeybind = setting.Value,
-					HoldToInteract = false,
-					Ext = true,
-					CallOnChange = true,
-					Callback = function(Value)
-						updateSetting(categoryName, settingName, Value)
-					end,
-				})
-			end
-		end
-	end
-
-	settingsCreated = true
-	loadSettings()
-	saveSettings()
+    function Profiler.Reset()
+        timers = {}
+    end
 end
 
-local function fadeOutKeyUI(KeyMain)
-	TweenService:Create(KeyMain, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundTransparency = 1}):Play()
-	TweenService:Create(KeyMain, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Size = UDim2.new(0, 467, 0, 175)}):Play()
-	TweenService:Create(KeyMain.Shadow.Image, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {ImageTransparency = 1}):Play()
-	TweenService:Create(KeyMain.Title, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {TextTransparency = 1}):Play()
-	TweenService:Create(KeyMain.Subtitle, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {TextTransparency = 1}):Play()
-	TweenService:Create(KeyMain.KeyNote, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {TextTransparency = 1}):Play()
-	TweenService:Create(KeyMain.Input, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {BackgroundTransparency = 1}):Play()
-	TweenService:Create(KeyMain.Input.UIStroke, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
-	TweenService:Create(KeyMain.Input.InputBox, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {TextTransparency = 1}):Play()
-	TweenService:Create(KeyMain.NoteTitle, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {TextTransparency = 1}):Play()
-	TweenService:Create(KeyMain.NoteMessage, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {TextTransparency = 1}):Play()
-	TweenService:Create(KeyMain.Hide, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {ImageTransparency = 1}):Play()
+-- ─── Plugin Architecture ───────────────────────────────────────────────────
+--[[
+    Third-party components register themselves here.
+    The library calls lifecycle hooks when relevant.
+]]
+local PluginSystem = {}
+do
+    local plugins   = {}
+    local lifecycle = { onWindowCreate = {}, onTabCreate = {}, onThemeChange = {}, onUnload = {} }
+
+    function PluginSystem.Register(plugin)
+        assert(plugin.Name, "Plugin must have a Name")
+        plugins[plugin.Name] = plugin
+        -- Register lifecycle hooks
+        for event, list in pairs(lifecycle) do
+            if plugin[event] then
+                table.insert(list, plugin[event])
+            end
+        end
+        if plugin.Init then pcall(plugin.Init) end
+    end
+
+    function PluginSystem.Emit(event, ...)
+        for _, fn in ipairs(lifecycle[event] or {}) do
+            pcall(fn, ...)
+        end
+    end
+
+    function PluginSystem.Get(name)
+        return plugins[name]
+    end
 end
 
-function RayfieldLibrary:CreateWindow(Settings)
-	if Rayfield:FindFirstChild('Loading') then
-		if getgenv and not getgenv().rayfieldCached then
-			Rayfield.Enabled = true
-			Rayfield.Loading.Visible = true
-
-			task.wait(1.4)
-			Rayfield.Loading.Visible = false
-		end
-	end
-
-	if getgenv then getgenv().rayfieldCached = true end
-
-	if not correctBuild and not Settings.DisableBuildWarnings then
-		task.delay(3, 
-			function() 
-				RayfieldLibrary:Notify({Title = 'Build Mismatch', Content = 'Rayfield may encounter issues as you are running an incompatible interface version ('.. ((Rayfield:FindFirstChild('Build') and Rayfield.Build.Value) or 'No Build') ..').\n\nThis version of Rayfield is intended for interface build '..InterfaceBuild..'.\n\nTry rejoining and then run the script twice.', Image = 4335487866, Duration = 15})		
-			end)
-	end
-
-	if Settings.ToggleUIKeybind then -- Can either be a string or an Enum.KeyCode
-		local keybind = Settings.ToggleUIKeybind
-		if type(keybind) == "string" then
-			keybind = string.upper(keybind)
-			assert(pcall(function()
-				return Enum.KeyCode[keybind]
-			end), "ToggleUIKeybind must be a valid KeyCode")
-			overrideSetting("General", "rayfieldOpen", keybind)
-		elseif typeof(keybind) == "EnumItem" then
-			assert(keybind.EnumType == Enum.KeyCode, "ToggleUIKeybind must be a KeyCode enum")
-			overrideSetting("General", "rayfieldOpen", keybind.Name)
-		else
-			error("ToggleUIKeybind must be a string or KeyCode enum")
-		end
-	end
-
-	ensureFolder(RayfieldFolder)
-
-	local Passthrough = false
-	Topbar.Title.Text = Settings.Name
-
-	Main.Size = UDim2.new(0, 420, 0, 100)
-	Main.Visible = true
-	Main.BackgroundTransparency = 1
-	if Main:FindFirstChild('Notice') then Main.Notice.Visible = false end
-	Main.Shadow.Image.ImageTransparency = 1
-
-	LoadingFrame.Title.TextTransparency = 1
-	LoadingFrame.Subtitle.TextTransparency = 1
-
-	if Settings.ShowText then
-		MPrompt.Title.Text = 'Show '..Settings.ShowText
-	end
-
-	LoadingFrame.Version.TextTransparency = 1
-	LoadingFrame.Title.Text = Settings.LoadingTitle or "Rayfield"
-	LoadingFrame.Subtitle.Text = Settings.LoadingSubtitle or "Interface Suite"
-
-	if Settings.LoadingTitle ~= "Rayfield Interface Suite" then
-		LoadingFrame.Version.Text = "Rayfield UI"
-	end
-
-	if Settings.Icon and Settings.Icon ~= 0 and Topbar:FindFirstChild('Icon') then
-		Topbar.Icon.Visible = true
-		Topbar.Title.Position = UDim2.new(0, 47, 0.5, 0)
-
-		if Settings.Icon then
-			local img, rectOffset, rectSize = resolveIcon(Settings.Icon)
-			Topbar.Icon.Image = img
-			if rectOffset then Topbar.Icon.ImageRectOffset = rectOffset end
-			if rectSize then Topbar.Icon.ImageRectSize = rectSize end
-		else
-			Topbar.Icon.Image = ""
-		end
-	end
-
-	if dragBar then
-		dragBar.Visible = false
-		dragBarCosmetic.BackgroundTransparency = 1
-		dragBar.Visible = true
-	end
-
-	if Settings.Theme then
-		local success, result = pcall(ChangeTheme, Settings.Theme)
-		if not success then
-			local success, result2 = pcall(ChangeTheme, 'Default')
-			if not success then
-				warn('CRITICAL ERROR - NO DEFAULT THEME')
-				print(result2)
-			end
-			warn('issue rendering theme. no theme on file')
-			print(result)
-		end
-	end
-
-	Topbar.Visible = false
-	Elements.Visible = false
-	LoadingFrame.Visible = true
-
-	if not Settings.DisableRayfieldPrompts then
-		task.spawn(function()
-			while not rayfieldDestroyed do
-				task.wait(math.random(180, 600))
-				if rayfieldDestroyed then break end
-				RayfieldLibrary:Notify({
-					Title = "Rayfield Interface",
-					Content = "Enjoying this UI library? Find it at sirius.menu/discord",
-					Duration = 7,
-					Image = 4370033185,
-				})
-			end
-		end)
-	end
-
-	pcall(function()
-		if not Settings.ConfigurationSaving.FileName then
-			Settings.ConfigurationSaving.FileName = tostring(game.PlaceId)
-		end
-
-		if Settings.ConfigurationSaving.Enabled == nil then
-			Settings.ConfigurationSaving.Enabled = false
-		end
-
-		CFileName = Settings.ConfigurationSaving.FileName
-		ConfigurationFolder = Settings.ConfigurationSaving.FolderName or ConfigurationFolder
-		CEnabled = Settings.ConfigurationSaving.Enabled
-
-		if Settings.ConfigurationSaving.Enabled then
-			ensureFolder(ConfigurationFolder)
-		end
-	end)
-
-
-	makeDraggable(Main, Topbar, false, {dragOffset, dragOffsetMobile})
-	if dragBar then dragBar.Position = useMobileSizing and UDim2.new(0.5, 0, 0.5, dragOffsetMobile) or UDim2.new(0.5, 0, 0.5, dragOffset) makeDraggable(Main, dragInteract, true, {dragOffset, dragOffsetMobile}) end
-
-	for _, TabButton in ipairs(TabList:GetChildren()) do
-		if TabButton.ClassName == "Frame" and TabButton.Name ~= "Placeholder" then
-			TabButton.BackgroundTransparency = 1
-			TabButton.Title.TextTransparency = 1
-			TabButton.Image.ImageTransparency = 1
-			TabButton.UIStroke.Transparency = 1
-		end
-	end
-
-	if Settings.Discord and Settings.Discord.Enabled and not useStudio and not secureMode then
-		ensureFolder(RayfieldFolder.."/Discord Invites")
-
-		if not callSafely(isfile, RayfieldFolder.."/Discord Invites".."/"..Settings.Discord.Invite..ConfigurationExtension) then
-			if requestFunc then
-				pcall(function()
-					requestFunc({
-						Url = 'http://127.0.0.1:6463/rpc?v=1',
-						Method = 'POST',
-						Headers = {
-							['Content-Type'] = 'application/json',
-							Origin = 'https://discord.com'
-						},
-						Body = HttpService:JSONEncode({
-							cmd = 'INVITE_BROWSER',
-							nonce = HttpService:GenerateGUID(false),
-							args = {code = Settings.Discord.Invite}
-						})
-					})
-				end)
-			end
-
-			if Settings.Discord.RememberJoins then -- We do logic this way so if the developer changes this setting, the user still won't be prompted, only new users
-				callSafely(writefile, RayfieldFolder.."/Discord Invites".."/"..Settings.Discord.Invite..ConfigurationExtension,"Rayfield RememberJoins is true for this invite, this invite will not ask you to join again")
-			end
-		end
-	end
-
-	if (Settings.KeySystem) then
-		if not Settings.KeySettings then
-			Passthrough = true
-			return
-		end
-
-		ensureFolder(RayfieldFolder.."/Key System")
-
-		if typeof(Settings.KeySettings.Key) == "string" then Settings.KeySettings.Key = {Settings.KeySettings.Key} end
-
-		if Settings.KeySettings.GrabKeyFromSite then
-			for i, Key in ipairs(Settings.KeySettings.Key) do
-				local Success, Response = pcall(function()
-					Settings.KeySettings.Key[i] = tostring(game:HttpGet(Key):gsub("[\n\r]", " "))
-					Settings.KeySettings.Key[i] = string.gsub(Settings.KeySettings.Key[i], " ", "")
-				end)
-				if not Success then
-					print("Rayfield | "..Key.." Error " ..tostring(Response))
-					warn('Check docs.sirius.menu for help with Rayfield specific development.')
-				end
-			end
-		end
-
-		if not Settings.KeySettings.FileName then
-			Settings.KeySettings.FileName = "No file name specified"
-		end
-
-		if callSafely(isfile, RayfieldFolder.."/Key System".."/"..Settings.KeySettings.FileName..ConfigurationExtension) then
-			for _, MKey in ipairs(Settings.KeySettings.Key) do
-				local savedKeys = callSafely(readfile, RayfieldFolder.."/Key System".."/"..Settings.KeySettings.FileName..ConfigurationExtension)
-				if savedKeys and string.find(savedKeys, MKey) then
-					Passthrough = true
-				end
-			end
-		end
-
-		if not Passthrough and secureMode then
-			warn("Rayfield | Secure Mode: Key system requires a valid saved key. The key UI cannot be shown as it requires loading detectable assets.")
-			Rayfield.Enabled = false
-			return RayfieldLibrary
-		end
-
-		if not Passthrough then
-			local AttemptsRemaining = Settings.KeySettings.MaxAttempts or 5
-			Rayfield.Enabled = false
-			local KeyUI = useStudio and script.Parent:FindFirstChild('Key') or game:GetObjects("rbxassetid://11380036235")[1]
-
-			KeyUI.Enabled = true
-
-			if gethui then
-				KeyUI.Parent = gethui()
-			elseif syn and syn.protect_gui then 
-				syn.protect_gui(KeyUI)
-				KeyUI.Parent = CoreGui
-			elseif not useStudio and CoreGui:FindFirstChild("RobloxGui") then
-				KeyUI.Parent = CoreGui:FindFirstChild("RobloxGui")
-			elseif not useStudio then
-				KeyUI.Parent = CoreGui
-			end
-
-			if gethui then
-				for _, Interface in ipairs(gethui():GetChildren()) do
-					if Interface.Name == KeyUI.Name and Interface ~= KeyUI then
-						Interface.Enabled = false
-						Interface.Name = "KeyUI-Old"
-					end
-				end
-			elseif not useStudio then
-				for _, Interface in ipairs(CoreGui:GetChildren()) do
-					if Interface.Name == KeyUI.Name and Interface ~= KeyUI then
-						Interface.Enabled = false
-						Interface.Name = "KeyUI-Old"
-					end
-				end
-			end
-
-			local KeyMain = KeyUI.Main
-			KeyMain.Title.Text = Settings.KeySettings.Title or Settings.Name
-			KeyMain.Subtitle.Text = Settings.KeySettings.Subtitle or "Key System"
-			KeyMain.NoteMessage.Text = Settings.KeySettings.Note or "No instructions"
-
-			KeyMain.Size = UDim2.new(0, 467, 0, 175)
-			KeyMain.BackgroundTransparency = 1
-			KeyMain.Shadow.Image.ImageTransparency = 1
-			KeyMain.Title.TextTransparency = 1
-			KeyMain.Subtitle.TextTransparency = 1
-			KeyMain.KeyNote.TextTransparency = 1
-			KeyMain.Input.BackgroundTransparency = 1
-			KeyMain.Input.UIStroke.Transparency = 1
-			KeyMain.Input.InputBox.TextTransparency = 1
-			KeyMain.NoteTitle.TextTransparency = 1
-			KeyMain.NoteMessage.TextTransparency = 1
-			KeyMain.Hide.ImageTransparency = 1
-
-			TweenService:Create(KeyMain, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
-			TweenService:Create(KeyMain, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Size = UDim2.new(0, 500, 0, 187)}):Play()
-			TweenService:Create(KeyMain.Shadow.Image, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {ImageTransparency = 0.5}):Play()
-			task.wait(0.05)
-			TweenService:Create(KeyMain.Title, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()
-			TweenService:Create(KeyMain.Subtitle, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()
-			task.wait(0.05)
-			TweenService:Create(KeyMain.KeyNote, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()
-			TweenService:Create(KeyMain.Input, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
-			TweenService:Create(KeyMain.Input.UIStroke, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Transparency = 0}):Play()
-			TweenService:Create(KeyMain.Input.InputBox, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()
-			task.wait(0.05)
-			TweenService:Create(KeyMain.NoteTitle, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()
-			TweenService:Create(KeyMain.NoteMessage, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()
-			task.wait(0.15)
-			TweenService:Create(KeyMain.Hide, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {ImageTransparency = 0.3}):Play()
-
-
-			KeyUI.Main.Input.InputBox.FocusLost:Connect(function()
-				if #KeyUI.Main.Input.InputBox.Text == 0 then return end
-				local KeyFound = false
-				local FoundKey = ''
-				for _, MKey in ipairs(Settings.KeySettings.Key) do
-					--if string.find(KeyMain.Input.InputBox.Text, MKey) then
-					--	KeyFound = true
-					--	FoundKey = MKey
-					--end
-
-
-					-- stricter key check
-					if KeyMain.Input.InputBox.Text == MKey then
-						KeyFound = true
-						FoundKey = MKey
-					end
-				end
-				if KeyFound then
-					fadeOutKeyUI(KeyMain)
-					task.wait(0.51)
-					Passthrough = true
-					KeyMain.Visible = false
-					if Settings.KeySettings.SaveKey then
-						callSafely(writefile, RayfieldFolder.."/Key System".."/"..Settings.KeySettings.FileName..ConfigurationExtension, FoundKey)
-						RayfieldLibrary:Notify({Title = "Key System", Content = "The key for this script has been saved successfully.", Image = 3605522284})
-					end
-				else
-					if AttemptsRemaining == 0 then
-						fadeOutKeyUI(KeyMain)
-						task.wait(0.45)
-						Players.LocalPlayer:Kick("No Attempts Remaining")
-						game:Shutdown()
-					end
-					KeyMain.Input.InputBox.Text = ""
-					AttemptsRemaining = AttemptsRemaining - 1
-					TweenService:Create(KeyMain, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Size = UDim2.new(0, 467, 0, 175)}):Play()
-					TweenService:Create(KeyMain, TweenInfo.new(0.4, Enum.EasingStyle.Elastic), {Position = UDim2.new(0.495,0,0.5,0)}):Play()
-					task.wait(0.1)
-					TweenService:Create(KeyMain, TweenInfo.new(0.4, Enum.EasingStyle.Elastic), {Position = UDim2.new(0.505,0,0.5,0)}):Play()
-					task.wait(0.1)
-					TweenService:Create(KeyMain, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {Position = UDim2.new(0.5,0,0.5,0)}):Play()
-					TweenService:Create(KeyMain, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Size = UDim2.new(0, 500, 0, 187)}):Play()
-				end
-			end)
-
-			KeyMain.Hide.MouseButton1Click:Connect(function()
-				fadeOutKeyUI(KeyMain)
-				task.wait(0.51)
-				Passthrough = true
-				RayfieldLibrary:Destroy()
-				KeyUI:Destroy()
-			end)
-		else
-			Passthrough = true
-		end
-	end
-	if Settings.KeySystem then
-		repeat task.wait() until Passthrough
-		if rayfieldDestroyed then return end
-	end
-
-	Notifications.Template.Visible = false
-	Notifications.Visible = true
-	Rayfield.Enabled = true
-
-	task.wait(0.5)
-	TweenService:Create(Main, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
-	TweenService:Create(Main.Shadow.Image, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {ImageTransparency = 0.6}):Play()
-	task.wait(0.1)
-	TweenService:Create(LoadingFrame.Title, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()
-	task.wait(0.05)
-	TweenService:Create(LoadingFrame.Subtitle, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()
-	task.wait(0.05)
-	TweenService:Create(LoadingFrame.Version, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()
-
-
-	Elements.Template.LayoutOrder = 100000
-	Elements.Template.Visible = false
-
-	Elements.UIPageLayout.FillDirection = Enum.FillDirection.Horizontal
-	Elements.UIPageLayout.ScrollWheelInputEnabled = false
-	Elements.UIPageLayout.GamepadInputEnabled = false
-	Elements.UIPageLayout.TouchInputEnabled = false
-	TabList.Template.Visible = false
-
-	-- Tab
-	local FirstTab = false
-	local Window = {}
-	function Window:CreateTab(Name, Image, Ext)
-		local SDone = false
-		local TabButton = TabList.Template:Clone()
-		TabButton.Name = Name
-		TabButton.Title.Text = Name
-		TabButton.Parent = TabList
-		TabButton.Title.TextWrapped = false
-		TabButton.Size = UDim2.new(0, TabButton.Title.TextBounds.X + 30, 0, 30)
-
-		if Image and Image ~= 0 then
-			local img, rectOffset, rectSize = resolveIcon(Image)
-			TabButton.Image.Image = img
-			if rectOffset then TabButton.Image.ImageRectOffset = rectOffset end
-			if rectSize then TabButton.Image.ImageRectSize = rectSize end
-
-			TabButton.Title.AnchorPoint = Vector2.new(0, 0.5)
-			TabButton.Title.Position = UDim2.new(0, 37, 0.5, 0)
-			TabButton.Image.Visible = true
-			TabButton.Title.TextXAlignment = Enum.TextXAlignment.Left
-			TabButton.Size = UDim2.new(0, TabButton.Title.TextBounds.X + 52, 0, 30)
-		end
-
-
-
-		TabButton.BackgroundTransparency = 1
-		TabButton.Title.TextTransparency = 1
-		TabButton.Image.ImageTransparency = 1
-		TabButton.UIStroke.Transparency = 1
-
-		TabButton.Visible = not Ext or false
-
-		-- Create Elements Page
-		local TabPage = Elements.Template:Clone()
-		TabPage.Name = Name
-		TabPage.Visible = true
-
-		TabPage.LayoutOrder = Ext and 10000 or #Elements:GetChildren()
-
-		for _, TemplateElement in ipairs(TabPage:GetChildren()) do
-			if TemplateElement.ClassName == "Frame" and TemplateElement.Name ~= "Placeholder" then
-				TemplateElement:Destroy()
-			end
-		end
-
-		TabPage.Parent = Elements
-		if not FirstTab and not Ext then
-			Elements.UIPageLayout.Animated = false
-			Elements.UIPageLayout:JumpTo(TabPage)
-			Elements.UIPageLayout.Animated = true
-		end
-
-		TabButton.UIStroke.Color = SelectedTheme.TabStroke
-
-		if Elements.UIPageLayout.CurrentPage == TabPage then
-			TabButton.BackgroundColor3 = SelectedTheme.TabBackgroundSelected
-			TabButton.Image.ImageColor3 = SelectedTheme.SelectedTabTextColor
-			TabButton.Title.TextColor3 = SelectedTheme.SelectedTabTextColor
-		else
-			TabButton.BackgroundColor3 = SelectedTheme.TabBackground
-			TabButton.Image.ImageColor3 = SelectedTheme.TabTextColor
-			TabButton.Title.TextColor3 = SelectedTheme.TabTextColor
-		end
-
-
-		-- Animate
-		task.wait(0.1)
-		if FirstTab or Ext then
-			TabButton.BackgroundColor3 = SelectedTheme.TabBackground
-			TabButton.Image.ImageColor3 = SelectedTheme.TabTextColor
-			TabButton.Title.TextColor3 = SelectedTheme.TabTextColor
-			TweenService:Create(TabButton, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0.7}):Play()
-			TweenService:Create(TabButton.Title, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextTransparency = 0.2}):Play()
-			TweenService:Create(TabButton.Image, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {ImageTransparency = 0.2}):Play()
-			TweenService:Create(TabButton.UIStroke, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {Transparency = 0.5}):Play()
-		elseif not Ext then
-			FirstTab = Name
-			TabButton.BackgroundColor3 = SelectedTheme.TabBackgroundSelected
-			TabButton.Image.ImageColor3 = SelectedTheme.SelectedTabTextColor
-			TabButton.Title.TextColor3 = SelectedTheme.SelectedTabTextColor
-			TweenService:Create(TabButton.Image, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {ImageTransparency = 0}):Play()
-			TweenService:Create(TabButton, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
-			TweenService:Create(TabButton.Title, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()
-		end
-
-
-		TabButton.Interact.MouseButton1Click:Connect(function()
-			if Minimised then return end
-			TweenService:Create(TabButton, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
-			TweenService:Create(TabButton.UIStroke, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
-			TweenService:Create(TabButton.Title, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()
-			TweenService:Create(TabButton.Image, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {ImageTransparency = 0}):Play()
-			TweenService:Create(TabButton, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.TabBackgroundSelected}):Play()
-			TweenService:Create(TabButton.Title, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextColor3 = SelectedTheme.SelectedTabTextColor}):Play()
-			TweenService:Create(TabButton.Image, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {ImageColor3 = SelectedTheme.SelectedTabTextColor}):Play()
-
-			for _, OtherTabButton in ipairs(TabList:GetChildren()) do
-				if OtherTabButton.Name ~= "Template" and OtherTabButton.ClassName == "Frame" and OtherTabButton ~= TabButton and OtherTabButton.Name ~= "Placeholder" then
-					TweenService:Create(OtherTabButton, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.TabBackground}):Play()
-					TweenService:Create(OtherTabButton.Title, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextColor3 = SelectedTheme.TabTextColor}):Play()
-					TweenService:Create(OtherTabButton.Image, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {ImageColor3 = SelectedTheme.TabTextColor}):Play()
-					TweenService:Create(OtherTabButton, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0.7}):Play()
-					TweenService:Create(OtherTabButton.Title, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextTransparency = 0.2}):Play()
-					TweenService:Create(OtherTabButton.Image, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {ImageTransparency = 0.2}):Play()
-					TweenService:Create(OtherTabButton.UIStroke, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {Transparency = 0.5}):Play()
-				end
-			end
-
-			if Elements.UIPageLayout.CurrentPage ~= TabPage then
-				Elements.UIPageLayout:JumpTo(TabPage)
-			end
-		end)
-
-		local Tab = {}
-
-		-- Button
-		function Tab:CreateButton(ButtonSettings)
-			local ButtonValue = {}
-
-			local Button = Elements.Template.Button:Clone()
-			Button.Name = ButtonSettings.Name
-			Button.Title.Text = ButtonSettings.Name
-			Button.Visible = true
-			Button.Parent = TabPage
-
-			Button.BackgroundTransparency = 1
-			Button.UIStroke.Transparency = 1
-			Button.Title.TextTransparency = 1
-
-			TweenService:Create(Button, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
-			TweenService:Create(Button.UIStroke, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {Transparency = 0}):Play()
-			TweenService:Create(Button.Title, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()	
-
-
-			Button.Interact.MouseButton1Click:Connect(function()
-				local Success, Response = pcall(ButtonSettings.Callback)
-				-- Prevents animation from trying to play if the button's callback called RayfieldLibrary:Destroy()
-				if rayfieldDestroyed then
-					return
-				end
-				if not Success then
-					TweenService:Create(Button, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = Color3.fromRGB(85, 0, 0)}):Play()
-					TweenService:Create(Button.ElementIndicator, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {TextTransparency = 1}):Play()
-					TweenService:Create(Button.UIStroke, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
-					Button.Title.Text = "Callback Error"
-					print("Rayfield | "..ButtonSettings.Name.." Callback Error " ..tostring(Response))
-					warn('Check docs.sirius.menu for help with Rayfield specific development.')
-					task.wait(0.5)
-					Button.Title.Text = ButtonSettings.Name
-					TweenService:Create(Button, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackground}):Play()
-					TweenService:Create(Button.ElementIndicator, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {TextTransparency = 0.9}):Play()
-					TweenService:Create(Button.UIStroke, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Transparency = 0}):Play()
-				else
-					if not ButtonSettings.Ext then
-						SaveConfiguration(ButtonSettings.Name..'\n')
-					end
-					TweenService:Create(Button, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackgroundHover}):Play()
-					TweenService:Create(Button.ElementIndicator, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {TextTransparency = 1}):Play()
-					TweenService:Create(Button.UIStroke, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
-					task.wait(0.2)
-					TweenService:Create(Button, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackground}):Play()
-					TweenService:Create(Button.ElementIndicator, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {TextTransparency = 0.9}):Play()
-					TweenService:Create(Button.UIStroke, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Transparency = 0}):Play()
-				end
-			end)
-
-			Button.MouseEnter:Connect(function()
-				TweenService:Create(Button, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackgroundHover}):Play()
-				TweenService:Create(Button.ElementIndicator, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {TextTransparency = 0.7}):Play()
-			end)
-
-			Button.MouseLeave:Connect(function()
-				TweenService:Create(Button, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackground}):Play()
-				TweenService:Create(Button.ElementIndicator, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {TextTransparency = 0.9}):Play()
-			end)
-
-			function ButtonValue:Set(NewButton)
-				Button.Title.Text = NewButton
-				Button.Name = NewButton
-			end
-
-			return ButtonValue
-		end
-
-		-- ColorPicker
-		function Tab:CreateColorPicker(ColorPickerSettings) -- by Throit
-			ColorPickerSettings.Type = "ColorPicker"
-			local ColorPicker = Elements.Template.ColorPicker:Clone()
-			local Background = ColorPicker.CPBackground
-			local Display = Background.Display
-			local Main = Background.MainCP
-			local Slider = ColorPicker.ColorSlider
-			ColorPicker.ClipsDescendants = true
-			ColorPicker.Name = ColorPickerSettings.Name
-			ColorPicker.Title.Text = ColorPickerSettings.Name
-			ColorPicker.Visible = true
-			ColorPicker.Parent = TabPage
-			ColorPicker.Size = UDim2.new(1, -10, 0, 45)
-			Background.Size = UDim2.new(0, 39, 0, 22)
-			Display.BackgroundTransparency = 0
-			Main.MainPoint.ImageTransparency = 1
-			ColorPicker.Interact.Size = UDim2.new(1, 0, 1, 0)
-			ColorPicker.Interact.Position = UDim2.new(0.5, 0, 0.5, 0)
-			ColorPicker.RGB.Position = UDim2.new(0, 17, 0, 70)
-			ColorPicker.HexInput.Position = UDim2.new(0, 17, 0, 90)
-			Main.ImageTransparency = 1
-			Background.BackgroundTransparency = 1
-
-			for _, rgbinput in ipairs(ColorPicker.RGB:GetChildren()) do
-				if rgbinput:IsA("Frame") then
-					rgbinput.BackgroundColor3 = SelectedTheme.InputBackground
-					rgbinput.UIStroke.Color = SelectedTheme.InputStroke
-				end
-			end
-
-			ColorPicker.HexInput.BackgroundColor3 = SelectedTheme.InputBackground
-			ColorPicker.HexInput.UIStroke.Color = SelectedTheme.InputStroke
-
-			local opened = false 
-			local mouse = Players.LocalPlayer:GetMouse()
-			local mainDragging = false 
-			local sliderDragging = false 
-			ColorPicker.Interact.MouseButton1Down:Connect(function()
-				task.spawn(function()
-					TweenService:Create(ColorPicker, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackgroundHover}):Play()
-					TweenService:Create(ColorPicker.UIStroke, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
-					task.wait(0.2)
-					TweenService:Create(ColorPicker, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackground}):Play()
-					TweenService:Create(ColorPicker.UIStroke, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Transparency = 0}):Play()
-				end)
-
-				if not opened then
-					opened = true 
-					TweenService:Create(Background, TweenInfo.new(0.45, Enum.EasingStyle.Exponential), {Size = UDim2.new(0, 18, 0, 15)}):Play()
-					task.wait(0.1)
-					TweenService:Create(ColorPicker, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Size = UDim2.new(1, -10, 0, 120)}):Play()
-					TweenService:Create(Background, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Size = UDim2.new(0, 173, 0, 86)}):Play()
-					TweenService:Create(Display, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundTransparency = 1}):Play()
-					TweenService:Create(ColorPicker.Interact, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Position = UDim2.new(0.289, 0, 0.5, 0)}):Play()
-					TweenService:Create(ColorPicker.RGB, TweenInfo.new(0.8, Enum.EasingStyle.Exponential), {Position = UDim2.new(0, 17, 0, 40)}):Play()
-					TweenService:Create(ColorPicker.HexInput, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Position = UDim2.new(0, 17, 0, 73)}):Play()
-					TweenService:Create(ColorPicker.Interact, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Size = UDim2.new(0.574, 0, 1, 0)}):Play()
-					TweenService:Create(Main.MainPoint, TweenInfo.new(0.2, Enum.EasingStyle.Exponential), {ImageTransparency = 0}):Play()
-					TweenService:Create(Main, TweenInfo.new(0.2, Enum.EasingStyle.Exponential), {ImageTransparency = 0.25}):Play()
-					TweenService:Create(Background, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
-				else
-					opened = false
-					TweenService:Create(ColorPicker, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Size = UDim2.new(1, -10, 0, 45)}):Play()
-					TweenService:Create(Background, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Size = UDim2.new(0, 39, 0, 22)}):Play()
-					TweenService:Create(ColorPicker.Interact, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Size = UDim2.new(1, 0, 1, 0)}):Play()
-					TweenService:Create(ColorPicker.Interact, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Position = UDim2.new(0.5, 0, 0.5, 0)}):Play()
-					TweenService:Create(ColorPicker.RGB, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Position = UDim2.new(0, 17, 0, 70)}):Play()
-					TweenService:Create(ColorPicker.HexInput, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Position = UDim2.new(0, 17, 0, 90)}):Play()
-					TweenService:Create(Display, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
-					TweenService:Create(Main.MainPoint, TweenInfo.new(0.2, Enum.EasingStyle.Exponential), {ImageTransparency = 1}):Play()
-					TweenService:Create(Main, TweenInfo.new(0.2, Enum.EasingStyle.Exponential), {ImageTransparency = 1}):Play()
-					TweenService:Create(Background, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundTransparency = 1}):Play()
-				end
-
-			end)
-
-			local colorPickerInputConnection = UserInputService.InputEnded:Connect(function(input, gameProcessed) if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-					mainDragging = false
-					sliderDragging = false
-				end end)
-			Main.MouseButton1Down:Connect(function()
-				if opened then
-					mainDragging = true 
-				end
-			end)
-			Main.MainPoint.MouseButton1Down:Connect(function()
-				if opened then
-					mainDragging = true 
-				end
-			end)
-			Slider.MouseButton1Down:Connect(function()
-				sliderDragging = true 
-			end)
-			Slider.SliderPoint.MouseButton1Down:Connect(function()
-				sliderDragging = true 
-			end)
-			local h,s,v = ColorPickerSettings.Color:ToHSV()
-			local color = Color3.fromHSV(h,s,v) 
-			local hex = string.format("#%02X%02X%02X",color.R*0xFF,color.G*0xFF,color.B*0xFF)
-			ColorPicker.HexInput.InputBox.Text = hex
-			local function setDisplay()
-				--Main
-				Main.MainPoint.Position = UDim2.new(s,-Main.MainPoint.AbsoluteSize.X/2,1-v,-Main.MainPoint.AbsoluteSize.Y/2)
-				Main.MainPoint.ImageColor3 = Color3.fromHSV(h,s,v)
-				Background.BackgroundColor3 = Color3.fromHSV(h,1,1)
-				Display.BackgroundColor3 = Color3.fromHSV(h,s,v)
-				--Slider 
-				local x = h * Slider.AbsoluteSize.X
-				Slider.SliderPoint.Position = UDim2.new(0,x-Slider.SliderPoint.AbsoluteSize.X/2,0.5,0)
-				Slider.SliderPoint.ImageColor3 = Color3.fromHSV(h,1,1)
-				local color = Color3.fromHSV(h,s,v) 
-				local r,g,b = math.floor((color.R*255)+0.5),math.floor((color.G*255)+0.5),math.floor((color.B*255)+0.5)
-				ColorPicker.RGB.RInput.InputBox.Text = tostring(r)
-				ColorPicker.RGB.GInput.InputBox.Text = tostring(g)
-				ColorPicker.RGB.BInput.InputBox.Text = tostring(b)
-				hex = string.format("#%02X%02X%02X",color.R*0xFF,color.G*0xFF,color.B*0xFF)
-				ColorPicker.HexInput.InputBox.Text = hex
-			end
-			setDisplay()
-			ColorPicker.HexInput.InputBox.FocusLost:Connect(function()
-				if not pcall(function()
-						local r, g, b = string.match(ColorPicker.HexInput.InputBox.Text, "^#?(%w%w)(%w%w)(%w%w)$")
-						local rgbColor = Color3.fromRGB(tonumber(r, 16),tonumber(g, 16), tonumber(b, 16))
-						h,s,v = rgbColor:ToHSV()
-						hex = ColorPicker.HexInput.InputBox.Text
-						setDisplay()
-						ColorPickerSettings.Color = rgbColor
-					end) 
-				then 
-					ColorPicker.HexInput.InputBox.Text = hex 
-				end
-				pcall(function()ColorPickerSettings.Callback(Color3.fromHSV(h,s,v))end)
-				local r,g,b = math.floor((h*255)+0.5),math.floor((s*255)+0.5),math.floor((v*255)+0.5)
-				ColorPickerSettings.Color = Color3.fromRGB(r,g,b)
-				if not ColorPickerSettings.Ext then
-					SaveConfiguration()
-				end
-			end)
-			--RGB
-			local function rgbBoxes(box,toChange)
-				local value = tonumber(box.Text) 
-				local color = Color3.fromHSV(h,s,v) 
-				local oldR,oldG,oldB = math.floor((color.R*255)+0.5),math.floor((color.G*255)+0.5),math.floor((color.B*255)+0.5)
-				local save 
-				if toChange == "R" then save = oldR;oldR = value elseif toChange == "G" then save = oldG;oldG = value else save = oldB;oldB = value end
-				if value then 
-					value = math.clamp(value,0,255)
-					h,s,v = Color3.fromRGB(oldR,oldG,oldB):ToHSV()
-
-					setDisplay()
-				else 
-					box.Text = tostring(save)
-				end
-				local r,g,b = math.floor((h*255)+0.5),math.floor((s*255)+0.5),math.floor((v*255)+0.5)
-				ColorPickerSettings.Color = Color3.fromRGB(r,g,b)
-				if not ColorPickerSettings.Ext then
-					SaveConfiguration(ColorPickerSettings.Flag..'\n'..tostring(ColorPickerSettings.Color))
-				end
-			end
-			ColorPicker.RGB.RInput.InputBox.FocusLost:connect(function()
-				rgbBoxes(ColorPicker.RGB.RInput.InputBox,"R")
-				pcall(function()ColorPickerSettings.Callback(Color3.fromHSV(h,s,v))end)
-			end)
-			ColorPicker.RGB.GInput.InputBox.FocusLost:connect(function()
-				rgbBoxes(ColorPicker.RGB.GInput.InputBox,"G")
-				pcall(function()ColorPickerSettings.Callback(Color3.fromHSV(h,s,v))end)
-			end)
-			ColorPicker.RGB.BInput.InputBox.FocusLost:connect(function()
-				rgbBoxes(ColorPicker.RGB.BInput.InputBox,"B")
-				pcall(function()ColorPickerSettings.Callback(Color3.fromHSV(h,s,v))end)
-			end)
-
-			local colorPickerRenderConnection = RunService.RenderStepped:connect(function()
-				if mainDragging then
-					local localX = math.clamp(mouse.X-Main.AbsolutePosition.X,0,Main.AbsoluteSize.X)
-					local localY = math.clamp(mouse.Y-Main.AbsolutePosition.Y,0,Main.AbsoluteSize.Y)
-					Main.MainPoint.Position = UDim2.new(0,localX-Main.MainPoint.AbsoluteSize.X/2,0,localY-Main.MainPoint.AbsoluteSize.Y/2)
-					s = localX / Main.AbsoluteSize.X
-					v = 1 - (localY / Main.AbsoluteSize.Y)
-					Display.BackgroundColor3 = Color3.fromHSV(h,s,v)
-					Main.MainPoint.ImageColor3 = Color3.fromHSV(h,s,v)
-					Background.BackgroundColor3 = Color3.fromHSV(h,1,1)
-					local color = Color3.fromHSV(h,s,v) 
-					local r,g,b = math.floor((color.R*255)+0.5),math.floor((color.G*255)+0.5),math.floor((color.B*255)+0.5)
-					ColorPicker.RGB.RInput.InputBox.Text = tostring(r)
-					ColorPicker.RGB.GInput.InputBox.Text = tostring(g)
-					ColorPicker.RGB.BInput.InputBox.Text = tostring(b)
-					ColorPicker.HexInput.InputBox.Text = string.format("#%02X%02X%02X",color.R*0xFF,color.G*0xFF,color.B*0xFF)
-					pcall(function()ColorPickerSettings.Callback(Color3.fromHSV(h,s,v))end)
-					ColorPickerSettings.Color = Color3.fromRGB(r,g,b)
-					if not ColorPickerSettings.Ext then
-						SaveConfiguration()
-					end
-				end
-				if sliderDragging then 
-					local localX = math.clamp(mouse.X-Slider.AbsolutePosition.X,0,Slider.AbsoluteSize.X)
-					h = localX / Slider.AbsoluteSize.X
-					Display.BackgroundColor3 = Color3.fromHSV(h,s,v)
-					Slider.SliderPoint.Position = UDim2.new(0,localX-Slider.SliderPoint.AbsoluteSize.X/2,0.5,0)
-					Slider.SliderPoint.ImageColor3 = Color3.fromHSV(h,1,1)
-					Background.BackgroundColor3 = Color3.fromHSV(h,1,1)
-					Main.MainPoint.ImageColor3 = Color3.fromHSV(h,s,v)
-					local color = Color3.fromHSV(h,s,v) 
-					local r,g,b = math.floor((color.R*255)+0.5),math.floor((color.G*255)+0.5),math.floor((color.B*255)+0.5)
-					ColorPicker.RGB.RInput.InputBox.Text = tostring(r)
-					ColorPicker.RGB.GInput.InputBox.Text = tostring(g)
-					ColorPicker.RGB.BInput.InputBox.Text = tostring(b)
-					ColorPicker.HexInput.InputBox.Text = string.format("#%02X%02X%02X",color.R*0xFF,color.G*0xFF,color.B*0xFF)
-					pcall(function()ColorPickerSettings.Callback(Color3.fromHSV(h,s,v))end)
-					ColorPickerSettings.Color = Color3.fromRGB(r,g,b)
-					if not ColorPickerSettings.Ext then
-						SaveConfiguration()
-					end
-				end
-			end)
-
-			ColorPicker.Destroying:Connect(function()
-				if colorPickerRenderConnection then
-					colorPickerRenderConnection:Disconnect()
-				end
-				if colorPickerInputConnection then
-					colorPickerInputConnection:Disconnect()
-				end
-			end)
-
-			if Settings.ConfigurationSaving then
-				if Settings.ConfigurationSaving.Enabled and ColorPickerSettings.Flag then
-					RayfieldLibrary.Flags[ColorPickerSettings.Flag] = ColorPickerSettings
-				end
-			end
-
-			function ColorPickerSettings:Set(RGBColor)
-				ColorPickerSettings.Color = RGBColor
-				h,s,v = ColorPickerSettings.Color:ToHSV()
-				color = Color3.fromHSV(h,s,v)
-				setDisplay()
-			end
-
-			ColorPicker.MouseEnter:Connect(function()
-				TweenService:Create(ColorPicker, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackgroundHover}):Play()
-			end)
-
-			ColorPicker.MouseLeave:Connect(function()
-				TweenService:Create(ColorPicker, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackground}):Play()
-			end)
-
-			Rayfield.Main:GetPropertyChangedSignal('BackgroundColor3'):Connect(function()
-				for _, rgbinput in ipairs(ColorPicker.RGB:GetChildren()) do
-					if rgbinput:IsA("Frame") then
-						rgbinput.BackgroundColor3 = SelectedTheme.InputBackground
-						rgbinput.UIStroke.Color = SelectedTheme.InputStroke
-					end
-				end
-
-				ColorPicker.HexInput.BackgroundColor3 = SelectedTheme.InputBackground
-				ColorPicker.HexInput.UIStroke.Color = SelectedTheme.InputStroke
-			end)
-
-			return ColorPickerSettings
-		end
-
-		-- Section
-		function Tab:CreateSection(SectionName)
-
-			local SectionValue = {}
-
-			if SDone then
-				local SectionSpace = Elements.Template.SectionSpacing:Clone()
-				SectionSpace.Visible = true
-				SectionSpace.Parent = TabPage
-			end
-
-			local Section = Elements.Template.SectionTitle:Clone()
-			Section.Title.Text = SectionName
-			Section.Visible = true
-			Section.Parent = TabPage
-
-			Section.Title.TextTransparency = 1
-			-- Use section label colour from the Obsidian scheme (muted, not full TextColor)
-			Section.Title.TextColor3 = SelectedTheme.PlaceholderColor or Color3.fromRGB(54, 54, 72)
-			TweenService:Create(Section.Title, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()
-
-			function SectionValue:Set(NewSection)
-				Section.Title.Text = NewSection
-			end
-
-			SDone = true
-
-			return SectionValue
-		end
-
-		-- Divider
-		function Tab:CreateDivider()
-			local DividerValue = {}
-
-			local Divider = Elements.Template.Divider:Clone()
-			Divider.Visible = true
-			Divider.Parent = TabPage
-
-			Divider.Divider.BackgroundTransparency = 1
-			Divider.Divider.BackgroundColor3 = SelectedTheme.ElementStroke
-			TweenService:Create(Divider.Divider, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
-
-			function DividerValue:Set(Value)
-				Divider.Visible = Value
-			end
-
-			return DividerValue
-		end
-
-		-- Label
-		function Tab:CreateLabel(LabelText : string, Icon: number, Color : Color3, IgnoreTheme : boolean)
-			local LabelValue = {}
-
-			local Label = Elements.Template.Label:Clone()
-			Label.Title.Text = LabelText
-			Label.Visible = true
-			Label.Parent = TabPage
-
-			Label.BackgroundColor3 = Color or SelectedTheme.SecondaryElementBackground
-			Label.UIStroke.Color = Color or SelectedTheme.SecondaryElementStroke
-
-			if Icon then
-				local img, rectOffset, rectSize = resolveIcon(Icon)
-				Label.Icon.Image = img
-				if rectOffset then Label.Icon.ImageRectOffset = rectOffset end
-				if rectSize then Label.Icon.ImageRectSize = rectSize end
-			else
-				Label.Icon.Image = ""
-			end
-
-			if Icon and Label:FindFirstChild('Icon') then
-				Label.Title.Position = UDim2.new(0, 45, 0.5, 0)
-				Label.Title.Size = UDim2.new(1, -100, 0, 14)
-				Label.Icon.Visible = true
-			end
-
-			Label.Icon.ImageTransparency = 1
-			Label.BackgroundTransparency = 1
-			Label.UIStroke.Transparency = 1
-			Label.Title.TextTransparency = 1
-
-			Label:SetAttribute("BackgroundTransparencyTarget", Color and 0.8 or 0)
-			Label:SetAttribute("UIStrokeTransparencyTarget", Color and 0.7 or 0)
-			Label:SetAttribute("TitleTextTransparencyTarget", Color and 0.2 or 0)
-
-			TweenService:Create(Label, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {BackgroundTransparency = Color and 0.8 or 0}):Play()
-			TweenService:Create(Label.UIStroke, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {Transparency = Color and 0.7 or 0}):Play()
-			TweenService:Create(Label.Icon, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {ImageTransparency = 0.2}):Play()
-			TweenService:Create(Label.Title, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextTransparency = Color and 0.2 or 0}):Play()
-
-			function LabelValue:Set(NewLabel, Icon, Color)
-				Label.Title.Text = NewLabel
-
-				if Color then
-					Label.BackgroundColor3 = Color or SelectedTheme.SecondaryElementBackground
-					Label.UIStroke.Color = Color or SelectedTheme.SecondaryElementStroke
-				end
-
-				if Icon and Label:FindFirstChild('Icon') then
-					Label.Title.Position = UDim2.new(0, 45, 0.5, 0)
-					Label.Title.Size = UDim2.new(1, -100, 0, 14)
-
-					local img, rectOffset, rectSize = resolveIcon(Icon)
-					Label.Icon.Image = img
-					if rectOffset then Label.Icon.ImageRectOffset = rectOffset end
-					if rectSize then Label.Icon.ImageRectSize = rectSize end
-
-					Label.Icon.Visible = true
-				end
-			end
-
-			Rayfield.Main:GetPropertyChangedSignal('BackgroundColor3'):Connect(function()
-				Label.BackgroundColor3 = IgnoreTheme and (Color or Label.BackgroundColor3) or SelectedTheme.SecondaryElementBackground
-				Label.UIStroke.Color = IgnoreTheme and (Color or Label.BackgroundColor3) or SelectedTheme.SecondaryElementStroke
-			end)
-
-			return LabelValue
-		end
-
-		-- Paragraph
-		function Tab:CreateParagraph(ParagraphSettings)
-			local ParagraphValue = {}
-
-			local Paragraph = Elements.Template.Paragraph:Clone()
-			Paragraph.Title.Text = ParagraphSettings.Title
-			Paragraph.Content.Text = ParagraphSettings.Content
-			Paragraph.Visible = true
-			Paragraph.Parent = TabPage
-
-			Paragraph.BackgroundTransparency = 1
-			Paragraph.UIStroke.Transparency = 1
-			Paragraph.Title.TextTransparency = 1
-			Paragraph.Content.TextTransparency = 1
-
-			Paragraph.BackgroundColor3 = SelectedTheme.SecondaryElementBackground
-			Paragraph.UIStroke.Color = SelectedTheme.SecondaryElementStroke
-
-			TweenService:Create(Paragraph, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
-			TweenService:Create(Paragraph.UIStroke, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {Transparency = 0}):Play()
-			TweenService:Create(Paragraph.Title, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()	
-			TweenService:Create(Paragraph.Content, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()	
-
-			function ParagraphValue:Set(NewParagraphSettings)
-				Paragraph.Title.Text = NewParagraphSettings.Title
-				Paragraph.Content.Text = NewParagraphSettings.Content
-			end
-
-			Rayfield.Main:GetPropertyChangedSignal('BackgroundColor3'):Connect(function()
-				Paragraph.BackgroundColor3 = SelectedTheme.SecondaryElementBackground
-				Paragraph.UIStroke.Color = SelectedTheme.SecondaryElementStroke
-			end)
-
-			return ParagraphValue
-		end
-
-		-- Input
-		function Tab:CreateInput(InputSettings)
-			local Input = Elements.Template.Input:Clone()
-			Input.Name = InputSettings.Name
-			Input.Title.Text = InputSettings.Name
-			Input.Visible = true
-			Input.Parent = TabPage
-
-			Input.BackgroundTransparency = 1
-			Input.UIStroke.Transparency = 1
-			Input.Title.TextTransparency = 1
-
-			Input.InputFrame.InputBox.Text = InputSettings.CurrentValue or ''
-
-			Input.InputFrame.BackgroundColor3 = SelectedTheme.InputBackground
-			Input.InputFrame.UIStroke.Color = SelectedTheme.InputStroke
-
-			TweenService:Create(Input, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
-			TweenService:Create(Input.UIStroke, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {Transparency = 0}):Play()
-			TweenService:Create(Input.Title, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()	
-
-			Input.InputFrame.InputBox.PlaceholderText = InputSettings.PlaceholderText
-			Input.InputFrame.Size = UDim2.new(0, Input.InputFrame.InputBox.TextBounds.X + 24, 0, 30)
-
-			Input.InputFrame.InputBox.FocusLost:Connect(function()
-				local Success, Response = pcall(function()
-					InputSettings.Callback(Input.InputFrame.InputBox.Text)
-					InputSettings.CurrentValue = Input.InputFrame.InputBox.Text
-				end)
-
-				if not Success then
-					TweenService:Create(Input, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = Color3.fromRGB(85, 0, 0)}):Play()
-					TweenService:Create(Input.UIStroke, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
-					Input.Title.Text = "Callback Error"
-					print("Rayfield | "..InputSettings.Name.." Callback Error " ..tostring(Response))
-					warn('Check docs.sirius.menu for help with Rayfield specific development.')
-					task.wait(0.5)
-					Input.Title.Text = InputSettings.Name
-					TweenService:Create(Input, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackground}):Play()
-					TweenService:Create(Input.UIStroke, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Transparency = 0}):Play()
-				end
-
-				if InputSettings.RemoveTextAfterFocusLost then
-					Input.InputFrame.InputBox.Text = ""
-				end
-
-				if not InputSettings.Ext then
-					SaveConfiguration()
-				end
-			end)
-
-			Input.MouseEnter:Connect(function()
-				TweenService:Create(Input, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackgroundHover}):Play()
-			end)
-
-			Input.MouseLeave:Connect(function()
-				TweenService:Create(Input, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackground}):Play()
-			end)
-
-			Input.InputFrame.InputBox:GetPropertyChangedSignal("Text"):Connect(function()
-				TweenService:Create(Input.InputFrame, TweenInfo.new(0.55, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {Size = UDim2.new(0, Input.InputFrame.InputBox.TextBounds.X + 24, 0, 30)}):Play()
-			end)
-
-			function InputSettings:Set(text)
-				Input.InputFrame.InputBox.Text = text
-				InputSettings.CurrentValue = text
-
-				local Success, Response = pcall(function()
-					InputSettings.Callback(text)
-				end)
-
-				if not InputSettings.Ext then
-					SaveConfiguration()
-				end
-			end
-
-			if Settings.ConfigurationSaving then
-				if Settings.ConfigurationSaving.Enabled and InputSettings.Flag then
-					RayfieldLibrary.Flags[InputSettings.Flag] = InputSettings
-				end
-			end
-
-			Rayfield.Main:GetPropertyChangedSignal('BackgroundColor3'):Connect(function()
-				Input.InputFrame.BackgroundColor3 = SelectedTheme.InputBackground
-				Input.InputFrame.UIStroke.Color = SelectedTheme.InputStroke
-			end)
-
-			return InputSettings
-		end
-
-		-- Dropdown
-		function Tab:CreateDropdown(DropdownSettings)
-			local Dropdown = Elements.Template.Dropdown:Clone()
-			if string.find(DropdownSettings.Name,"closed") then
-				Dropdown.Name = "Dropdown"
-			else
-				Dropdown.Name = DropdownSettings.Name
-			end
-			Dropdown.Title.Text = DropdownSettings.Name
-			Dropdown.Visible = true
-			Dropdown.Parent = TabPage
-
-			Dropdown.List.Visible = false
-			if DropdownSettings.CurrentOption then
-				if type(DropdownSettings.CurrentOption) == "string" then
-					DropdownSettings.CurrentOption = {DropdownSettings.CurrentOption}
-				end
-				if not DropdownSettings.MultipleOptions and type(DropdownSettings.CurrentOption) == "table" then
-					DropdownSettings.CurrentOption = {DropdownSettings.CurrentOption[1]}
-				end
-			else
-				DropdownSettings.CurrentOption = {}
-			end
-
-			if DropdownSettings.MultipleOptions then
-				if DropdownSettings.CurrentOption and type(DropdownSettings.CurrentOption) == "table" then
-					if #DropdownSettings.CurrentOption == 1 then
-						Dropdown.Selected.Text = DropdownSettings.CurrentOption[1]
-					elseif #DropdownSettings.CurrentOption == 0 then
-						Dropdown.Selected.Text = "None"
-					else
-						Dropdown.Selected.Text = "Various"
-					end
-				else
-					DropdownSettings.CurrentOption = {}
-					Dropdown.Selected.Text = "None"
-				end
-			else
-				Dropdown.Selected.Text = DropdownSettings.CurrentOption[1] or "None"
-			end
-
-			Dropdown.Toggle.ImageColor3 = SelectedTheme.TextColor
-			TweenService:Create(Dropdown, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackground}):Play()
-
-			Dropdown.BackgroundTransparency = 1
-			Dropdown.UIStroke.Transparency = 1
-			Dropdown.Title.TextTransparency = 1
-
-			Dropdown.Size = UDim2.new(1, -10, 0, 45)
-
-			TweenService:Create(Dropdown, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
-			TweenService:Create(Dropdown.UIStroke, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {Transparency = 0}):Play()
-			TweenService:Create(Dropdown.Title, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()	
-
-			for _, ununusedoption in ipairs(Dropdown.List:GetChildren()) do
-				if ununusedoption.ClassName == "Frame" and ununusedoption.Name ~= "Placeholder" then
-					ununusedoption:Destroy()
-				end
-			end
-
-			Dropdown.Toggle.Rotation = 180
-
-			Dropdown.Interact.MouseButton1Click:Connect(function()
-				TweenService:Create(Dropdown, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackgroundHover}):Play()
-				TweenService:Create(Dropdown.UIStroke, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
-				task.wait(0.1)
-				TweenService:Create(Dropdown, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackground}):Play()
-				TweenService:Create(Dropdown.UIStroke, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {Transparency = 0}):Play()
-				if Debounce then return end
-				if Dropdown.List.Visible then
-					Debounce = true
-					TweenService:Create(Dropdown, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = UDim2.new(1, -10, 0, 45)}):Play()
-					for _, DropdownOpt in ipairs(Dropdown.List:GetChildren()) do
-						if DropdownOpt.ClassName == "Frame" and DropdownOpt.Name ~= "Placeholder" then
-							TweenService:Create(DropdownOpt, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {BackgroundTransparency = 1}):Play()
-							TweenService:Create(DropdownOpt.UIStroke, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
-							TweenService:Create(DropdownOpt.Title, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {TextTransparency = 1}):Play()
-						end
-					end
-					TweenService:Create(Dropdown.List, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {ScrollBarImageTransparency = 1}):Play()
-					TweenService:Create(Dropdown.Toggle, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {Rotation = 180}):Play()	
-					task.wait(0.35)
-					Dropdown.List.Visible = false
-					Debounce = false
-				else
-					TweenService:Create(Dropdown, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = UDim2.new(1, -10, 0, 180)}):Play()
-					Dropdown.List.Visible = true
-					TweenService:Create(Dropdown.List, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {ScrollBarImageTransparency = 0.7}):Play()
-					TweenService:Create(Dropdown.Toggle, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {Rotation = 0}):Play()	
-					for _, DropdownOpt in ipairs(Dropdown.List:GetChildren()) do
-						if DropdownOpt.ClassName == "Frame" and DropdownOpt.Name ~= "Placeholder" then
-							if DropdownOpt.Name ~= Dropdown.Selected.Text then
-								TweenService:Create(DropdownOpt.UIStroke, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {Transparency = 0}):Play()
-							end
-							TweenService:Create(DropdownOpt, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
-							TweenService:Create(DropdownOpt.Title, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()
-						end
-					end
-				end
-			end)
-
-			Dropdown.MouseEnter:Connect(function()
-				if not Dropdown.List.Visible then
-					TweenService:Create(Dropdown, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackgroundHover}):Play()
-				end
-			end)
-
-			Dropdown.MouseLeave:Connect(function()
-				TweenService:Create(Dropdown, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackground}):Play()
-			end)
-
-			local function SetDropdownOptions()
-				for _, Option in ipairs(DropdownSettings.Options) do
-					local DropdownOption = Elements.Template.Dropdown.List.Template:Clone()
-					DropdownOption.Name = Option
-					DropdownOption.Title.Text = Option
-					DropdownOption.Parent = Dropdown.List
-					DropdownOption.Visible = true
-
-					DropdownOption.BackgroundTransparency = 1
-					DropdownOption.UIStroke.Transparency = 1
-					DropdownOption.Title.TextTransparency = 1
-
-					--local Dropdown = Tab:CreateDropdown({
-					--	Name = "Dropdown Example",
-					--	Options = {"Option 1","Option 2"},
-					--	CurrentOption = {"Option 1"},
-					--  MultipleOptions = true,
-					--	Flag = "Dropdown1",
-					--	Callback = function(TableOfOptions)
-
-					--	end,
-					--})
-
-
-					DropdownOption.Interact.ZIndex = 50
-					DropdownOption.Interact.MouseButton1Click:Connect(function()
-						if not DropdownSettings.MultipleOptions and table.find(DropdownSettings.CurrentOption, Option) then 
-							return
-						end
-
-						if table.find(DropdownSettings.CurrentOption, Option) then
-							table.remove(DropdownSettings.CurrentOption, table.find(DropdownSettings.CurrentOption, Option))
-							if DropdownSettings.MultipleOptions then
-								if #DropdownSettings.CurrentOption == 1 then
-									Dropdown.Selected.Text = DropdownSettings.CurrentOption[1]
-								elseif #DropdownSettings.CurrentOption == 0 then
-									Dropdown.Selected.Text = "None"
-								else
-									Dropdown.Selected.Text = "Various"
-								end
-							else
-								Dropdown.Selected.Text = DropdownSettings.CurrentOption[1]
-							end
-						else
-							if not DropdownSettings.MultipleOptions then
-								table.clear(DropdownSettings.CurrentOption)
-							end
-							table.insert(DropdownSettings.CurrentOption, Option)
-							if DropdownSettings.MultipleOptions then
-								if #DropdownSettings.CurrentOption == 1 then
-									Dropdown.Selected.Text = DropdownSettings.CurrentOption[1]
-								elseif #DropdownSettings.CurrentOption == 0 then
-									Dropdown.Selected.Text = "None"
-								else
-									Dropdown.Selected.Text = "Various"
-								end
-							else
-								Dropdown.Selected.Text = DropdownSettings.CurrentOption[1]
-							end
-							TweenService:Create(DropdownOption.UIStroke, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
-							TweenService:Create(DropdownOption, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.DropdownSelected}):Play()
-							Debounce = true
-						end
-
-
-						local Success, Response = pcall(function()
-							DropdownSettings.Callback(DropdownSettings.CurrentOption)
-						end)
-
-						if not Success then
-							TweenService:Create(Dropdown, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = Color3.fromRGB(85, 0, 0)}):Play()
-							TweenService:Create(Dropdown.UIStroke, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
-							Dropdown.Title.Text = "Callback Error"
-							print("Rayfield | "..DropdownSettings.Name.." Callback Error " ..tostring(Response))
-							warn('Check docs.sirius.menu for help with Rayfield specific development.')
-							task.wait(0.5)
-							Dropdown.Title.Text = DropdownSettings.Name
-							TweenService:Create(Dropdown, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackground}):Play()
-							TweenService:Create(Dropdown.UIStroke, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Transparency = 0}):Play()
-						end
-
-						for _, droption in ipairs(Dropdown.List:GetChildren()) do
-							if droption.ClassName == "Frame" and droption.Name ~= "Placeholder" and not table.find(DropdownSettings.CurrentOption, droption.Name) then
-								TweenService:Create(droption, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.DropdownUnselected}):Play()
-							end
-						end
-						if not DropdownSettings.MultipleOptions then
-							task.wait(0.1)
-							TweenService:Create(Dropdown, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {Size = UDim2.new(1, -10, 0, 45)}):Play()
-							for _, DropdownOpt in ipairs(Dropdown.List:GetChildren()) do
-								if DropdownOpt.ClassName == "Frame" and DropdownOpt.Name ~= "Placeholder" then
-									TweenService:Create(DropdownOpt, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {BackgroundTransparency = 1}):Play()
-									TweenService:Create(DropdownOpt.UIStroke, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
-									TweenService:Create(DropdownOpt.Title, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {TextTransparency = 1}):Play()
-								end
-							end
-							TweenService:Create(Dropdown.List, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {ScrollBarImageTransparency = 1}):Play()
-							TweenService:Create(Dropdown.Toggle, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {Rotation = 180}):Play()	
-							task.wait(0.35)
-							Dropdown.List.Visible = false
-						end
-						Debounce = false
-						if not DropdownSettings.Ext then
-							SaveConfiguration()
-						end
-					end)
-
-					Rayfield.Main:GetPropertyChangedSignal('BackgroundColor3'):Connect(function()
-						DropdownOption.UIStroke.Color = SelectedTheme.ElementStroke
-					end)
-				end
-			end
-			SetDropdownOptions()
-
-			for _, droption in ipairs(Dropdown.List:GetChildren()) do
-				if droption.ClassName == "Frame" and droption.Name ~= "Placeholder" then
-					if not table.find(DropdownSettings.CurrentOption, droption.Name) then
-						droption.BackgroundColor3 = SelectedTheme.DropdownUnselected
-					else
-						droption.BackgroundColor3 = SelectedTheme.DropdownSelected
-					end
-
-					Rayfield.Main:GetPropertyChangedSignal('BackgroundColor3'):Connect(function()
-						if not table.find(DropdownSettings.CurrentOption, droption.Name) then
-							droption.BackgroundColor3 = SelectedTheme.DropdownUnselected
-						else
-							droption.BackgroundColor3 = SelectedTheme.DropdownSelected
-						end
-					end)
-				end
-			end
-
-			function DropdownSettings:Set(NewOption)
-				DropdownSettings.CurrentOption = NewOption
-
-				if typeof(DropdownSettings.CurrentOption) == "string" then
-					DropdownSettings.CurrentOption = {DropdownSettings.CurrentOption}
-				end
-
-				if not DropdownSettings.MultipleOptions then
-					DropdownSettings.CurrentOption = {DropdownSettings.CurrentOption[1]}
-				end
-
-				if DropdownSettings.MultipleOptions then
-					if #DropdownSettings.CurrentOption == 1 then
-						Dropdown.Selected.Text = DropdownSettings.CurrentOption[1]
-					elseif #DropdownSettings.CurrentOption == 0 then
-						Dropdown.Selected.Text = "None"
-					else
-						Dropdown.Selected.Text = "Various"
-					end
-				else
-					Dropdown.Selected.Text = DropdownSettings.CurrentOption[1]
-				end
-
-
-				local Success, Response = pcall(function()
-					DropdownSettings.Callback(NewOption)
-				end)
-				if not Success then
-					TweenService:Create(Dropdown, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = Color3.fromRGB(85, 0, 0)}):Play()
-					TweenService:Create(Dropdown.UIStroke, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
-					Dropdown.Title.Text = "Callback Error"
-					print("Rayfield | "..DropdownSettings.Name.." Callback Error " ..tostring(Response))
-					warn('Check docs.sirius.menu for help with Rayfield specific development.')
-					task.wait(0.5)
-					Dropdown.Title.Text = DropdownSettings.Name
-					TweenService:Create(Dropdown, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackground}):Play()
-					TweenService:Create(Dropdown.UIStroke, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Transparency = 0}):Play()
-				end
-
-				for _, droption in ipairs(Dropdown.List:GetChildren()) do
-					if droption.ClassName == "Frame" and droption.Name ~= "Placeholder" then
-						if not table.find(DropdownSettings.CurrentOption, droption.Name) then
-							droption.BackgroundColor3 = SelectedTheme.DropdownUnselected
-						else
-							droption.BackgroundColor3 = SelectedTheme.DropdownSelected
-						end
-					end
-				end
-				--SaveConfiguration()
-			end
-
-			function DropdownSettings:Refresh(optionsTable: table) -- updates a dropdown with new options from optionsTable
-				DropdownSettings.Options = optionsTable
-				for _, option in Dropdown.List:GetChildren() do
-					if option.ClassName == "Frame" and option.Name ~= "Placeholder" then
-						option:Destroy()
-					end
-				end
-				SetDropdownOptions()
-
-				-- Apply selected/unselected background colors to new options
-				for _, droption in ipairs(Dropdown.List:GetChildren()) do
-					if droption.ClassName == "Frame" and droption.Name ~= "Placeholder" then
-						if not table.find(DropdownSettings.CurrentOption, droption.Name) then
-							droption.BackgroundColor3 = SelectedTheme.DropdownUnselected
-						else
-							droption.BackgroundColor3 = SelectedTheme.DropdownSelected
-						end
-					end
-				end
-
-				-- If the dropdown is currently open, make new options visible immediately
-				if Dropdown.List.Visible then
-					for _, DropdownOpt in ipairs(Dropdown.List:GetChildren()) do
-						if DropdownOpt.ClassName == "Frame" and DropdownOpt.Name ~= "Placeholder" then
-							DropdownOpt.BackgroundTransparency = 0
-							DropdownOpt.Title.TextTransparency = 0
-							if not table.find(DropdownSettings.CurrentOption, DropdownOpt.Name) then
-								DropdownOpt.UIStroke.Transparency = 0
-							end
-						end
-					end
-				end
-			end
-
-			if Settings.ConfigurationSaving then
-				if Settings.ConfigurationSaving.Enabled and DropdownSettings.Flag then
-					RayfieldLibrary.Flags[DropdownSettings.Flag] = DropdownSettings
-				end
-			end
-
-			Rayfield.Main:GetPropertyChangedSignal('BackgroundColor3'):Connect(function()
-				Dropdown.Toggle.ImageColor3 = SelectedTheme.TextColor
-				TweenService:Create(Dropdown, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackground}):Play()
-			end)
-
-			return DropdownSettings
-		end
-
-		-- Keybind
-		function Tab:CreateKeybind(KeybindSettings)
-			local CheckingForKey = false
-			local Keybind = Elements.Template.Keybind:Clone()
-			Keybind.Name = KeybindSettings.Name
-			Keybind.Title.Text = KeybindSettings.Name
-			Keybind.Visible = true
-			Keybind.Parent = TabPage
-
-			Keybind.BackgroundTransparency = 1
-			Keybind.UIStroke.Transparency = 1
-			Keybind.Title.TextTransparency = 1
-
-			Keybind.KeybindFrame.BackgroundColor3 = SelectedTheme.InputBackground
-			Keybind.KeybindFrame.UIStroke.Color = SelectedTheme.InputStroke
-
-			TweenService:Create(Keybind, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
-			TweenService:Create(Keybind.UIStroke, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {Transparency = 0}):Play()
-			TweenService:Create(Keybind.Title, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()	
-
-			Keybind.KeybindFrame.KeybindBox.Text = KeybindSettings.CurrentKeybind
-			Keybind.KeybindFrame.Size = UDim2.new(0, Keybind.KeybindFrame.KeybindBox.TextBounds.X + 24, 0, 30)
-
-			Keybind.KeybindFrame.KeybindBox.Focused:Connect(function()
-				CheckingForKey = true
-				Keybind.KeybindFrame.KeybindBox.Text = ""
-			end)
-			Keybind.KeybindFrame.KeybindBox.FocusLost:Connect(function()
-				CheckingForKey = false
-				if Keybind.KeybindFrame.KeybindBox.Text == nil or Keybind.KeybindFrame.KeybindBox.Text == "" then
-					Keybind.KeybindFrame.KeybindBox.Text = KeybindSettings.CurrentKeybind
-					if not KeybindSettings.Ext then
-						SaveConfiguration()
-					end
-				end
-			end)
-
-			Keybind.MouseEnter:Connect(function()
-				TweenService:Create(Keybind, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackgroundHover}):Play()
-			end)
-
-			Keybind.MouseLeave:Connect(function()
-				TweenService:Create(Keybind, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackground}):Play()
-			end)
-
-			local connection = UserInputService.InputBegan:Connect(function(input, processed)
-				if CheckingForKey then
-					if input.KeyCode ~= Enum.KeyCode.Unknown then
-						local SplitMessage = string.split(tostring(input.KeyCode), ".")
-						local NewKeyNoEnum = SplitMessage[3]
-						Keybind.KeybindFrame.KeybindBox.Text = tostring(NewKeyNoEnum)
-						KeybindSettings.CurrentKeybind = tostring(NewKeyNoEnum)
-						Keybind.KeybindFrame.KeybindBox:ReleaseFocus()
-						if not KeybindSettings.Ext then
-							SaveConfiguration()
-						end
-
-						if KeybindSettings.CallOnChange then
-							KeybindSettings.Callback(tostring(NewKeyNoEnum))
-						end
-					end
-				elseif not KeybindSettings.CallOnChange and KeybindSettings.CurrentKeybind ~= nil and (input.KeyCode == Enum.KeyCode[KeybindSettings.CurrentKeybind] and not processed) then -- Test
-					local Held = true
-					local Connection
-					Connection = input.Changed:Connect(function(prop)
-						if prop == "UserInputState" then
-							Connection:Disconnect()
-							Held = false
-						end
-					end)
-
-					if not KeybindSettings.HoldToInteract then
-						local Success, Response = pcall(KeybindSettings.Callback)
-						if not Success then
-							TweenService:Create(Keybind, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = Color3.fromRGB(85, 0, 0)}):Play()
-							TweenService:Create(Keybind.UIStroke, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
-							Keybind.Title.Text = "Callback Error"
-							print("Rayfield | "..KeybindSettings.Name.." Callback Error " ..tostring(Response))
-							warn('Check docs.sirius.menu for help with Rayfield specific development.')
-							task.wait(0.5)
-							Keybind.Title.Text = KeybindSettings.Name
-							TweenService:Create(Keybind, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackground}):Play()
-							TweenService:Create(Keybind.UIStroke, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Transparency = 0}):Play()
-						end
-					else
-						task.wait(0.25)
-						if Held then
-							local Loop; Loop = RunService.Stepped:Connect(function()
-								if not Held then
-									KeybindSettings.Callback(false) -- maybe pcall this
-									Loop:Disconnect()
-								else
-									KeybindSettings.Callback(true) -- maybe pcall this
-								end
-							end)
-						end
-					end
-				end
-			end)
-			table.insert(keybindConnections, connection)
-
-			Keybind.KeybindFrame.KeybindBox:GetPropertyChangedSignal("Text"):Connect(function()
-				TweenService:Create(Keybind.KeybindFrame, TweenInfo.new(0.55, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {Size = UDim2.new(0, Keybind.KeybindFrame.KeybindBox.TextBounds.X + 24, 0, 30)}):Play()
-			end)
-
-			function KeybindSettings:Set(NewKeybind)
-				Keybind.KeybindFrame.KeybindBox.Text = tostring(NewKeybind)
-				KeybindSettings.CurrentKeybind = tostring(NewKeybind)
-				Keybind.KeybindFrame.KeybindBox:ReleaseFocus()
-				if not KeybindSettings.Ext then
-					SaveConfiguration()
-				end
-
-				if KeybindSettings.CallOnChange then
-					KeybindSettings.Callback(tostring(NewKeybind))
-				end
-			end
-
-			if Settings.ConfigurationSaving then
-				if Settings.ConfigurationSaving.Enabled and KeybindSettings.Flag then
-					RayfieldLibrary.Flags[KeybindSettings.Flag] = KeybindSettings
-				end
-			end
-
-			Rayfield.Main:GetPropertyChangedSignal('BackgroundColor3'):Connect(function()
-				Keybind.KeybindFrame.BackgroundColor3 = SelectedTheme.InputBackground
-				Keybind.KeybindFrame.UIStroke.Color = SelectedTheme.InputStroke
-			end)
-
-			return KeybindSettings
-		end
-
-		-- Toggle
-		function Tab:CreateToggle(ToggleSettings)
-			local ToggleValue = {}
-
-			local Toggle = Elements.Template.Toggle:Clone()
-			Toggle.Name = ToggleSettings.Name
-			Toggle.Title.Text = ToggleSettings.Name
-			Toggle.Visible = true
-			Toggle.Parent = TabPage
-
-			Toggle.BackgroundTransparency = 1
-			Toggle.UIStroke.Transparency = 1
-			Toggle.Title.TextTransparency = 1
-			Toggle.Switch.BackgroundColor3 = SelectedTheme.ToggleBackground
-
-			-- Always hide the legacy drop shadow; Obsidian uses flat dark surfaces
-			Toggle.Switch.Shadow.Visible = false
-
-			TweenService:Create(Toggle, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
-			TweenService:Create(Toggle.UIStroke, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {Transparency = 0}):Play()
-			TweenService:Create(Toggle.Title, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()	
-
-			if ToggleSettings.CurrentValue == true then
-				Toggle.Switch.Indicator.Position = UDim2.new(1, -20, 0.5, 0)
-				Toggle.Switch.Indicator.UIStroke.Color = SelectedTheme.ToggleEnabledStroke
-				Toggle.Switch.Indicator.BackgroundColor3 = SelectedTheme.ToggleEnabled
-				Toggle.Switch.UIStroke.Color = SelectedTheme.ToggleEnabledOuterStroke
-			else
-				Toggle.Switch.Indicator.Position = UDim2.new(1, -40, 0.5, 0)
-				Toggle.Switch.Indicator.UIStroke.Color = SelectedTheme.ToggleDisabledStroke
-				Toggle.Switch.Indicator.BackgroundColor3 = SelectedTheme.ToggleDisabled
-				Toggle.Switch.UIStroke.Color = SelectedTheme.ToggleDisabledOuterStroke
-			end
-
-			Toggle.MouseEnter:Connect(function()
-				TweenService:Create(Toggle, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackgroundHover}):Play()
-			end)
-
-			Toggle.MouseLeave:Connect(function()
-				TweenService:Create(Toggle, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackground}):Play()
-			end)
-
-			Toggle.Interact.MouseButton1Click:Connect(function()
-				if ToggleSettings.CurrentValue == true then
-					ToggleSettings.CurrentValue = false
-					TweenService:Create(Toggle, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackgroundHover}):Play()
-					TweenService:Create(Toggle.UIStroke, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
-					TweenService:Create(Toggle.Switch.Indicator, TweenInfo.new(0.45, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {Position = UDim2.new(1, -40, 0.5, 0)}):Play()
-					TweenService:Create(Toggle.Switch.Indicator.UIStroke, TweenInfo.new(0.55, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {Color = SelectedTheme.ToggleDisabledStroke}):Play()
-					TweenService:Create(Toggle.Switch.Indicator, TweenInfo.new(0.8, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {BackgroundColor3 = SelectedTheme.ToggleDisabled}):Play()
-					TweenService:Create(Toggle.Switch.UIStroke, TweenInfo.new(0.55, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {Color = SelectedTheme.ToggleDisabledOuterStroke}):Play()
-					TweenService:Create(Toggle, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackground}):Play()
-					TweenService:Create(Toggle.UIStroke, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Transparency = 0}):Play()	
-				else
-					ToggleSettings.CurrentValue = true
-					TweenService:Create(Toggle, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackgroundHover}):Play()
-					TweenService:Create(Toggle.UIStroke, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
-					TweenService:Create(Toggle.Switch.Indicator, TweenInfo.new(0.5, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {Position = UDim2.new(1, -20, 0.5, 0)}):Play()
-					TweenService:Create(Toggle.Switch.Indicator.UIStroke, TweenInfo.new(0.55, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {Color = SelectedTheme.ToggleEnabledStroke}):Play()
-					TweenService:Create(Toggle.Switch.Indicator, TweenInfo.new(0.8, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {BackgroundColor3 = SelectedTheme.ToggleEnabled}):Play()
-					TweenService:Create(Toggle.Switch.UIStroke, TweenInfo.new(0.55, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {Color = SelectedTheme.ToggleEnabledOuterStroke}):Play()
-					TweenService:Create(Toggle, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackground}):Play()
-					TweenService:Create(Toggle.UIStroke, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Transparency = 0}):Play()		
-				end
-
-				local Success, Response = pcall(function()
-					if debugX then warn('Running toggle \''..ToggleSettings.Name..'\' (Interact)') end
-
-					ToggleSettings.Callback(ToggleSettings.CurrentValue)
-				end)
-
-				if not Success then
-					TweenService:Create(Toggle, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = Color3.fromRGB(85, 0, 0)}):Play()
-					TweenService:Create(Toggle.UIStroke, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
-					Toggle.Title.Text = "Callback Error"
-					print("Rayfield | "..ToggleSettings.Name.." Callback Error " ..tostring(Response))
-					warn('Check docs.sirius.menu for help with Rayfield specific development.')
-					task.wait(0.5)
-					Toggle.Title.Text = ToggleSettings.Name
-					TweenService:Create(Toggle, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackground}):Play()
-					TweenService:Create(Toggle.UIStroke, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Transparency = 0}):Play()
-				end
-
-				if not ToggleSettings.Ext then
-					SaveConfiguration()
-				end
-			end)
-
-			function ToggleSettings:Set(NewToggleValue)
-				if NewToggleValue == true then
-					ToggleSettings.CurrentValue = true
-					TweenService:Create(Toggle, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackgroundHover}):Play()
-					TweenService:Create(Toggle.UIStroke, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
-					TweenService:Create(Toggle.Switch.Indicator, TweenInfo.new(0.5, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {Position = UDim2.new(1, -20, 0.5, 0)}):Play()
-					TweenService:Create(Toggle.Switch.Indicator, TweenInfo.new(0.4, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {Size = UDim2.new(0,12,0,12)}):Play()
-					TweenService:Create(Toggle.Switch.Indicator.UIStroke, TweenInfo.new(0.55, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {Color = SelectedTheme.ToggleEnabledStroke}):Play()
-					TweenService:Create(Toggle.Switch.Indicator, TweenInfo.new(0.8, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {BackgroundColor3 = SelectedTheme.ToggleEnabled}):Play()
-					TweenService:Create(Toggle.Switch.UIStroke, TweenInfo.new(0.55, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {Color = SelectedTheme.ToggleEnabledOuterStroke}):Play()
-					TweenService:Create(Toggle.Switch.Indicator, TweenInfo.new(0.45, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {Size = UDim2.new(0,17,0,17)}):Play()	
-					TweenService:Create(Toggle, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackground}):Play()
-					TweenService:Create(Toggle.UIStroke, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Transparency = 0}):Play()	
-				else
-					ToggleSettings.CurrentValue = false
-					TweenService:Create(Toggle, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackgroundHover}):Play()
-					TweenService:Create(Toggle.UIStroke, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
-					TweenService:Create(Toggle.Switch.Indicator, TweenInfo.new(0.45, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {Position = UDim2.new(1, -40, 0.5, 0)}):Play()
-					TweenService:Create(Toggle.Switch.Indicator, TweenInfo.new(0.4, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {Size = UDim2.new(0,12,0,12)}):Play()
-					TweenService:Create(Toggle.Switch.Indicator.UIStroke, TweenInfo.new(0.55, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {Color = SelectedTheme.ToggleDisabledStroke}):Play()
-					TweenService:Create(Toggle.Switch.Indicator, TweenInfo.new(0.8, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {BackgroundColor3 = SelectedTheme.ToggleDisabled}):Play()
-					TweenService:Create(Toggle.Switch.UIStroke, TweenInfo.new(0.55, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {Color = SelectedTheme.ToggleDisabledOuterStroke}):Play()
-					TweenService:Create(Toggle.Switch.Indicator, TweenInfo.new(0.4, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {Size = UDim2.new(0,17,0,17)}):Play()
-					TweenService:Create(Toggle, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackground}):Play()
-					TweenService:Create(Toggle.UIStroke, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Transparency = 0}):Play()	
-				end
-
-				local Success, Response = pcall(function()
-					if debugX then warn('Running toggle \''..ToggleSettings.Name..'\' (:Set)') end
-
-					ToggleSettings.Callback(ToggleSettings.CurrentValue)
-				end)
-
-				if not Success then
-					TweenService:Create(Toggle, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = Color3.fromRGB(85, 0, 0)}):Play()
-					TweenService:Create(Toggle.UIStroke, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
-					Toggle.Title.Text = "Callback Error"
-					print("Rayfield | "..ToggleSettings.Name.." Callback Error " ..tostring(Response))
-					warn('Check docs.sirius.menu for help with Rayfield specific development.')
-					task.wait(0.5)
-					Toggle.Title.Text = ToggleSettings.Name
-					TweenService:Create(Toggle, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackground}):Play()
-					TweenService:Create(Toggle.UIStroke, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Transparency = 0}):Play()
-				end
-
-				if not ToggleSettings.Ext then
-					SaveConfiguration()
-				end
-			end
-
-			if not ToggleSettings.Ext then
-				if Settings.ConfigurationSaving then
-					if Settings.ConfigurationSaving.Enabled and ToggleSettings.Flag then
-						RayfieldLibrary.Flags[ToggleSettings.Flag] = ToggleSettings
-					end
-				end
-			end
-
-
-			Rayfield.Main:GetPropertyChangedSignal('BackgroundColor3'):Connect(function()
-				Toggle.Switch.BackgroundColor3 = SelectedTheme.ToggleBackground
-
-				Toggle.Switch.Shadow.Visible = false -- Always hide legacy shadow for Obsidian/dark themes
-
-				task.wait()
-
-				if not ToggleSettings.CurrentValue then
-					Toggle.Switch.Indicator.UIStroke.Color = SelectedTheme.ToggleDisabledStroke
-					Toggle.Switch.Indicator.BackgroundColor3 = SelectedTheme.ToggleDisabled
-					Toggle.Switch.UIStroke.Color = SelectedTheme.ToggleDisabledOuterStroke
-				else
-					Toggle.Switch.Indicator.UIStroke.Color = SelectedTheme.ToggleEnabledStroke
-					Toggle.Switch.Indicator.BackgroundColor3 = SelectedTheme.ToggleEnabled
-					Toggle.Switch.UIStroke.Color = SelectedTheme.ToggleEnabledOuterStroke
-				end
-			end)
-
-			return ToggleSettings
-		end
-
-		-- Slider
-		function Tab:CreateSlider(SliderSettings)
-			local SLDragging = false
-			local Slider = Elements.Template.Slider:Clone()
-			Slider.Name = SliderSettings.Name
-			Slider.Title.Text = SliderSettings.Name
-			Slider.Visible = true
-			Slider.Parent = TabPage
-
-			Slider.BackgroundTransparency = 1
-			Slider.UIStroke.Transparency = 1
-			Slider.Title.TextTransparency = 1
-
-			-- Always hide the legacy slider shadow for a flat Obsidian aesthetic
-			Slider.Main.Shadow.Visible = false
-
-			Slider.Main.BackgroundColor3 = SelectedTheme.SliderBackground
-			Slider.Main.UIStroke.Color = SelectedTheme.SliderStroke
-			Slider.Main.Progress.UIStroke.Color = SelectedTheme.SliderStroke
-			Slider.Main.Progress.BackgroundColor3 = SelectedTheme.SliderProgress
-
-			TweenService:Create(Slider, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
-			TweenService:Create(Slider.UIStroke, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {Transparency = 0}):Play()
-			TweenService:Create(Slider.Title, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()	
-
-			Slider.Main.Progress.Size =	UDim2.new(0, Slider.Main.AbsoluteSize.X * ((SliderSettings.CurrentValue - SliderSettings.Range[1]) / (SliderSettings.Range[2] - SliderSettings.Range[1])) > 5 and Slider.Main.AbsoluteSize.X * ((SliderSettings.CurrentValue - SliderSettings.Range[1]) / (SliderSettings.Range[2] - SliderSettings.Range[1])) or 5, 1, 0)
-
-			if not SliderSettings.Suffix then
-				Slider.Main.Information.Text = tostring(SliderSettings.CurrentValue)
-			else
-				Slider.Main.Information.Text = tostring(SliderSettings.CurrentValue) .. " " .. SliderSettings.Suffix
-			end
-
-			Slider.MouseEnter:Connect(function()
-				TweenService:Create(Slider, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackgroundHover}):Play()
-			end)
-
-			Slider.MouseLeave:Connect(function()
-				TweenService:Create(Slider, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackground}):Play()
-			end)
-
-			Slider.Main.Interact.InputBegan:Connect(function(Input)
-				if Input.UserInputType == Enum.UserInputType.MouseButton1 or Input.UserInputType == Enum.UserInputType.Touch then 
-					TweenService:Create(Slider.Main.UIStroke, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
-					TweenService:Create(Slider.Main.Progress.UIStroke, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
-					SLDragging = true 
-				end 
-			end)
-
-			Slider.Main.Interact.InputEnded:Connect(function(Input) 
-				if Input.UserInputType == Enum.UserInputType.MouseButton1 or Input.UserInputType == Enum.UserInputType.Touch then 
-					TweenService:Create(Slider.Main.UIStroke, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Transparency = 0.4}):Play()
-					TweenService:Create(Slider.Main.Progress.UIStroke, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Transparency = 0.3}):Play()
-					SLDragging = false 
-				end 
-			end)
-
-			Slider.Main.Interact.MouseButton1Down:Connect(function(X)
-				local Current = Slider.Main.Progress.AbsolutePosition.X + Slider.Main.Progress.AbsoluteSize.X
-				local Start = Current
-				local Location = X
-				local Loop; Loop = RunService.Stepped:Connect(function()
-					if SLDragging then
-						Location = UserInputService:GetMouseLocation().X
-						Current = Current + 0.025 * (Location - Start)
-
-						if Location < Slider.Main.AbsolutePosition.X then
-							Location = Slider.Main.AbsolutePosition.X
-						elseif Location > Slider.Main.AbsolutePosition.X + Slider.Main.AbsoluteSize.X then
-							Location = Slider.Main.AbsolutePosition.X + Slider.Main.AbsoluteSize.X
-						end
-
-						if Current < Slider.Main.AbsolutePosition.X + 5 then
-							Current = Slider.Main.AbsolutePosition.X + 5
-						elseif Current > Slider.Main.AbsolutePosition.X + Slider.Main.AbsoluteSize.X then
-							Current = Slider.Main.AbsolutePosition.X + Slider.Main.AbsoluteSize.X
-						end
-
-						if Current <= Location and (Location - Start) < 0 then
-							Start = Location
-						elseif Current >= Location and (Location - Start) > 0 then
-							Start = Location
-						end
-						TweenService:Create(Slider.Main.Progress, TweenInfo.new(0.45, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {Size = UDim2.new(0, Current - Slider.Main.AbsolutePosition.X, 1, 0)}):Play()
-						local NewValue = SliderSettings.Range[1] + (Location - Slider.Main.AbsolutePosition.X) / Slider.Main.AbsoluteSize.X * (SliderSettings.Range[2] - SliderSettings.Range[1])
-
-						NewValue = math.floor(NewValue / SliderSettings.Increment + 0.5) * (SliderSettings.Increment * 10000000) / 10000000
-						NewValue = math.clamp(NewValue, SliderSettings.Range[1], SliderSettings.Range[2])
-
-						if not SliderSettings.Suffix then
-							Slider.Main.Information.Text = tostring(NewValue)
-						else
-							Slider.Main.Information.Text = tostring(NewValue) .. " " .. SliderSettings.Suffix
-						end
-
-						if SliderSettings.CurrentValue ~= NewValue then
-							local Success, Response = pcall(function()
-								SliderSettings.Callback(NewValue)
-							end)
-							if not Success then
-								TweenService:Create(Slider, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = Color3.fromRGB(85, 0, 0)}):Play()
-								TweenService:Create(Slider.UIStroke, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
-								Slider.Title.Text = "Callback Error"
-								print("Rayfield | "..SliderSettings.Name.." Callback Error " ..tostring(Response))
-								warn('Check docs.sirius.menu for help with Rayfield specific development.')
-								task.wait(0.5)
-								Slider.Title.Text = SliderSettings.Name
-								TweenService:Create(Slider, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackground}):Play()
-								TweenService:Create(Slider.UIStroke, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Transparency = 0}):Play()
-							end
-
-							SliderSettings.CurrentValue = NewValue
-							if not SliderSettings.Ext then
-								SaveConfiguration()
-							end
-						end
-					else
-						TweenService:Create(Slider.Main.Progress, TweenInfo.new(0.3, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {Size = UDim2.new(0, Location - Slider.Main.AbsolutePosition.X > 5 and Location - Slider.Main.AbsolutePosition.X or 5, 1, 0)}):Play()
-						Loop:Disconnect()
-					end
-				end)
-			end)
-
-			function SliderSettings:Set(NewVal)
-				local NewVal = math.clamp(NewVal, SliderSettings.Range[1], SliderSettings.Range[2])
-
-				TweenService:Create(Slider.Main.Progress, TweenInfo.new(0.45, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {Size = UDim2.new(0, Slider.Main.AbsoluteSize.X * ((NewVal - SliderSettings.Range[1]) / (SliderSettings.Range[2] - SliderSettings.Range[1])) > 5 and Slider.Main.AbsoluteSize.X * ((NewVal - SliderSettings.Range[1]) / (SliderSettings.Range[2] - SliderSettings.Range[1])) or 5, 1, 0)}):Play()
-				Slider.Main.Information.Text = tostring(NewVal) .. " " .. (SliderSettings.Suffix or "")
-
-				local Success, Response = pcall(function()
-					SliderSettings.Callback(NewVal)
-				end)
-
-				if not Success then
-					TweenService:Create(Slider, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = Color3.fromRGB(85, 0, 0)}):Play()
-					TweenService:Create(Slider.UIStroke, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
-					Slider.Title.Text = "Callback Error"
-					print("Rayfield | "..SliderSettings.Name.." Callback Error " ..tostring(Response))
-					warn('Check docs.sirius.menu for help with Rayfield specific development.')
-					task.wait(0.5)
-					Slider.Title.Text = SliderSettings.Name
-					TweenService:Create(Slider, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackground}):Play()
-					TweenService:Create(Slider.UIStroke, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Transparency = 0}):Play()
-				end
-
-				SliderSettings.CurrentValue = NewVal
-				if not SliderSettings.Ext then
-					SaveConfiguration()
-				end
-			end
-
-			if Settings.ConfigurationSaving then
-				if Settings.ConfigurationSaving.Enabled and SliderSettings.Flag then
-					RayfieldLibrary.Flags[SliderSettings.Flag] = SliderSettings
-				end
-			end
-
-			Rayfield.Main:GetPropertyChangedSignal('BackgroundColor3'):Connect(function()
-				if SelectedTheme ~= RayfieldLibrary.Theme.Default then
-					Slider.Main.Shadow.Visible = false
-				end
-
-				Slider.Main.BackgroundColor3 = SelectedTheme.SliderBackground
-				Slider.Main.UIStroke.Color = SelectedTheme.SliderStroke
-				Slider.Main.Progress.UIStroke.Color = SelectedTheme.SliderStroke
-				Slider.Main.Progress.BackgroundColor3 = SelectedTheme.SliderProgress
-			end)
-
-			return SliderSettings
-		end
-
-		Rayfield.Main:GetPropertyChangedSignal('BackgroundColor3'):Connect(function()
-			TabButton.UIStroke.Color = SelectedTheme.TabStroke
-
-			if Elements.UIPageLayout.CurrentPage == TabPage then
-				TabButton.BackgroundColor3 = SelectedTheme.TabBackgroundSelected
-				TabButton.Image.ImageColor3 = SelectedTheme.SelectedTabTextColor
-				TabButton.Title.TextColor3 = SelectedTheme.SelectedTabTextColor
-			else
-				TabButton.BackgroundColor3 = SelectedTheme.TabBackground
-				TabButton.Image.ImageColor3 = SelectedTheme.TabTextColor
-				TabButton.Title.TextColor3 = SelectedTheme.TabTextColor
-			end
-		end)
-
-		return Tab
-	end
-
-	Elements.Visible = true
-
-
-	task.wait(1.1)
-	TweenService:Create(Main, TweenInfo.new(0.7, Enum.EasingStyle.Exponential, Enum.EasingDirection.InOut), {Size = UDim2.new(0, 390, 0, 90)}):Play()
-	task.wait(0.3)
-	TweenService:Create(LoadingFrame.Title, TweenInfo.new(0.2, Enum.EasingStyle.Exponential), {TextTransparency = 1}):Play()
-	TweenService:Create(LoadingFrame.Subtitle, TweenInfo.new(0.2, Enum.EasingStyle.Exponential), {TextTransparency = 1}):Play()
-	TweenService:Create(LoadingFrame.Version, TweenInfo.new(0.2, Enum.EasingStyle.Exponential), {TextTransparency = 1}):Play()
-	task.wait(0.1)
-	TweenService:Create(Main, TweenInfo.new(0.6, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {Size = useMobileSizing and UDim2.new(0, 500, 0, 275) or UDim2.new(0, 500, 0, 475)}):Play()
-	TweenService:Create(Main.Shadow.Image, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {ImageTransparency = 0.6}):Play()
-
-	Topbar.BackgroundTransparency = 1
-	Topbar.Divider.Size = UDim2.new(0, 0, 0, 1)
-	Topbar.Divider.BackgroundColor3 = SelectedTheme.ElementStroke
-	Topbar.CornerRepair.BackgroundTransparency = 1
-	Topbar.Title.TextTransparency = 1
-	Topbar.Search.ImageTransparency = 1
-	if Topbar:FindFirstChild('Settings') then
-		Topbar.Settings.ImageTransparency = 1
-	end
-	Topbar.ChangeSize.ImageTransparency = 1
-	Topbar.Hide.ImageTransparency = 1
-
-
-	task.wait(0.5)
-	Topbar.Visible = true
-	TweenService:Create(Topbar, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
-	TweenService:Create(Topbar.CornerRepair, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0}):Play()
-	task.wait(0.1)
-	TweenService:Create(Topbar.Divider, TweenInfo.new(1, Enum.EasingStyle.Exponential), {Size = UDim2.new(1, 0, 0, 1)}):Play()
-	TweenService:Create(Topbar.Title, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()
-	task.wait(0.05)
-	TweenService:Create(Topbar.Search, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {ImageTransparency = 0.8}):Play()
-	task.wait(0.05)
-	if Topbar:FindFirstChild('Settings') then
-		TweenService:Create(Topbar.Settings, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {ImageTransparency = 0.8}):Play()
-		task.wait(0.05)
-	end
-	TweenService:Create(Topbar.ChangeSize, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {ImageTransparency = 0.8}):Play()
-	task.wait(0.05)
-	TweenService:Create(Topbar.Hide, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {ImageTransparency = 0.8}):Play()
-	task.wait(0.3)
-
-	if dragBar then
-		TweenService:Create(dragBarCosmetic, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0.7}):Play()
-	end
-
-	function Window.ModifyTheme(NewTheme)
-		local success = pcall(ChangeTheme, NewTheme)
-		if not success then
-			RayfieldLibrary:Notify({Title = 'Unable to Change Theme', Content = 'We are unable find a theme on file.', Image = 4400704299})
-		else
-			RayfieldLibrary:Notify({Title = 'Theme Changed', Content = 'Successfully changed theme to '..(typeof(NewTheme) == 'string' and NewTheme or 'Custom Theme')..'.', Image = 4483362748})
-		end
-	end
-
-	local success, result = pcall(function()
-		createSettings(Window)
-	end)
-
-	if not success then warn('Rayfield had an issue creating settings.') end
-
-	-- Report after createSettings so loadSettings() has run and usageAnalytics reflects the user's saved preference
-	if reporter and getSetting("System", "usageAnalytics") then
-		local themeName = "Default"
-		if Settings.Theme then
-			if type(Settings.Theme) == "string" then
-				themeName = Settings.Theme
-			elseif type(Settings.Theme) == "table" then
-				themeName = "Custom"
-			end
-		end
-
-		local discordInvite = nil
-		if Settings.Discord and Settings.Discord.Enabled and Settings.Discord.Invite and Settings.Discord.Invite ~= "" then
-			local raw = tostring(Settings.Discord.Invite)
-			-- Normalize: strip URL prefixes to extract just the invite code
-			discordInvite = (raw:match("discord%.gg/([%w%-]+)") or raw:match("discord%.com/invite/([%w%-]+)") or raw):sub(1, 32)
-		end
-
-		local sampleSend = false
-
-		-- Random Sampling Test
-		if not Settings.ScriptID and math.random() > 0.4 then
-			sampleSend = true
-		end
-
-		--if Settings.ScriptID then
-			reporter:windowCreated({
-				script_name        = Settings.Name or "Unknown",
-				script_version     = Release,
-				interface_version  = InterfaceBuild,
-				theme              = themeName,
-				is_mobile          = useMobileSizing and true or false,
-				has_key_system     = Settings.KeySystem and true or false,
-				discord_invite     = discordInvite,
-				config_saving      = (Settings.ConfigurationSaving and Settings.ConfigurationSaving.Enabled) and true or false,
-				script_id          = Settings.ScriptID or sampleSend and 'sid_tzfyxawonjx9' or nil,
-				verification_token = Settings.VerificationToken,
-			})
-		--end
-	end
-
-	return Window
+-- ─── Virtualized List ──────────────────────────────────────────────────────
+--[[
+    Renders only visible rows; recycles row frames from a pool.
+    Handles thousands of items smoothly.
+]]
+local VirtualList = {}
+VirtualList.__index = VirtualList
+
+function VirtualList.New(params)
+    --[[
+        params = {
+            container   = ScrollingFrame
+            rowHeight   = number
+            items       = {} (can be updated)
+            renderItem  = function(frame, item, index) ... end
+            padding     = number (optional)
+        }
+    ]]
+    local self = setmetatable({
+        container  = params.container,
+        rowHeight  = params.rowHeight or 24,
+        items      = params.items or {},
+        renderItem = params.renderItem,
+        padding    = params.padding or 0,
+        _visibleRows = {},
+        _maid        = Maid.New(),
+    }, VirtualList)
+
+    self:_Init()
+    return self
 end
 
-local function setVisibility(visibility: boolean, notify: boolean?)
-	if Debounce then return end
-	if visibility then
-		Hidden = false
-		Unhide()
-	else
-		Hidden = true
-		Hide(notify)
-	end
+function VirtualList:_Init()
+    local container = self.container
+    container.ScrollingEnabled = true
+    container.ClipsDescendants = true
+
+    local function refresh()
+        self:_Render()
+    end
+
+    self._maid:Connect(container:GetPropertyChangedSignal("CanvasPosition"), refresh)
+    self._maid:Connect(container:GetPropertyChangedSignal("AbsoluteSize"),   refresh)
+    self:_Render()
 end
 
-function RayfieldLibrary:SetVisibility(visibility: boolean)
-	setVisibility(visibility, false)
+function VirtualList:_Render()
+    local container  = self.container
+    local rowH       = self.rowHeight
+    local pad        = self.padding
+    local scrollY    = container.CanvasPosition.Y
+    local viewH      = container.AbsoluteSize.Y
+    local total      = #self.items
+
+    -- Update canvas size
+    container.CanvasSize = UDim2.new(0, 0, 0, total * rowH + pad * 2)
+
+    local firstVisible = math.max(1, math.floor((scrollY - pad) / rowH))
+    local lastVisible  = math.min(total, math.ceil((scrollY + viewH - pad) / rowH) + 1)
+
+    -- Release rows no longer visible
+    for idx, row in pairs(self._visibleRows) do
+        if idx < firstVisible or idx > lastVisible then
+            ObjectPool.Release(row)
+            self._visibleRows[idx] = nil
+        end
+    end
+
+    -- Create/recycle rows for visible range
+    for i = firstVisible, lastVisible do
+        if not self._visibleRows[i] and self.items[i] then
+            local frame = ObjectPool.Get("Frame", {
+                BackgroundTransparency = 1,
+                Position = UDim2.new(0, 0, 0, pad + (i-1)*rowH),
+                Size     = UDim2.new(1, 0, 0, rowH),
+                Parent   = container,
+            })
+            self._visibleRows[i] = frame
+            pcall(self.renderItem, frame, self.items[i], i)
+        end
+    end
 end
 
-function RayfieldLibrary:IsVisible(): boolean
-	return not Hidden
+function VirtualList:SetItems(items)
+    self.items = items
+    self:_Render()
 end
 
-local hideHotkeyConnection -- Has to be initialized here since the connection is made later in the script
-function RayfieldLibrary:Destroy()
-	rayfieldDestroyed = true
-	if hideHotkeyConnection then
-		hideHotkeyConnection:Disconnect()
-	end
-	for _, connection in keybindConnections do
-		connection:Disconnect()
-	end
-	Rayfield:Destroy()
+function VirtualList:Destroy()
+    self._maid:Destroy()
+    for _, row in pairs(self._visibleRows) do
+        ObjectPool.Release(row)
+    end
+    self._visibleRows = {}
 end
 
-Topbar.ChangeSize.MouseButton1Click:Connect(function()
-	if Debounce then return end
-	if Minimised then
-		Minimised = false
-		Maximise()
-	else
-		Minimised = true
-		Minimise()
-	end
-end)
+-- ─── Microinteraction Helpers ──────────────────────────────────────────────
+local Micro = {}
+do
+    local scheme = ThemeEngine.CurrentScheme
 
-Main.Search.Input:GetPropertyChangedSignal('Text'):Connect(function()
-	if #Main.Search.Input.Text > 0 then
-		if not Elements.UIPageLayout.CurrentPage:FindFirstChild('SearchTitle-fsefsefesfsefesfesfThanks') then 
-			local searchTitle = Elements.Template.SectionTitle:Clone()
-			searchTitle.Parent = Elements.UIPageLayout.CurrentPage
-			searchTitle.Name = 'SearchTitle-fsefsefesfsefesfesfThanks'
-			searchTitle.LayoutOrder = -100
-			searchTitle.Title.Text = "Results from '"..Elements.UIPageLayout.CurrentPage.Name.."'"
-			searchTitle.Visible = true
-		end
-	else
-		local searchTitle = Elements.UIPageLayout.CurrentPage:FindFirstChild('SearchTitle-fsefsefesfsefesfesfThanks')
+    -- Hover glow: UIStroke tweens in/out on hover
+    function Micro.HoverGlow(element, maid, color, thickness)
+        color     = color or Library.Scheme.AccentColor
+        thickness = thickness or 1.5
+        local stroke = Instance.new("UIStroke")
+        stroke.Color       = color
+        stroke.Thickness   = 0
+        stroke.Transparency= 0.4
+        stroke.Parent      = element
 
-		if searchTitle then
-			searchTitle:Destroy()
-		end
-	end
+        local tiIn  = TweenInfo.new(0.12, Enum.EasingStyle.Quad)
+        local tiOut = TweenInfo.new(0.18, Enum.EasingStyle.Quad)
 
-	for _, element in ipairs(Elements.UIPageLayout.CurrentPage:GetChildren()) do
-		if element.ClassName ~= 'UIListLayout' and element.Name ~= 'Placeholder' and element.Name ~= 'SearchTitle-fsefsefesfsefesfesfThanks' then
-			if element.Name == 'SectionTitle' then
-				if #Main.Search.Input.Text == 0 then
-					element.Visible = true
-				else
-					element.Visible = false
-				end
-			else
-				if string.lower(element.Name):find(string.lower(Main.Search.Input.Text), 1, true) then
-					element.Visible = true
-				else
-					element.Visible = false
-				end
-			end
-		end
-	end
-end)
+        maid:Give(element.MouseEnter:Connect(function()
+            TweenService:Create(stroke, tiIn,  { Thickness = thickness }):Play()
+        end))
+        maid:Give(element.MouseLeave:Connect(function()
+            TweenService:Create(stroke, tiOut, { Thickness = 0 }):Play()
+        end))
+        return stroke
+    end
 
-Main.Search.Input.FocusLost:Connect(function(enterPressed)
-	if #Main.Search.Input.Text == 0 and searchOpen then
-		task.wait(0.12)
-		closeSearch()
-	end
-end)
+    -- Press scale from center
+    function Micro.PressDepression(element, maid)
+        local scale = Instance.new("UIScale")
+        scale.Scale  = 1
+        scale.Parent = element
 
-Topbar.Search.MouseButton1Click:Connect(function()
-	task.spawn(function()
-		if searchOpen then
-			closeSearch()
-		else
-			openSearch()
-		end
-	end)
-end)
+        local tiDown = TweenInfo.new(0.07, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+        local tiUp   = TweenInfo.new(0.15, Enum.EasingStyle.Back,  Enum.EasingDirection.Out)
 
-if Topbar:FindFirstChild('Settings') then
-	Topbar.Settings.MouseButton1Click:Connect(function()
-		task.spawn(function()
-			for _, OtherTabButton in ipairs(TabList:GetChildren()) do
-				if OtherTabButton.Name ~= "Template" and OtherTabButton.ClassName == "Frame" and OtherTabButton.Name ~= "Placeholder" then
-					TweenService:Create(OtherTabButton, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.TabBackground}):Play()
-					TweenService:Create(OtherTabButton.Title, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextColor3 = SelectedTheme.TabTextColor}):Play()
-					TweenService:Create(OtherTabButton.Image, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {ImageColor3 = SelectedTheme.TabTextColor}):Play()
-					TweenService:Create(OtherTabButton, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {BackgroundTransparency = 0.7}):Play()
-					TweenService:Create(OtherTabButton.Title, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextTransparency = 0.2}):Play()
-					TweenService:Create(OtherTabButton.Image, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {ImageTransparency = 0.2}):Play()
-					TweenService:Create(OtherTabButton.UIStroke, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {Transparency = 0.5}):Play()
-				end
-			end
+        maid:Give(element.InputBegan:Connect(function(input)
+            if input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
+            TweenService:Create(scale, tiDown, { Scale = 0.95 }):Play()
+        end))
+        maid:Give(element.InputEnded:Connect(function(input)
+            if input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
+            TweenService:Create(scale, tiUp, { Scale = 1.0 }):Play()
+        end))
+        return scale
+    end
 
-			Elements.UIPageLayout:JumpTo(Elements['Rayfield Settings'])
-		end)
-	end)
+    -- Ripple: clip to button, smaller max radius
+    function Micro.Ripple(parent, color, maid)
+        color = color or Color3.new(1,1,1)
+        -- clip frame using raw Instance.new (Micro is defined before New)
+        local clipFrame = Instance.new("Frame")
+        clipFrame.BackgroundTransparency = 1
+        clipFrame.ClipsDescendants       = true
+        clipFrame.BorderSizePixel        = 0
+        clipFrame.Size                   = UDim2.fromScale(1, 1)
+        clipFrame.ZIndex                 = parent.ZIndex
+        clipFrame.Parent                 = parent
 
+        maid:Give(parent.InputBegan:Connect(function(input)
+            if input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
+            local pp   = parent.AbsolutePosition
+            local ps   = parent.AbsoluteSize
+            local maxR = math.min(math.sqrt(ps.X^2 + ps.Y^2), ps.X * 2)
+            local rx   = input.Position.X - pp.X
+            local ry   = input.Position.Y - pp.Y
+
+            local ripple = Instance.new("Frame")
+            ripple.AnchorPoint          = Vector2.new(0.5, 0.5)
+            ripple.BackgroundColor3     = color
+            ripple.BackgroundTransparency = 0.75
+            ripple.BorderSizePixel      = 0
+            ripple.Position             = UDim2.fromOffset(rx, ry)
+            ripple.Size                 = UDim2.fromOffset(0, 0)
+            ripple.ZIndex               = parent.ZIndex + 1
+            ripple.Parent               = clipFrame
+
+            local corner = Instance.new("UICorner")
+            corner.CornerRadius = UDim.new(1, 0)
+            corner.Parent = ripple
+
+            local tw = TweenService:Create(ripple,
+                TweenInfo.new(RIPPLE_DURATION, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+                { Size = UDim2.fromOffset(maxR, maxR), BackgroundTransparency = 1 })
+            tw:Play()
+            tw.Completed:Connect(function()
+                corner:Destroy()
+                ripple:Destroy()
+            end)
+        end))
+    end
+
+    -- Selection pulse: uses TweenService looping pattern
+    function Micro.SelectionPulse(element, maid, color)
+        color = color or ThemeEngine.CurrentScheme.AccentColor
+        local stroke = Instance.new("UIStroke")
+        stroke.Color       = color
+        stroke.Thickness   = 1.5
+        stroke.Transparency= 0
+        stroke.Parent      = element
+        local running = false
+
+        local function doPulse()
+            running = true
+            local function cycle()
+                if not running then return end
+                local t1 = TweenService:Create(stroke,
+                    TweenInfo.new(0.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut),
+                    { Transparency = 0.8 })
+                t1:Play()
+                t1.Completed:Connect(function()
+                    if not running then return end
+                    local t2 = TweenService:Create(stroke,
+                        TweenInfo.new(0.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut),
+                        { Transparency = 0 })
+                    t2:Play()
+                    t2.Completed:Connect(cycle)
+                end)
+            end
+            cycle()
+        end
+
+        return {
+            Start  = doPulse,
+            Stop   = function() running = false; stroke.Transparency = 1 end,
+            Stroke = stroke,
+        }
+    end
 end
 
+-- ─── Instance Creator ──────────────────────────────────────────────────────
+local Registry = {}  -- { instance → { property → schemeKey|fn } }
 
-Topbar.Hide.MouseButton1Click:Connect(function()
-	setVisibility(Hidden, not useMobileSizing)
-end)
-
-hideHotkeyConnection = UserInputService.InputBegan:Connect(function(input, processed)
-	if (input.KeyCode == Enum.KeyCode[getSetting("General", "rayfieldOpen")]) and not processed then
-		if Debounce then return end
-		if Hidden then
-			Hidden = false
-			Unhide()
-		else
-			Hidden = true
-			Hide()
-		end
-	end
-end)
-
-if MPrompt then
-	MPrompt.Interact.MouseButton1Click:Connect(function()
-		if Debounce then return end
-		if Hidden then
-			Hidden = false
-			Unhide()
-		end
-	end)
+local function GetSchemeValue(v)
+    local scheme = ThemeEngine.CurrentScheme
+    if typeof(v) == "string" and scheme[v] then
+        return scheme[v]
+    end
+    if typeof(v) == "function" then
+        return v()
+    end
+    return nil
 end
 
-for _, TopbarButton in ipairs(Topbar:GetChildren()) do
-	if TopbarButton.ClassName == "ImageButton" and TopbarButton.Name ~= 'Icon' then
-		TopbarButton.MouseEnter:Connect(function()
-			TweenService:Create(TopbarButton, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {ImageTransparency = 0}):Play()
-		end)
-
-		TopbarButton.MouseLeave:Connect(function()
-			TweenService:Create(TopbarButton, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {ImageTransparency = 0.8}):Play()
-		end)
-	end
+local function FillInstance(instance, props)
+    local themeProps = Registry[instance] or {}
+    for k, v in pairs(props) do
+        if k ~= "Parent" and k ~= "Text" then
+            local sv = GetSchemeValue(v)
+            if sv ~= nil then
+                themeProps[k] = v
+                v = sv
+            else
+                themeProps[k] = nil
+            end
+        end
+        pcall(function() instance[k] = v end)
+    end
+    if next(themeProps) then
+        Registry[instance] = themeProps
+    end
 end
 
+local ClassDefaults = {
+    Frame = { BorderSizePixel = 0 },
+    TextLabel = {
+        BorderSizePixel   = 0,
+        BackgroundTransparency = 1,
+        TextColor3        = "TextPrimary",
+        FontFace          = "Font",
+        RichText          = true,
+    },
+    TextButton = {
+        AutoButtonColor  = false,
+        BorderSizePixel  = 0,
+        TextColor3       = "TextPrimary",
+        FontFace         = "Font",
+        RichText         = true,
+    },
+    TextBox = {
+        BorderSizePixel  = 0,
+        TextColor3       = "TextPrimary",
+        PlaceholderColor3= "TextMuted",
+        FontFace         = "Font",
+        Text             = "",
+    },
+    ImageLabel = {
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+    },
+    ImageButton = {
+        AutoButtonColor = false,
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+    },
+    ScrollingFrame = {
+        BorderSizePixel   = 0,
+        ScrollBarThickness = 3,
+        ScrollBarImageColor3 = "MutedColor",
+    },
+    UIListLayout = {
+        SortOrder = Enum.SortOrder.LayoutOrder,
+    },
+    UIStroke = {
+        ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+    },
+}
 
-function RayfieldLibrary:LoadConfiguration()
-	local config
-
-	if debugX then
-		warn('Loading Configuration')
-	end
-
-	if useStudio then
-		config = [[{"Toggle1adwawd":true,"ColorPicker1awd":{"B":255,"G":255,"R":255},"Slider1dawd":100,"ColorPicfsefker1":{"B":255,"G":255,"R":255},"Slidefefsr1":80,"dawdawd":"","Input1":"hh","Keybind1":"B","Dropdown1":["Ocean"]}]]
-	end
-
-	if CEnabled then
-		local notified
-		local loaded
-
-		local success, result = pcall(function()
-			if useStudio and config then
-				loaded = LoadConfiguration(config)
-				return
-			end
-
-			if isfile then 
-				if callSafely(isfile, ConfigurationFolder .. "/" .. CFileName .. ConfigurationExtension) then
-					loaded = LoadConfiguration(callSafely(readfile, ConfigurationFolder .. "/" .. CFileName .. ConfigurationExtension))
-				end
-			else
-				notified = true
-				RayfieldLibrary:Notify({Title = "Rayfield Configurations", Content = "We couldn't enable Configuration Saving as you are not using software with filesystem support.", Image = 4384402990})
-			end
-		end)
-
-		if success and loaded and not notified then
-			RayfieldLibrary:Notify({Title = "Rayfield Configurations", Content = "The configuration file for this script has been loaded from a previous session.", Image = 4384403532})
-		elseif not success and not notified then
-			warn('Rayfield Configurations Error | '..tostring(result))
-			RayfieldLibrary:Notify({Title = "Rayfield Configurations", Content = "We've encountered an issue loading your configuration correctly.\n\nCheck the Developer Console for more information.", Image = 4384402990})
-		end
-	end
-
-	globalLoaded = true
+local function New(className, props)
+    local inst = Instance.new(className)
+    if ClassDefaults[className] then
+        FillInstance(inst, ClassDefaults[className])
+    end
+    if props then
+        FillInstance(inst, props)
+    end
+    return inst
 end
 
-
-
-if useStudio then
-	-- run w/ studio
-	-- Feel free to place your own script here to see how it'd work in Roblox Studio before running it on your execution software.
-
-
-	--local Window = RayfieldLibrary:CreateWindow({
-	--	Name = "Rayfield Example Window",
-	--	LoadingTitle = "Rayfield Interface Suite",
-	--	Theme = 'Default',
-	--	Icon = 0,
-	--	LoadingSubtitle = "by Sirius",
-	--	ConfigurationSaving = {
-	--		Enabled = true,
-	--		FolderName = nil, -- Create a custom folder for your hub/game
-	--		FileName = "Big Hub52"
-	--	},
-	--	Discord = {
-	--		Enabled = false,
-	--		Invite = "noinvitelink", -- The Discord invite code, do not include discord.gg/. E.g. discord.gg/ABCD would be ABCD
-	--		RememberJoins = true -- Set this to false to make them join the discord every time they load it up
-	--	},
-	--	KeySystem = false, -- Set this to true to use our key system
-	--	KeySettings = {
-	--		Title = "Untitled",
-	--		Subtitle = "Key System",
-	--		Note = "No method of obtaining the key is provided",
-	--		FileName = "Key", -- It is recommended to use something unique as other scripts using Rayfield may overwrite your key file
-	--		SaveKey = true, -- The user's key will be saved, but if you change the key, they will be unable to use your script
-	--		GrabKeyFromSite = false, -- If this is true, set Key below to the RAW site you would like Rayfield to get the key from
-	--		Key = {"Hello"} -- List of keys that will be accepted by the system, can be RAW file links (pastebin, github etc) or simple strings ("hello","key22")
-	--	}
-	--})
-
-	--local Tab = Window:CreateTab("Tab Example", 'key-round') -- Title, Image
-	--local Tab2 = Window:CreateTab("Tab Example 2", 4483362458) -- Title, Image
-
-	--local Section = Tab2:CreateSection("Section")
-
-
-	--local ColorPicker = Tab2:CreateColorPicker({
-	--	Name = "Color Picker",
-	--	Color = Color3.fromRGB(255,255,255),
-	--	Flag = "ColorPicfsefker1", -- A flag is the identifier for the configuration file, make sure every element has a different flag if you're using configuration saving to ensure no overlaps
-	--	Callback = function(Value)
-	--		-- The function that takes place every time the color picker is moved/changed
-	--		-- The variable (Value) is a Color3fromRGB value based on which color is selected
-	--	end
-	--})
-
-	--local Slider = Tab2:CreateSlider({
-	--	Name = "Slider Example",
-	--	Range = {0, 100},
-	--	Increment = 10,
-	--	Suffix = "Bananas",
-	--	CurrentValue = 40,
-	--	Flag = "Slidefefsr1", -- A flag is the identifier for the configuration file, make sure every element has a different flag if you're using configuration saving to ensure no overlaps
-	--	Callback = function(Value)
-	--		-- The function that takes place when the slider changes
-	--		-- The variable (Value) is a number which correlates to the value the slider is currently at
-	--	end,
-	--})
-
-	--local Input = Tab2:CreateInput({
-	--	Name = "Input Example",
-	--	CurrentValue = '',
-	--	PlaceholderText = "Input Placeholder",
-	--	Flag = 'dawdawd',
-	--	RemoveTextAfterFocusLost = false,
-	--	Callback = function(Text)
-	--		-- The function that takes place when the input is changed
-	--		-- The variable (Text) is a string for the value in the text box
-	--	end,
-	--})
-
-
-	----RayfieldLibrary:Notify({Title = "Rayfield Interface", Content = "Welcome to Rayfield. These - are the brand new notification design for Rayfield, with custom sizing and Rayfield calculated wait times.", Image = 4483362458})
-
-	--local Section = Tab:CreateSection("Section Example")
-
-	--local Button = Tab:CreateButton({
-	--	Name = "Change Theme",
-	--	Callback = function()
-	--		-- The function that takes place when the button is pressed
-	--		Window.ModifyTheme('DarkBlue')
-	--	end,
-	--})
-
-	--local Toggle = Tab:CreateToggle({
-	--	Name = "Toggle Example",
-	--	CurrentValue = false,
-	--	Flag = "Toggle1adwawd", -- A flag is the identifier for the configuration file, make sure every element has a different flag if you're using configuration saving to ensure no overlaps
-	--	Callback = function(Value)
-	--		-- The function that takes place when the toggle is pressed
-	--		-- The variable (Value) is a boolean on whether the toggle is true or false
-	--	end,
-	--})
-
-	--local ColorPicker = Tab:CreateColorPicker({
-	--	Name = "Color Picker",
-	--	Color = Color3.fromRGB(255,255,255),
-	--	Flag = "ColorPicker1awd", -- A flag is the identifier for the configuration file, make sure every element has a different flag if you're using configuration saving to ensure no overlaps
-	--	Callback = function(Value)
-	--		-- The function that takes place every time the color picker is moved/changed
-	--		-- The variable (Value) is a Color3fromRGB value based on which color is selected
-	--	end
-	--})
-
-	--local Slider = Tab:CreateSlider({
-	--	Name = "Slider Example",
-	--	Range = {0, 100},
-	--	Increment = 10,
-	--	Suffix = "Bananas",
-	--	CurrentValue = 40,
-	--	Flag = "Slider1dawd", -- A flag is the identifier for the configuration file, make sure every element has a different flag if you're using configuration saving to ensure no overlaps
-	--	Callback = function(Value)
-	--		-- The function that takes place when the slider changes
-	--		-- The variable (Value) is a number which correlates to the value the slider is currently at
-	--	end,
-	--})
-
-	--local Input = Tab:CreateInput({
-	--	Name = "Input Example",
-	--	CurrentValue = "Helo",
-	--	PlaceholderText = "Adaptive Input",
-	--	RemoveTextAfterFocusLost = false,
-	--	Flag = 'Input1',
-	--	Callback = function(Text)
-	--		-- The function that takes place when the input is changed
-	--		-- The variable (Text) is a string for the value in the text box
-	--	end,
-	--})
-
-	--local thoptions = {}
-	--for themename, theme in pairs(RayfieldLibrary.Theme) do
-	--	table.insert(thoptions, themename)
-	--end
-
-	--local Dropdown = Tab:CreateDropdown({
-	--	Name = "Theme",
-	--	Options = thoptions,
-	--	CurrentOption = {"Default"},
-	--	MultipleOptions = false,
-	--	Flag = "Dropdown1", -- A flag is the identifier for the configuration file, make sure every element has a different flag if you're using configuration saving to ensure no overlaps
-	--	Callback = function(Options)
-	--		--Window.ModifyTheme(Options[1])
-	--		-- The function that takes place when the selected option is changed
-	--		-- The variable (Options) is a table of strings for the current selected options
-	--	end,
-	--})
-
-
-	--Window.ModifyTheme({
-	--	TextColor = Color3.fromRGB(50, 55, 60),
-	--	Background = Color3.fromRGB(240, 245, 250),
-	--	Topbar = Color3.fromRGB(215, 225, 235),
-	--	Shadow = Color3.fromRGB(200, 210, 220),
-
-	--	NotificationBackground = Color3.fromRGB(210, 220, 230),
-	--	NotificationActionsBackground = Color3.fromRGB(225, 230, 240),
-
-	--	TabBackground = Color3.fromRGB(200, 210, 220),
-	--	TabStroke = Color3.fromRGB(180, 190, 200),
-	--	TabBackgroundSelected = Color3.fromRGB(175, 185, 200),
-	--	TabTextColor = Color3.fromRGB(50, 55, 60),
-	--	SelectedTabTextColor = Color3.fromRGB(30, 35, 40),
-
-	--	ElementBackground = Color3.fromRGB(210, 220, 230),
-	--	ElementBackgroundHover = Color3.fromRGB(220, 230, 240),
-	--	SecondaryElementBackground = Color3.fromRGB(200, 210, 220),
-	--	ElementStroke = Color3.fromRGB(190, 200, 210),
-	--	SecondaryElementStroke = Color3.fromRGB(180, 190, 200),
-
-	--	SliderBackground = Color3.fromRGB(200, 220, 235),  -- Lighter shade
-	--	SliderProgress = Color3.fromRGB(70, 130, 180),
-	--	SliderStroke = Color3.fromRGB(150, 180, 220),
-
-	--	ToggleBackground = Color3.fromRGB(210, 220, 230),
-	--	ToggleEnabled = Color3.fromRGB(70, 160, 210),
-	--	ToggleDisabled = Color3.fromRGB(180, 180, 180),
-	--	ToggleEnabledStroke = Color3.fromRGB(60, 150, 200),
-	--	ToggleDisabledStroke = Color3.fromRGB(140, 140, 140),
-	--	ToggleEnabledOuterStroke = Color3.fromRGB(100, 120, 140),
-	--	ToggleDisabledOuterStroke = Color3.fromRGB(120, 120, 130),
-
-	--	DropdownSelected = Color3.fromRGB(220, 230, 240),
-	--	DropdownUnselected = Color3.fromRGB(200, 210, 220),
-
-	--	InputBackground = Color3.fromRGB(220, 230, 240),
-	--	InputStroke = Color3.fromRGB(180, 190, 200),
-	--	PlaceholderColor = Color3.fromRGB(150, 150, 150)
-	--})
-
-	--local Keybind = Tab:CreateKeybind({
-	--	Name = "Keybind Example",
-	--	CurrentKeybind = "Q",
-	--	HoldToInteract = false,
-	--	Flag = "Keybind1", -- A flag is the identifier for the configuration file, make sure every element has a different flag if you're using configuration saving to ensure no overlaps
-	--	Callback = function(Keybind)
-	--		-- The function that takes place when the keybind is pressed
-	--		-- The variable (Keybind) is a boolean for whether the keybind is being held or not (HoldToInteract needs to be true)
-	--	end,
-	--})
-
-	--local Label = Tab:CreateLabel("Label Example")
-
-	--local Label2 = Tab:CreateLabel("Warning", 4483362458, Color3.fromRGB(255, 159, 49),  true)
-
-	--local Paragraph = Tab:CreateParagraph({Title = "Paragraph Example", Content = "Paragraph ExampleParagraph ExampleParagraph ExampleParagraph ExampleParagraph ExampleParagraph ExampleParagraph ExampleParagraph ExampleParagraph ExampleParagraph ExampleParagraph ExampleParagraph ExampleParagraph ExampleParagraph Example"})
+local function UpdateRegistry()
+    for inst, props in pairs(Registry) do
+        if inst and inst.Parent then
+            for prop, v in pairs(props) do
+                local sv = GetSchemeValue(v)
+                if sv ~= nil then
+                    pcall(function() inst[prop] = sv end)
+                end
+            end
+        else
+            Registry[inst] = nil
+        end
+    end
 end
 
-if CEnabled and Main:FindFirstChild('Notice') then
-	Main.Notice.BackgroundTransparency = 1
-	Main.Notice.Title.TextTransparency = 1
-	Main.Notice.Size = UDim2.new(0, 0, 0, 0)
-	Main.Notice.Position = UDim2.new(0.5, 0, 0, -100)
-	Main.Notice.Visible = true
+-- ─── Screen Setup ──────────────────────────────────────────────────────────
+local LibraryMaid   = Maid.New()
+local ScreenGui     = New("ScreenGui", {
+    Name            = "NexusUI",
+    DisplayOrder    = 997,
+    ResetOnSpawn    = false,
+    IgnoreGuiInset  = true,
+    ZIndexBehavior  = Enum.ZIndexBehavior.Sibling,
+    -- Blur/glass effect requires ScreenGui to not clip
+})
+-- Glass effect note: true background blur is not feasible per-element in Roblox
+-- (BlurEffect is screen-wide). We instead use layered semi-transparent frames
+-- to fake a "frosted" look localized to the menu.
+pcall(protectgui, ScreenGui)
+local ok = pcall(function() ScreenGui.Parent = gethui() end)
+if not ok then ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
 
+LibraryMaid:Give(ScreenGui.DescendantRemoving:Connect(function(inst)
+    Registry[inst] = nil
+end))
 
-	TweenService:Create(Main.Notice, TweenInfo.new(0.5, Enum.EasingStyle.Exponential, Enum.EasingDirection.InOut), {Size = UDim2.new(0, 280, 0, 35), Position = UDim2.new(0.5, 0, 0, -50), BackgroundTransparency = 0.5}):Play()
-	TweenService:Create(Main.Notice.Title, TweenInfo.new(0.5, Enum.EasingStyle.Exponential), {TextTransparency = 0.1}):Play()
+-- ─── Toast / Notification System ──────────────────────────────────────────
+--[[
+    Multiple toasts stack vertically.
+    Types: info, success, warning, error
+    Smart grouping: identical messages are collapsed.
+    Priority queue: high-priority toasts insert at top.
+]]
+local ToastSystem = {}
+do
+    local toasts    = {}
+    local toastArea = New("Frame", {
+        AnchorPoint = Vector2.new(1, 1),
+        BackgroundTransparency = 1,
+        Position    = UDim2.new(1, -12, 1, -12),
+        Size        = UDim2.new(0, 320, 1, -24),
+        Parent      = ScreenGui,
+    })
+    ZManager.Apply(toastArea, "toast")
+
+    New("UIListLayout", {
+        VerticalAlignment   = Enum.VerticalAlignment.Bottom,
+        HorizontalAlignment = Enum.HorizontalAlignment.Right,
+        Padding             = UDim.new(0, 6),
+        FillDirection       = Enum.FillDirection.Vertical,
+        SortOrder           = Enum.SortOrder.LayoutOrder,
+        Parent              = toastArea,
+    })
+
+    local typeColors = {
+        info    = ThemeEngine.CurrentScheme.InfoColor,
+        success = ThemeEngine.CurrentScheme.SuccessColor,
+        warning = ThemeEngine.CurrentScheme.WarningColor,
+        error   = ThemeEngine.CurrentScheme.DangerColor,
+    }
+    local typeIcons = {
+        info    = "ℹ",
+        success = "✓",
+        warning = "⚠",
+        error   = "✕",
+    }
+
+    local toastCounter = 0
+
+    function ToastSystem.Show(message, toastType, options)
+        options = options or {}
+        toastType = toastType or "info"
+        local duration = options.Duration or TOAST_DURATION
+        local priority = options.Priority or 0
+
+        -- Smart grouping: collapse duplicates
+        for _, existing in ipairs(toasts) do
+            if existing.message == message and existing.type == toastType then
+                existing.count += 1
+                if existing.countLabel then
+                    existing.countLabel.Text = "×" .. existing.count
+                    existing.countLabel.Visible = true
+                end
+                existing.remaining = duration  -- reset timer
+                return existing
+            end
+        end
+
+        toastCounter += 1
+        local id    = toastCounter
+        local color = typeColors[toastType] or ThemeEngine.CurrentScheme.InfoColor
+
+        local holder = New("Frame", {
+            BackgroundTransparency = 1,
+            Size        = UDim2.new(1, 0, 0, 0),
+            AutomaticSize = Enum.AutomaticSize.Y,
+            LayoutOrder = -priority * 1000 + id,
+            Parent      = toastArea,
+        })
+
+        local card = New("Frame", {
+            BackgroundColor3 = "SurfaceColor",
+            BackgroundTransparency = 0.12,
+            Size        = UDim2.new(1, 0, 0, 36),
+            Parent      = holder,
+        })
+        New("UICorner", { CornerRadius = UDim.new(0, Tokens.RadiusSM), Parent = card })
+        New("UIStroke", { Color = color, Thickness = 1, Transparency = 0.5, Parent = card })
+        New("UIPadding", {
+            PaddingLeft   = UDim.new(0, 10),
+            PaddingRight  = UDim.new(0, 26),
+            PaddingTop    = UDim.new(0, 0),
+            PaddingBottom = UDim.new(0, 0),
+            Parent        = card,
+        })
+
+        -- Icon dot
+        local iconLabel = New("TextLabel", {
+            AnchorPoint = Vector2.new(0, 0.5),
+            BackgroundTransparency = 1,
+            Position = UDim2.new(0, 0, 0.5, 0),
+            Size     = UDim2.fromOffset(14, 14),
+            Text     = typeIcons[toastType] or "●",
+            TextSize = 11,
+            TextColor3 = color,
+            ZIndex   = card.ZIndex + 1,
+            Parent   = card,
+        })
+
+        local msgLabel = New("TextLabel", {
+            AnchorPoint = Vector2.new(0, 0.5),
+            BackgroundTransparency = 1,
+            Position = UDim2.new(0, 18, 0.5, 0),
+            Size     = UDim2.new(1, -18, 1, 0),
+            Text     = message,
+            TextSize = Tokens.FontSize.SM,
+            TextColor3   = "TextPrimary",
+            TextXAlignment = Enum.TextXAlignment.Left,
+            TextTruncate = Enum.TextTruncate.AtEnd,
+            Parent       = card,
+        })
+
+        local countLabel = New("TextLabel", {
+            AnchorPoint = Vector2.new(1, 0.5),
+            BackgroundTransparency = 1,
+            Position = UDim2.new(1, -2, 0.5, 0),
+            Size     = UDim2.fromOffset(20, 14),
+            Text     = "",
+            TextSize = Tokens.FontSize.XS,
+            TextColor3 = color,
+            TextXAlignment = Enum.TextXAlignment.Right,
+            Visible  = false,
+            ZIndex   = card.ZIndex + 2,
+            Parent   = card,
+        })
+
+        local dismissBtn = New("TextButton", {
+            AnchorPoint = Vector2.new(1, 0.5),
+            BackgroundTransparency = 1,
+            Position = UDim2.new(1, -2, 0.5, 0),
+            Size     = UDim2.fromOffset(18, 18),
+            Text     = "×",
+            TextSize = 14,
+            TextColor3 = "TextMuted",
+            ZIndex   = card.ZIndex + 2,
+            Parent   = card,
+        })
+
+        -- Slide up from below
+        local startY = holder.AbsolutePosition.Y + 40
+        card.Position = UDim2.fromOffset(0, 10)
+        card.BackgroundTransparency = 1
+        TweenService:Create(card,
+            TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+            { BackgroundTransparency = 0, Position = UDim2.fromOffset(0, 0) }):Play()
+
+        local toastData = {
+            id         = id, message = message, type = toastType,
+            count = 1, countLabel = countLabel,
+            holder = holder, card = card,
+            remaining = duration, dismissed = false,
+        }
+
+        local function dismiss()
+            if toastData.dismissed then return end
+            toastData.dismissed = true
+            local idx = table.find(toasts, toastData)
+            if idx then table.remove(toasts, idx) end
+            TweenService:Create(card,
+                TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
+                { BackgroundTransparency = 1, Position = UDim2.fromOffset(0, 8) }):Play()
+            task.delay(0.14, function()
+                if holder and holder.Parent then holder:Destroy() end
+            end)
+        end
+
+        dismissBtn.MouseButton1Click:Connect(dismiss)
+
+        -- Timer
+        local timerConn
+        timerConn = RunService.Heartbeat:Connect(function(dt)
+            if toastData.dismissed then timerConn:Disconnect(); return end
+            toastData.remaining -= dt
+            if toastData.remaining <= 0 then
+                timerConn:Disconnect()
+                dismiss()
+            end
+        end)
+        LibraryMaid:Give(timerConn)
+
+        table.insert(toasts, toastData)
+        return toastData
+    end
+
+    function ToastSystem.Info(msg, opts)    return ToastSystem.Show(msg, "info",    opts) end
+    function ToastSystem.Success(msg, opts) return ToastSystem.Show(msg, "success", opts) end
+    function ToastSystem.Warning(msg, opts) return ToastSystem.Show(msg, "warning", opts) end
+    function ToastSystem.Error(msg, opts)   return ToastSystem.Show(msg, "error",   opts) end
 end
--- AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA why :(
---if not useStudio then
---	task.spawn(loadWithTimeout, "https://raw.githubusercontent.com/SiriusSoftwareLtd/Sirius/refs/heads/request/boost.lua")
---end
 
-task.delay(4, function()
-	RayfieldLibrary.LoadConfiguration()
-	if Main:FindFirstChild('Notice') and Main.Notice.Visible then
-		TweenService:Create(Main.Notice, TweenInfo.new(0.5, Enum.EasingStyle.Exponential, Enum.EasingDirection.InOut), {Size = UDim2.new(0, 100, 0, 25), Position = UDim2.new(0.5, 0, 0, -100), BackgroundTransparency = 1}):Play()
-		TweenService:Create(Main.Notice.Title, TweenInfo.new(0.3, Enum.EasingStyle.Exponential), {TextTransparency = 1}):Play()
+-- ─── Command Palette ───────────────────────────────────────────────────────
+--[[
+    VS Code style command palette.
+    Open with Ctrl+Shift+P (or programmatically).
+    Fuzzy search across registered commands.
+]]
+local CommandPalette = {}
+do
+    local commands  = {}  -- { id, name, description, category, action, keywords }
+    local visible   = false
+    local frame, inputBox, listFrame
+    local listItems = {}
+    local selectedIdx = 0
+    local maid = Maid.New()
 
-		task.wait(0.5)
-		Main.Notice.Visible = false
-	end
-end)
+    -- Fuzzy match scorer
+    local function fuzzyScore(pattern, str)
+        pattern = pattern:lower()
+        str     = str:lower()
+        local score = 0
+        local pi    = 1
+        for i = 1, #str do
+            if pi <= #pattern and str:sub(i,i) == pattern:sub(pi,pi) then
+                score += 10 - (i - pi)
+                pi += 1
+            end
+        end
+        if pi <= #pattern then return -1 end  -- not all chars matched
+        return score
+    end
 
-return RayfieldLibrary
+    local function buildUI()
+        local overlay = New("Frame", {
+            BackgroundColor3 = Color3.new(0,0,0),
+            BackgroundTransparency = 0.5,
+            Size = UDim2.fromScale(1, 1),
+            Visible = false,
+            Parent  = ScreenGui,
+        })
+        ZManager.Apply(overlay, "modal")
+
+        frame = New("Frame", {
+            AnchorPoint = Vector2.new(0.5, 0),
+            BackgroundColor3 = "SurfaceColor",
+            Position = UDim2.new(0.5, 0, 0, 60),
+            Size     = UDim2.fromOffset(460, 0),
+            AutomaticSize = Enum.AutomaticSize.Y,
+            Parent   = overlay,
+        })
+        New("UICorner",  { CornerRadius = UDim.new(0, Tokens.RadiusLG), Parent = frame })
+        New("UIStroke",  { Color = "BorderColor", Thickness = 1, Parent = frame })
+        ZManager.Apply(frame, "modal")
+
+        local scale = Instance.new("UIScale")
+        scale.Scale = 0.95
+        scale.Parent = frame
+
+        New("UIPadding", {
+            PaddingLeft   = UDim.new(0, 12),
+            PaddingRight  = UDim.new(0, 12),
+            PaddingTop    = UDim.new(0, 8),
+            PaddingBottom = UDim.new(0, 8),
+            Parent = frame,
+        })
+        New("UIListLayout", { Padding = UDim.new(0, 6), Parent = frame })
+
+        -- Search input
+        local inputRow = New("Frame", {
+            BackgroundColor3 = "BackgroundColor",
+            Size = UDim2.new(1, 0, 0, 34),
+            LayoutOrder = 1,
+            Parent = frame,
+        })
+        New("UICorner", { CornerRadius = UDim.new(0, Tokens.RadiusSM), Parent = inputRow })
+        New("UIStroke", { Color = "BorderColor", Thickness = 1, Parent = inputRow })
+        New("UIPadding", {
+            PaddingLeft  = UDim.new(0, 10),
+            PaddingRight = UDim.new(0, 10),
+            Parent = inputRow,
+        })
+
+        local searchIcon = New("TextLabel", {
+            BackgroundTransparency = 1,
+            Size   = UDim2.new(0, 16, 1, 0),
+            Text   = "⌕",
+            TextSize = 16,
+            TextColor3 = "TextMuted",
+            Parent = inputRow,
+        })
+
+        inputBox = New("TextBox", {
+            BackgroundTransparency = 1,
+            ClearTextOnFocus = false,
+            PlaceholderText = "Search commands…",
+            Position = UDim2.fromOffset(24, 0),
+            Size     = UDim2.new(1, -24, 1, 0),
+            TextSize = Tokens.FontSize.MD,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            Parent   = inputRow,
+        })
+
+        -- Results list
+        listFrame = New("Frame", {
+            BackgroundTransparency = 1,
+            Size      = UDim2.new(1, 0, 0, 0),
+            AutomaticSize = Enum.AutomaticSize.Y,
+            LayoutOrder = 2,
+            Parent    = frame,
+        })
+        New("UIListLayout", { Padding = UDim.new(0, 2), Parent = listFrame })
+
+        maid:Connect(inputBox:GetPropertyChangedSignal("Text"), function()
+            CommandPalette.Search(inputBox.Text)
+        end)
+
+        maid:Connect(inputBox.FocusLost, function(enterPressed)
+            if enterPressed and listItems[selectedIdx] then
+                CommandPalette.Execute(listItems[selectedIdx].command)
+            end
+        end)
+
+        return overlay, scale
+    end
+
+    local palOverlay, palScale = buildUI()
+
+    local function renderResults(results)
+        -- Clear existing items
+        for _, item in ipairs(listItems) do
+            if item.frame then item.frame:Destroy() end
+        end
+        listItems = {}
+        selectedIdx = 1
+
+        for i, cmd in ipairs(results) do
+            local row = New("TextButton", {
+                BackgroundColor3 = i == 1 and "SurfaceAltColor" or "SurfaceColor",
+                BackgroundTransparency = i == 1 and 0 or 1,
+                Size    = UDim2.new(1, 0, 0, 38),
+                Text    = "",
+                LayoutOrder = i,
+                Parent  = listFrame,
+            })
+            New("UICorner", { CornerRadius = UDim.new(0, Tokens.RadiusSM), Parent = row })
+            New("UIPadding", {
+                PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 10),
+                Parent = row,
+            })
+
+            New("TextLabel", {
+                BackgroundTransparency = 1,
+                Size   = UDim2.new(0.6, 0, 0, 18),
+                Text   = cmd.name,
+                TextSize = Tokens.FontSize.MD,
+                TextXAlignment = Enum.TextXAlignment.Left,
+                Parent = row,
+            })
+            New("TextLabel", {
+                AnchorPoint = Vector2.new(1, 0.5),
+                BackgroundTransparency = 1,
+                Position = UDim2.new(1, 0, 0.5, 0),
+                Size     = UDim2.new(0.35, 0, 0, 14),
+                Text     = cmd.category or "",
+                TextSize = Tokens.FontSize.SM,
+                TextColor3 = "TextMuted",
+                TextXAlignment = Enum.TextXAlignment.Right,
+                Parent = row,
+            })
+
+            local idx = i
+            row.MouseEnter:Connect(function()
+                row.BackgroundTransparency = 0
+                row.BackgroundColor3 = ThemeEngine.CurrentScheme.SurfaceAltColor
+                selectedIdx = idx
+            end)
+            row.MouseLeave:Connect(function()
+                if selectedIdx ~= idx then
+                    row.BackgroundTransparency = 1
+                end
+            end)
+            row.MouseButton1Click:Connect(function()
+                CommandPalette.Execute(cmd)
+                CommandPalette.Close()
+            end)
+
+            table.insert(listItems, { frame = row, command = cmd })
+        end
+    end
+
+    function CommandPalette.Register(cmd)
+        table.insert(commands, cmd)
+    end
+
+    function CommandPalette.Search(query)
+        if not query or query == "" then
+            renderResults(commands)
+            return
+        end
+        local scored = {}
+        for _, cmd in ipairs(commands) do
+            local s = fuzzyScore(query, cmd.name)
+            if s >= 0 then
+                table.insert(scored, { cmd = cmd, score = s })
+            end
+        end
+        table.sort(scored, function(a, b) return a.score > b.score end)
+        local results = {}
+        for _, s in ipairs(scored) do
+            table.insert(results, s.cmd)
+        end
+        renderResults(results)
+    end
+
+    function CommandPalette.Execute(cmd)
+        if cmd and cmd.action then
+            pcall(cmd.action)
+        end
+    end
+
+    function CommandPalette.Open()
+        if visible then return end
+        visible = true
+        palOverlay.Visible = true
+        inputBox.Text = ""
+        CommandPalette.Search("")
+        inputBox:CaptureFocus()
+        palScale.Scale = 0.95
+        frame.BackgroundTransparency = 1
+        palOverlay.BackgroundTransparency = 1
+        TweenService:Create(palScale,   TweenInfo.new(0.18, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
+        TweenService:Create(frame,      TweenInfo.new(0.15, Enum.EasingStyle.Quad),                           { BackgroundTransparency = 0 }):Play()
+        TweenService:Create(palOverlay, TweenInfo.new(0.15, Enum.EasingStyle.Quad),                           { BackgroundTransparency = 0.5 }):Play()
+        InteractionManager.Push("commandpalette", CommandPalette.Close)
+    end
+
+    function CommandPalette.Close()
+        if not visible then return end
+        visible = false
+        TweenService:Create(palScale,   TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { Scale = 0.95 }):Play()
+        TweenService:Create(palOverlay, TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { BackgroundTransparency = 1 }):Play()
+        task.delay(0.14, function() palOverlay.Visible = false end)
+    end
+
+    function CommandPalette.Toggle()
+        if visible then CommandPalette.Close() else CommandPalette.Open() end
+    end
+
+    -- Ctrl+Shift+P hotkey
+    LibraryMaid:Connect(UserInputService.InputBegan, function(input, gpe)
+        if gpe then return end
+        if input.KeyCode == Enum.KeyCode.P
+            and UserInputService:IsKeyDown(Enum.KeyCode.LeftControl)
+            and UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then
+            CommandPalette.Toggle()
+        end
+        if input.KeyCode == Enum.KeyCode.Escape and visible then
+            CommandPalette.Close()
+        end
+    end)
+end
+
+-- ─── Context Menu ──────────────────────────────────────────────────────────
+local ContextMenu = {}
+do
+    local currentMenu = nil
+    local menuMaid    = Maid.New()
+
+    function ContextMenu.Show(items, position, options)
+        --[[
+            items = {
+                { Label = "Copy",  Icon = "copy",  Action = fn },
+                { Label = "Paste", Disabled = true },
+                { Separator = true },
+            }
+            position = UDim2 or Vector2
+            options.Parent = Instance (optional, defaults to ScreenGui)
+        ]]
+        ContextMenu.Close()
+        options = options or {}
+        local parent = options.Parent or ScreenGui
+
+        local overlay = New("TextButton", {
+            BackgroundTransparency = 1,
+            Size   = UDim2.fromScale(1, 1),
+            Text   = "",
+            ZIndex = ZManager.Get("dropdown"),
+            Parent = ScreenGui,
+        })
+
+        local menu = New("Frame", {
+            BackgroundColor3 = "SurfaceColor",
+            Position         = typeof(position) == "Vector2"
+                                and UDim2.fromOffset(position.X, position.Y)
+                                or position,
+            Size    = UDim2.fromOffset(180, 0),
+            AutomaticSize = Enum.AutomaticSize.Y,
+            ZIndex  = ZManager.Get("dropdown") + 1,
+            Parent  = overlay,
+        })
+        New("UICorner",  { CornerRadius = UDim.new(0, Tokens.RadiusMD), Parent = menu })
+        New("UIStroke",  { Color = "BorderColor", Thickness = 1, Parent = menu })
+        New("UIPadding", {
+            PaddingTop    = UDim.new(0, 4),
+            PaddingBottom = UDim.new(0, 4),
+            PaddingLeft   = UDim.new(0, 4),
+            PaddingRight  = UDim.new(0, 4),
+            Parent = menu,
+        })
+        New("UIListLayout", { Padding = UDim.new(0, 2), Parent = menu })
+
+        -- Spring in
+        local scaleInst = Instance.new("UIScale")
+        scaleInst.Scale = 0.92
+        scaleInst.Parent = menu
+        TweenService:Create(scaleInst,
+            TweenInfo.new(0.15, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+            { Scale = 1 }):Play()
+        task.delay(0.18, function()
+            if scaleInst and scaleInst.Parent then scaleInst:Destroy() end
+        end)
+
+        for i, item in ipairs(items) do
+            if item.Separator then
+                New("Frame", {
+                    BackgroundColor3 = "BorderColor",
+                    Size   = UDim2.new(1, -8, 0, 1),
+                    LayoutOrder = i,
+                    Parent = menu,
+                })
+            else
+                local btn = New("TextButton", {
+                    BackgroundColor3 = "SurfaceColor",
+                    BackgroundTransparency = 1,
+                    Size    = UDim2.new(1, 0, 0, 28),
+                    Text    = "",
+                    LayoutOrder = i,
+                    Parent  = menu,
+                })
+                New("UICorner", { CornerRadius = UDim.new(0, Tokens.RadiusSM), Parent = btn })
+                New("UIPadding", {
+                    PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 8),
+                    Parent = btn,
+                })
+                New("TextLabel", {
+                    BackgroundTransparency = 1,
+                    Size     = UDim2.fromScale(1, 1),
+                    Text     = item.Label or "",
+                    TextSize = Tokens.FontSize.MD,
+                    TextXAlignment = Enum.TextXAlignment.Left,
+                    TextColor3     = item.Disabled and "TextDisabled" or "TextPrimary",
+                    Parent   = btn,
+                })
+
+                if not item.Disabled then
+                    btn.MouseEnter:Connect(function()
+                        btn.BackgroundTransparency = 0
+                        btn.BackgroundColor3 = ThemeEngine.CurrentScheme.SurfaceAltColor
+                    end)
+                    btn.MouseLeave:Connect(function()
+                        btn.BackgroundTransparency = 1
+                    end)
+                    btn.MouseButton1Click:Connect(function()
+                        ContextMenu.Close()
+                        if item.Action then pcall(item.Action) end
+                    end)
+                end
+            end
+        end
+
+        overlay.MouseButton1Click:Connect(ContextMenu.Close)
+        currentMenu = { overlay = overlay, menu = menu }
+        InteractionManager.Push("contextmenu", ContextMenu.Close)
+
+        return menu
+    end
+
+    function ContextMenu.Close()
+        if not currentMenu then return end
+        local menu    = currentMenu.menu
+        local overlay = currentMenu.overlay
+        currentMenu   = nil
+        if menu and menu.Parent then
+            TweenService:Create(menu,
+                TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
+                { BackgroundTransparency = 1 }):Play()
+        end
+        task.delay(0.12, function()
+            if overlay and overlay.Parent then overlay:Destroy() end
+        end)
+    end
+end
+
+-- ─── Loading Screen ────────────────────────────────────────────────────────
+local LoadingScreen = {}
+do
+    function LoadingScreen.Create(options)
+        options = options or {}
+        local title      = options.Title or "Loading…"
+        local steps      = options.Steps or 10
+        local currentStep= 0
+
+        local gui = New("ScreenGui", {
+            Name            = "NexusUI_Loading",
+            DisplayOrder    = 1000,
+            ResetOnSpawn    = false,
+            IgnoreGuiInset  = true,
+        })
+        pcall(protectgui, gui)
+        local ok2 = pcall(function() gui.Parent = gethui() end)
+        if not ok2 then gui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
+
+        local bg = New("Frame", {
+            AnchorPoint = Vector2.new(0.5, 0.5),
+            BackgroundColor3 = "BackgroundColor",
+            Position = UDim2.fromScale(0.5, 0.5),
+            Size     = UDim2.fromOffset(420, 260),
+            Parent   = gui,
+        })
+        New("UICorner", { CornerRadius = UDim.new(0, Tokens.RadiusLG), Parent = bg })
+        New("UIStroke", { Color = "BorderColor", Thickness = 1, Parent = bg })
+
+        New("TextLabel", {
+            AnchorPoint = Vector2.new(0.5, 0),
+            BackgroundTransparency = 1,
+            Position = UDim2.new(0.5, 0, 0, 30),
+            Size     = UDim2.new(1, -40, 0, 28),
+            Text     = title,
+            TextSize = Tokens.FontSize.H2,
+            FontFace = Font.fromEnum(Enum.Font.Gotham),
+            Parent   = bg,
+        })
+
+        local statusLabel = New("TextLabel", {
+            AnchorPoint = Vector2.new(0.5, 0),
+            BackgroundTransparency = 1,
+            Position = UDim2.new(0.5, 0, 0, 62),
+            Size     = UDim2.new(1, -40, 0, 18),
+            Text     = "Initializing…",
+            TextSize = Tokens.FontSize.SM,
+            TextColor3 = "TextMuted",
+            Parent   = bg,
+        })
+
+        -- Progress bar track
+        local track = New("Frame", {
+            AnchorPoint = Vector2.new(0.5, 0),
+            BackgroundColor3 = "SurfaceColor",
+            Position = UDim2.new(0.5, 0, 0, 100),
+            Size     = UDim2.new(1, -40, 0, 6),
+            Parent   = bg,
+        })
+        New("UICorner", { CornerRadius = UDim.new(1, 0), Parent = track })
+
+        local fill = New("Frame", {
+            BackgroundColor3 = "AccentColor",
+            Size = UDim2.fromScale(0, 1),
+            Parent = track,
+        })
+        New("UICorner", { CornerRadius = UDim.new(1, 0), Parent = fill })
+
+        local progressLabel = New("TextLabel", {
+            AnchorPoint = Vector2.new(0.5, 0),
+            BackgroundTransparency = 1,
+            Position = UDim2.new(0.5, 0, 0, 116),
+            Size     = UDim2.new(1, -40, 0, 16),
+            Text     = "0/" .. steps,
+            TextSize = Tokens.FontSize.SM,
+            TextColor3 = "TextMuted",
+            Parent   = bg,
+        })
+
+        local Loading = {
+            Gui          = gui,
+            CurrentStep  = 0,
+            TotalSteps   = steps,
+        }
+
+        function Loading:SetStatus(text)
+            statusLabel.Text = text
+        end
+
+        function Loading:SetStep(n, statusText)
+            currentStep = math.clamp(n, 0, self.TotalSteps)
+            self.CurrentStep = currentStep
+            local frac = currentStep / self.TotalSteps
+            TweenService:Create(fill,
+                TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+                { Size = UDim2.fromScale(frac, 1) }):Play()
+            progressLabel.Text = currentStep .. "/" .. self.TotalSteps
+            if statusText then self:SetStatus(statusText) end
+        end
+
+        function Loading:Advance(statusText)
+            self:SetStep(self.CurrentStep + 1, statusText)
+        end
+
+        function Loading:Destroy()
+            TweenService:Create(bg,
+                TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
+                { BackgroundTransparency = 1 }):Play()
+            task.delay(0.28, function() gui:Destroy() end)
+        end
+
+        Loading.Continue = Loading.Destroy
+
+        return Loading
+    end
+end
+
+-- ─── Debug Overlay / UI Inspector ─────────────────────────────────────────
+local DebugOverlay = {}
+do
+    local overlayVisible = false
+    local overlayFrame
+
+    function DebugOverlay.Build()
+        if overlayFrame then return end
+
+        overlayFrame = New("Frame", {
+            AnchorPoint = Vector2.new(1, 1),
+            BackgroundColor3 = Color3.new(0,0,0),
+            BackgroundTransparency = 0.25,
+            Position = UDim2.new(1, -8, 1, -8),
+            Size     = UDim2.fromOffset(260, 200),
+            Visible  = false,
+            Parent   = ScreenGui,
+        })
+        ZManager.Apply(overlayFrame, "debug")
+        New("UICorner", { CornerRadius = UDim.new(0, Tokens.RadiusMD), Parent = overlayFrame })
+        New("UIStroke", { Color = Color3.fromRGB(60,60,60), Thickness = 1, Parent = overlayFrame })
+        New("UIPadding", {
+            PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 8),
+            PaddingTop  = UDim.new(0, 6), PaddingBottom= UDim.new(0, 6),
+            Parent = overlayFrame,
+        })
+
+        local list = New("UIListLayout", { Padding = UDim.new(0, 3), Parent = overlayFrame })
+        local labels = {}
+
+        local keys = {
+            "FPS", "AnimBudget(ms)", "SpringCount", "PoolStats",
+            "RegCount", "Theme", "Version",
+        }
+        for _, k in ipairs(keys) do
+            local row = New("Frame", {
+                BackgroundTransparency = 1,
+                Size = UDim2.new(1, 0, 0, 16),
+                Parent = overlayFrame,
+            })
+            New("TextLabel", {
+                BackgroundTransparency = 1,
+                Size = UDim2.fromScale(0.45, 1),
+                Text = k .. ":",
+                TextSize = 11,
+                TextColor3 = Color3.fromRGB(150,150,150),
+                TextXAlignment = Enum.TextXAlignment.Left,
+                Parent = row,
+            })
+            local val = New("TextLabel", {
+                AnchorPoint = Vector2.new(1, 0),
+                BackgroundTransparency = 1,
+                Position = UDim2.fromScale(1, 0),
+                Size  = UDim2.fromScale(0.54, 1),
+                Text  = "–",
+                TextSize = 11,
+                TextColor3 = Color3.new(1,1,1),
+                TextXAlignment = Enum.TextXAlignment.Right,
+                Parent = row,
+            })
+            labels[k] = val
+        end
+
+        -- Update loop
+        local updateConn
+        updateConn = RunService.Heartbeat:Connect(function()
+            if not overlayVisible then return end
+            local fps    = AnimEngine.GetFPS()
+            local budget = AnimEngine.GetBudget()  -- already in ms
+            local poolS  = ObjectPool.Stats()
+            local poolStr = ""
+            for k, v in pairs(poolS) do
+                poolStr = poolStr .. k:sub(1,3) .. ":" .. v.free .. " "
+            end
+            local regCount = 0
+            for _ in pairs(Registry) do regCount += 1 end
+
+            pcall(function()
+                labels["FPS"].Text         = string.format("%.0f", fps)
+                labels["FPS"].TextColor3   = fps < 25 and Color3.fromRGB(255,80,80)
+                                          or fps < 45 and Color3.fromRGB(255,200,50)
+                                          or Color3.fromRGB(80,220,80)
+                labels["AnimBudget(ms)"].Text = string.format("%.3f", budget)
+                labels["SpringCount"].Text    = tostring(AnimEngine.GetActiveCount())
+                labels["PoolStats"].Text      = poolStr ~= "" and poolStr or "empty"
+                labels["RegCount"].Text       = tostring(regCount)
+                labels["Theme"].Text          = ThemeEngine.ActiveThemeName
+                labels["Version"].Text        = LIBRARY_VERSION
+            end)
+        end)
+        LibraryMaid:Give(updateConn)
+    end
+
+    function DebugOverlay.Toggle()
+        if not overlayFrame then DebugOverlay.Build() end
+        overlayVisible = not overlayVisible
+        overlayFrame.Visible = overlayVisible
+    end
+
+    function DebugOverlay.Show() 
+        if not overlayFrame then DebugOverlay.Build() end
+        overlayVisible = true
+        overlayFrame.Visible = true
+    end
+
+    function DebugOverlay.Hide()
+        overlayVisible = false
+        if overlayFrame then overlayFrame.Visible = false end
+    end
+
+    function DebugOverlay.IsVisible()
+        return overlayVisible
+    end
+end
+
+-- ─── Main Library Object ───────────────────────────────────────────────────
+local Library = {
+    Version         = LIBRARY_VERSION,
+    ScreenGui       = ScreenGui,
+    LocalPlayer     = LocalPlayer,
+
+    -- Public subsystems
+    Anim            = AnimEngine,
+    Spring          = SpringSolver,
+    Theme           = ThemeEngine,
+    Reactive        = Reactive,
+    Events          = EventBus,
+    Commands        = CommandPalette,
+    Context         = ContextMenu,
+    Toast           = ToastSystem,
+    Profiler        = Profiler,
+    Plugins         = PluginSystem,
+    Async           = AsyncTask,
+    Undo            = UndoManager,
+    Nav             = NavHistory,
+    Debug           = DebugOverlay,
+    Focus           = FocusManager,
+    Tokens          = Tokens,
+    VirtualList     = VirtualList,
+    Micro           = Micro,
+
+    -- State
+    Toggled         = false,
+    Unloaded        = false,
+    IsMobile        = false,
+    IsRobloxFocused = true,
+    DPIScale        = 1,
+    ElementTransparency = 0,
+    Scheme          = ThemeEngine.CurrentScheme,
+
+    -- Collections
+    Toggles         = {},
+    Options         = {},
+    Labels          = {},
+    Buttons         = {},
+    Tabs            = {},
+    ActiveTab       = nil,
+
+    -- Settings
+    ToggleKeybind    = Enum.KeyCode.RightControl,
+    ShowCustomCursor = true,
+}
+
+-- Mobile detection
+do
+    local ok2, platform = pcall(function()
+        return UserInputService:GetPlatform()
+    end)
+    if ok2 then
+        Library.IsMobile = (platform == Enum.Platform.Android or platform == Enum.Platform.IOS)
+    elseif RunService:IsStudio() then
+        Library.IsMobile = UserInputService.TouchEnabled and not UserInputService.MouseEnabled
+    end
+end
+
+-- Roblox focus tracking
+LibraryMaid:Connect(UserInputService.WindowFocused,  function() Library.IsRobloxFocused = true  end)
+LibraryMaid:Connect(UserInputService.WindowFocusReleased, function() Library.IsRobloxFocused = false end)
+
+-- ── Theme Management ──────────────────────────────────────────────────────
+
+function Library:SetTheme(name, customThemeData, animated)
+    local themeData = customThemeData or ThemeEngine.BuiltinThemes[name]
+    if not themeData then
+        warn("NexusUI: Unknown theme:", name)
+        return
+    end
+
+    local toScheme = ThemeEngine:Build(themeData)
+
+    if animated then
+        local fromScheme = ThemeEngine.CurrentScheme
+        local STEPS      = 24
+        local step       = 0
+        local conn
+        conn = RunService.Heartbeat:Connect(function()
+            step += 1
+            local t = step / STEPS
+            if t >= 1 then
+                conn:Disconnect()
+                ThemeEngine.CurrentScheme = toScheme
+                Library.Scheme = toScheme
+                UpdateRegistry()
+                ThemeEngine.ActiveThemeName = name or "Custom"
+                PluginSystem.Emit("onThemeChange", Library.Scheme)
+                EventBus:Emit("themeChange", Library.Scheme)
+                return
+            end
+            -- Interpolate and push to all registered instances
+            local interp = ThemeEngine:Interpolate(fromScheme, toScheme, t)
+            ThemeEngine.CurrentScheme = interp
+            Library.Scheme = interp
+            UpdateRegistry()
+            EventBus:Emit("themeChange", Library.Scheme)
+        end)
+        LibraryMaid:Give(conn)
+    else
+        ThemeEngine.CurrentScheme = toScheme
+        Library.Scheme = toScheme
+        UpdateRegistry()
+        ThemeEngine.ActiveThemeName = name or "Custom"
+        PluginSystem.Emit("onThemeChange", Library.Scheme)
+        EventBus:Emit("themeChange", Library.Scheme)
+    end
+end
+
+function Library:SetAccentColor(color, animated)
+    local currentTheme = ThemeEngine.BuiltinThemes[ThemeEngine.ActiveThemeName]
+                      or ThemeEngine.BuiltinThemes.Dark
+    local newTheme = {}
+    for k, v in pairs(currentTheme) do newTheme[k] = v end
+    newTheme.Accent = color
+    Library:SetTheme(nil, newTheme, animated)
+end
+
+function Library:ToggleLightMode(animated)
+    local cur = ThemeEngine.ActiveThemeName
+    if cur == "Light" then
+        Library:SetTheme("Dark", nil, animated)
+    else
+        Library:SetTheme("Light", nil, animated)
+    end
+end
+
+-- ── DPI Scaling ───────────────────────────────────────────────────────────
+function Library:SetDPIScale(scale)
+    Library.DPIScale = scale / 100
+    EventBus:Emit("dpiChange", Library.DPIScale)
+end
+
+-- ── Utility Helpers ───────────────────────────────────────────────────────
+
+function Library:SafeCallback(fn, ...)
+    if typeof(fn) ~= "function" then return end
+    local ok2, err = xpcall(fn, debug.traceback, ...)
+    if not ok2 then
+        task.defer(error, err)
+        if self.NotifyOnError then
+            ToastSystem.Error(tostring(err):sub(1, 80))
+        end
+    end
+end
+
+function Library:GetTextBounds(text, font, size, width)
+    local params = Instance.new("GetTextBoundsParams")
+    params.Text     = text
+    params.RichText = true
+    params.Font     = font or Library.Scheme.Font
+    params.Size     = size or Tokens.FontSize.MD
+    params.Width    = width or Camera.ViewportSize.X
+    local bounds = TextService:GetTextBoundsAsync(params)
+    return bounds.X, bounds.Y
+end
+
+function Library:MouseIsOver(frame)
+    local pos  = frame.AbsolutePosition
+    local size = frame.AbsoluteSize
+    local mx   = Mouse.X
+    local my   = Mouse.Y
+    return mx >= pos.X and mx <= pos.X + size.X
+       and my >= pos.Y and my <= pos.Y + size.Y
+end
+
+function Library:MakeDraggable(window, dragHandle, maid, onStart)
+    local dragging = false
+    local dragStart = Vector2.zero
+    local windowStartPos = UDim2.new()
+    local currentTween = nil
+
+    local function cancelTween()
+        if currentTween then
+            currentTween:Cancel()
+            currentTween = nil
+        end
+    end
+
+    local function animateToPosition(x, y)
+        cancelTween()
+        currentTween = TweenService:Create(window, 
+            TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+            { Position = UDim2.new(windowStartPos.X.Scale, x, windowStartPos.Y.Scale, y) }
+        )
+        currentTween:Play()
+        currentTween.Completed:Connect(function()
+            currentTween = nil
+        end)
+    end
+
+    maid:Connect(dragHandle.InputBegan, function(input)
+        if input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
+        if onStart then pcall(onStart) end
+        dragging = true
+        dragStart = Vector2.new(input.Position.X, input.Position.Y)
+        windowStartPos = window.Position
+        cancelTween()
+    end)
+
+    maid:Connect(UserInputService.InputChanged, function(input)
+        if not dragging then return end
+        if input.UserInputType ~= Enum.UserInputType.MouseMovement then return end
+        
+        local delta = Vector2.new(input.Position.X, input.Position.Y) - dragStart
+        local newX = windowStartPos.X.Offset + delta.X
+        local newY = windowStartPos.Y.Offset + delta.Y
+        
+        -- Apply boundaries (optional)
+        local vp = Camera.ViewportSize
+        local windowSize = window.AbsoluteSize
+        local MIN_VISIBLE = 30
+        
+        newX = math.clamp(newX, -(windowSize.X - MIN_VISIBLE), vp.X - MIN_VISIBLE)
+        newY = math.clamp(newY, -(windowSize.Y - MIN_VISIBLE), vp.Y - MIN_VISIBLE)
+        
+        -- Smooth follow
+        animateToPosition(newX, newY)
+    end)
+
+    maid:Connect(UserInputService.InputEnded, function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = false
+        end
+    end)
+end
+
+function Library:MakeResizable(window, resizeHandle, maid, minSize, onResize, onStart)
+    minSize = minSize or Vector2.new(400, 300)
+    local dragging = false
+    local startMouse, startSize
+
+    maid:Connect(resizeHandle.InputBegan, function(input)
+        if input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
+        if onStart then pcall(onStart) end
+        dragging   = true
+        startMouse = input.Position
+        startSize  = window.Size
+    end)
+
+    maid:Connect(UserInputService.InputChanged, function(input)
+        if not dragging then return end
+        if input.UserInputType ~= Enum.UserInputType.MouseMovement then return end
+        local delta = input.Position - startMouse
+        window.Size = UDim2.new(
+            startSize.X.Scale,
+            math.max(minSize.X, startSize.X.Offset + delta.X),
+            startSize.Y.Scale,
+            math.max(minSize.Y, startSize.Y.Offset + delta.Y)
+        )
+        if onResize then pcall(onResize, window.Size) end
+    end)
+
+    maid:Connect(UserInputService.InputEnded, function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = false
+        end
+    end)
+end
+
+-- Custom cursor removed
+
+-- ─── Validate / Merge with Defaults ────────────────────────────────────────
+function Library:Validate(info, defaults)
+    if typeof(info) == "string" then
+        info = { Text = info }
+    end
+    info = info or {}
+    local out = {}
+    for k, v in pairs(defaults) do
+        out[k] = (info[k] ~= nil) and info[k] or
+                 (typeof(v) == "function" and v() or v)
+    end
+    for k, v in pairs(info) do
+        if out[k] == nil then out[k] = v end
+    end
+    return out
+end
+
+-- ─── Component Base (lifecycle + addons) ───────────────────────────────────
+local ComponentBase = {}
+ComponentBase.__index = ComponentBase
+
+function ComponentBase:OnMount(fn)
+    if fn then pcall(fn, self) end
+    return self
+end
+
+function ComponentBase:OnDestroy(fn)
+    self._destroyCbs = self._destroyCbs or {}
+    table.insert(self._destroyCbs, fn)
+    return self
+end
+
+function ComponentBase:Destroy()
+    if self._destroyCbs then
+        for _, fn in ipairs(self._destroyCbs) do pcall(fn) end
+    end
+    if self._maid then self._maid:Destroy() end
+end
+
+function ComponentBase:Animate(property, targetValue, params)
+    params = params or {}
+    local element = self.Instance or self.Holder or self.Base
+    if not element then return end
+    local current = element[property]
+    if current == nil then return end
+    local dur = params and params.duration or 0.18
+    TweenService:Create(element,
+        TweenInfo.new(dur, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+        { [property] = targetValue }):Play()
+end
+
+-- ─── Groupbox / Container (BaseGroupbox) ───────────────────────────────────
+local BaseGroupbox = {}
+BaseGroupbox.__index = BaseGroupbox
+
+function BaseGroupbox:AddDivider(info)
+    info = info or {}
+    local holder = New("Frame", {
+        BackgroundTransparency = 1,
+        Size = UDim2.new(1, 0, 0, info.Padding or 6),
+        Parent = self.Container,
+    })
+    if info.Text then
+        New("TextLabel", {
+            AnchorPoint = Vector2.new(0.5, 0.5),
+            BackgroundTransparency = 1,
+            Position = UDim2.fromScale(0.5, 0.5),
+            Size     = UDim2.new(1, -20, 1, 0),
+            Text     = info.Text,
+            TextSize = Tokens.FontSize.SM,
+            TextColor3 = "TextMuted",
+            Parent = holder,
+        })
+    end
+    New("Frame", {
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        BackgroundColor3 = "BorderColor",
+        Position = UDim2.fromScale(0.5, 0.5),
+        Size     = UDim2.new(1, 0, 0, 1),
+        Parent   = holder,
+    })
+
+    local div = { Type = "Divider", Holder = holder, Visible = true }
+    table.insert(self.Elements, div)
+    self:Resize()
+    return div
+end
+
+function BaseGroupbox:AddLabel(idx, info)
+    info = Library:Validate(info, {
+        Text     = "Label",
+        Readable = false,
+        Visible  = true,
+    })
+
+    local holder = New("TextLabel", {
+        BackgroundTransparency = 1,
+        Size      = UDim2.new(1, 0, 0, Tokens.FontSize.MD + 4),
+        Text      = info.Text,
+        TextSize  = Tokens.FontSize.MD,
+        TextColor3= "TextSecondary",
+        TextXAlignment = Enum.TextXAlignment.Left,
+        TextWrapped    = true,
+        Visible   = info.Visible,
+        Parent    = self.Container,
+    })
+
+    local label = {
+        Text    = info.Text,
+        Visible = info.Visible,
+        Type    = "Label",
+        Holder  = holder,
+    }
+
+    function label:SetText(text)
+        label.Text  = text
+        holder.Text = text
+        self._groupbox:Resize()
+    end
+
+    function label:SetVisible(v)
+        label.Visible = v
+        holder.Visible = v
+        self._groupbox:Resize()
+    end
+
+    label._groupbox = self
+    if idx then Library.Labels[idx] = label end
+    table.insert(self.Elements, label)
+    self:Resize()
+    return label
+end
+
+function BaseGroupbox:AddToggle(idx, info)
+    info = Library:Validate(info, {
+        Text     = "Toggle",
+        Default  = false,
+        Callback = function() end,
+        Changed  = function() end,
+        Risky    = false,
+        Disabled = false,
+        Visible  = true,
+        Tooltip  = nil,
+    })
+
+    local container = self.Container
+    local maid      = Maid.New()
+
+    local holder = New("TextButton", {
+        Active                = not info.Disabled,
+        BackgroundTransparency= 1,
+        Size                  = UDim2.new(1, 0, 0, 20),
+        Text                  = "",
+        Visible               = info.Visible,
+        Parent                = container,
+    })
+
+    local label = New("TextLabel", {
+        BackgroundTransparency = 1,
+        Size   = UDim2.new(1, -46, 1, 0),
+        Text   = info.Text,
+        TextSize = Tokens.FontSize.MD,
+        TextColor3 = info.Risky and "DangerColor" or "TextPrimary",
+        TextTransparency = 0.4,
+        TextXAlignment   = Enum.TextXAlignment.Left,
+        Parent = holder,
+    })
+
+    -- Switch track — wider for easier clicking
+    local track = New("Frame", {
+        AnchorPoint = Vector2.new(1, 0.5),
+        BackgroundColor3 = "SurfaceAltColor",
+        Position = UDim2.new(1, 0, 0.5, 0),
+        Size     = UDim2.fromOffset(38, 20),
+        Parent   = holder,
+    })
+    New("UICorner", { CornerRadius = UDim.new(1, 0), Parent = track })
+    New("UIPadding", {
+        PaddingLeft = UDim.new(0, 3), PaddingRight = UDim.new(0, 3),
+        PaddingTop  = UDim.new(0, 3), PaddingBottom= UDim.new(0, 3),
+        Parent = track,
+    })
+
+    -- Knob with a subtle inner shadow ring
+    local knob = New("Frame", {
+        BackgroundColor3 = Color3.new(1,1,1),
+        Size     = UDim2.fromScale(1, 1),
+        SizeConstraint = Enum.SizeConstraint.RelativeYY,
+        Parent   = track,
+    })
+    New("UICorner", { CornerRadius = UDim.new(1, 0), Parent = knob })
+    New("UIStroke", { Color = Color3.fromRGB(180,180,180), Thickness = 0.5, Transparency = 0.6, Parent = knob })
+
+    local Toggle = setmetatable({
+        Text     = info.Text,
+        Value    = info.Default,
+        Callback = info.Callback,
+        Changed  = info.Changed,
+        Disabled = info.Disabled,
+        Risky    = info.Risky,
+        Visible  = info.Visible,
+        Type     = "Toggle",
+        Addons   = {},
+        Holder   = holder,
+        TextLabel= label,
+        Container= container,
+        _maid    = maid,
+    }, ComponentBase)
+
+    local _toggleTweenTrack
+    local _cancelKnobSpring
+
+    local function display(skipAnim)
+        if Library.Unloaded then return end
+        local on       = Toggle.Value
+        local disabled = Toggle.Disabled
+
+        if _cancelKnobSpring then _cancelKnobSpring() end
+        if skipAnim then
+            local v = on and 1 or 0
+            knob.AnchorPoint = Vector2.new(v, 0)
+            knob.Position    = UDim2.fromScale(v, 0)
+            knob.BackgroundColor3 = on and Color3.new(1,1,1) or Color3.fromRGB(170,170,170)
+        else
+            _cancelKnobSpring = AnimEngine.Spring({
+                from      = knob.Position.X.Scale,
+                to        = on and 1 or 0,
+                stiffness = 750, damping = 38,
+                apply = function(v)
+                    knob.AnchorPoint = Vector2.new(v, 0)
+                    knob.Position    = UDim2.fromScale(v, 0)
+                end,
+            })
+            TweenService:Create(knob, TweenInfo.new(0.1, Enum.EasingStyle.Quad),
+                { BackgroundColor3 = on and Color3.new(1,1,1) or Color3.fromRGB(170,170,170) }):Play()
+        end
+
+        if _toggleTweenTrack then _toggleTweenTrack:Cancel() end
+        local targetColor = on and Library.Scheme.AccentColor or Library.Scheme.SurfaceAltColor
+        if skipAnim then
+            track.BackgroundColor3 = targetColor
+        else
+            _toggleTweenTrack = TweenService:Create(track,
+                TweenInfo.new(0.1, Enum.EasingStyle.Quad),
+                { BackgroundColor3 = targetColor })
+            _toggleTweenTrack:Play()
+        end
+
+        local targetAlpha = (disabled and 0.65) or (on and 0 or 0.38)
+        if skipAnim then
+            label.TextTransparency = targetAlpha
+        else
+            TweenService:Create(label, TweenInfo.new(0.1, Enum.EasingStyle.Quad),
+                { TextTransparency = targetAlpha }):Play()
+        end
+
+        track.BackgroundTransparency = disabled and 0.5 or (on and 0 or (Library.ElementTransparency or 0))
+    end
+
+    function Toggle:SetValue(v)
+        if self.Disabled then return end
+        local old = self.Value
+        self.Value = v
+        display()
+        Library:UpdateDependencyBoxes()
+        Library:SafeCallback(self.Callback, v)
+        Library:SafeCallback(self.Changed, v)
+        if self._changedListeners then
+            for _, fn in ipairs(self._changedListeners) do
+                Library:SafeCallback(fn, v)
+            end
+        end
+        UndoManager.Push("toggle:" .. (idx or "?"),
+            function() self:SetValue(old) end,
+            function() self:SetValue(v)   end,
+            "Toggle " .. self.Text
+        )
+    end
+
+    function Toggle:OnChanged(fn)
+        self._changedListeners = self._changedListeners or {}
+        table.insert(self._changedListeners, fn)
+    end
+
+    function Toggle:SetDisabled(v)
+        self.Disabled = v
+        holder.Active = not v
+        display()
+    end
+
+    function Toggle:SetVisible(v)
+        self.Visible = v
+        holder.Visible = v
+        Toggle._groupbox:Resize()
+    end
+
+    function Toggle:SetText(t)
+        self.Text = t
+        label.Text = t
+    end
+
+    -- Click
+    maid:Connect(holder.MouseButton1Click, function()
+        if Toggle.Disabled then return end
+        Toggle:SetValue(not Toggle.Value)
+    end)
+
+    -- Hover: subtle label brightness only
+    maid:Connect(holder.MouseEnter, function()
+        if not Toggle.Value then
+            TweenService:Create(label, TweenInfo.new(0.1), { TextTransparency = 0.2 }):Play()
+        end
+    end)
+    maid:Connect(holder.MouseLeave, function()
+        if not Toggle.Value then
+            TweenService:Create(label, TweenInfo.new(0.1), { TextTransparency = 0.4 }):Play()
+        end
+    end)
+
+    display()
+    Toggle._groupbox = self
+    self:Resize()
+
+    -- Refresh colors when theme changes (hover/track colors are cached Color3s)
+    maid:Give(EventBus:On("themeChange", function()
+        display(true)
+    end))
+
+    Toggle._refreshTransparency = function()
+        if not Toggle.Value and not Toggle.Disabled then
+            TweenService:Create(track, TweenInfo.new(0.15, Enum.EasingStyle.Quad),
+                { BackgroundTransparency = Library.ElementTransparency or 0 }):Play()
+        end
+    end
+
+    if idx then Library.Toggles[idx] = Toggle end
+    table.insert(self.Elements, Toggle)
+    Toggle.Default = Toggle.Value
+    return Toggle
+end
+
+function BaseGroupbox:AddCheckbox(idx, info)
+    -- Alias for AddToggle but forced-checkbox visual
+    return self:AddToggle(idx, info)
+end
+
+function BaseGroupbox:AddSlider(idx, info)
+    info = Library:Validate(info, {
+        Text     = "Slider",
+        Default  = 50,
+        Min      = 0,
+        Max      = 100,
+        Rounding = 0,
+        Prefix   = "",
+        Suffix   = "",
+        Callback = function() end,
+        Changed  = function() end,
+        Disabled = false,
+        Visible  = true,
+        Tooltip  = nil,
+    })
+
+    local container = self.Container
+    local maid      = Maid.New()
+
+    local holder = New("Frame", {
+        BackgroundTransparency = 1,
+        Size    = UDim2.new(1, 0, 0, 34),
+        Visible = info.Visible,
+        Parent  = container,
+    })
+
+    -- Label row
+    local topRow = New("Frame", {
+        BackgroundTransparency = 1,
+        Size = UDim2.new(1, 0, 0, 14),
+        Parent = holder,
+    })
+    local nameLabel = New("TextLabel", {
+        BackgroundTransparency = 1,
+        Size = UDim2.fromScale(0.6, 1),
+        Text = info.Text,
+        TextSize = Tokens.FontSize.MD,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Parent = topRow,
+    })
+    local valueLabel = New("TextLabel", {
+        AnchorPoint = Vector2.new(1, 0),
+        BackgroundTransparency = 1,
+        Position = UDim2.fromScale(1, 0),
+        Size = UDim2.fromScale(0.4, 1),
+        Text = "",
+        TextSize = Tokens.FontSize.SM,
+        TextColor3 = "TextMuted",
+        TextXAlignment = Enum.TextXAlignment.Right,
+        Parent = topRow,
+    })
+
+    -- Track
+    local track = New("TextButton", {
+        AnchorPoint = Vector2.new(0, 1),
+        BackgroundColor3 = "SurfaceAltColor",
+        Position = UDim2.fromScale(0, 1),
+        Size     = UDim2.new(1, 0, 0, 8),
+        Text     = "",
+        Parent   = holder,
+    })
+    New("UICorner", { CornerRadius = UDim.new(1, 0), Parent = track })
+
+    local fill = New("Frame", {
+        BackgroundColor3 = "AccentColor",
+        Size  = UDim2.fromScale(0, 1),
+        Parent = track,
+    })
+    New("UICorner", { CornerRadius = UDim.new(1, 0), Parent = fill })
+
+    -- Knob
+    local knob = New("Frame", {
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        BackgroundColor3 = "TextPrimary",
+        Position = UDim2.fromScale(0, 0.5),
+        Size     = UDim2.fromOffset(14, 14),
+        Parent   = track,
+    })
+    New("UICorner", { CornerRadius = UDim.new(1, 0), Parent = knob })
+
+    -- Drag state declared early so hover handlers can read it
+    local dragging = false
+
+    -- Hover: knob grows, track brightens
+    local knobScale = Instance.new("UIScale")
+    knobScale.Scale = 1
+    knobScale.Parent = knob
+    local tiKnob = TweenInfo.new(0.1, Enum.EasingStyle.Quad)
+    maid:Connect(track.MouseEnter, function()
+        TweenService:Create(knobScale, tiKnob, { Scale = 1.25 }):Play()
+        TweenService:Create(fill,     tiKnob, { BackgroundColor3 = Library.Scheme.AccentHover }):Play()
+    end)
+    maid:Connect(track.MouseLeave, function()
+        if not dragging then
+            TweenService:Create(knobScale, tiKnob, { Scale = 1.0 }):Play()
+            TweenService:Create(fill,     tiKnob, { BackgroundColor3 = Library.Scheme.AccentColor }):Play()
+        end
+    end)
+
+    local function round(v, r)
+        if r == 0 then return math.floor(v + 0.5) end
+        return tonumber(string.format("%." .. r .. "f", v))
+    end
+
+    local Slider = setmetatable({
+        Text     = info.Text,
+        Value    = info.Default,
+        Min      = info.Min,
+        Max      = info.Max,
+        Rounding = info.Rounding,
+        Prefix   = info.Prefix,
+        Suffix   = info.Suffix,
+        Disabled = info.Disabled,
+        Visible  = info.Visible,
+        Callback = info.Callback,
+        Changed  = info.Changed,
+        Type     = "Slider",
+        Holder   = holder,
+        _maid    = maid,
+    }, ComponentBase)
+
+    local _fillTween
+    local function setFillDirect(frac)
+        if _fillTween then _fillTween:Cancel() end
+        fill.Size     = UDim2.fromScale(frac, 1)
+        knob.Position = UDim2.fromScale(frac, 0.5)
+        valueLabel.Text = Slider.Prefix .. tostring(Slider.Value) .. Slider.Suffix
+    end
+
+    local function setFillAnimated(frac)
+        if _fillTween then _fillTween:Cancel() end
+        _fillTween = TweenService:Create(fill,
+            TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+            { Size = UDim2.fromScale(frac, 1) })
+        _fillTween:Play()
+        TweenService:Create(knob,
+            TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+            { Position = UDim2.fromScale(frac, 0.5) }):Play()
+        valueLabel.Text = Slider.Prefix .. tostring(Slider.Value) .. Slider.Suffix
+    end
+
+    function Slider:SetValue(v, fromDrag)
+        if self.Disabled then return end
+        local num = tonumber(v)
+        if not num then return end
+        num = math.clamp(num, self.Min, self.Max)
+        num = round(num, self.Rounding)
+        if num == self.Value then return end
+        self.Value = num
+        local frac = (num - self.Min) / math.max(1e-6, self.Max - self.Min)
+        -- Use fast tween during drag (smooth but responsive), spring for programmatic
+        if fromDrag then
+            setFillAnimated(frac)
+        else
+            AnimEngine.Spring({
+                from = fill.Size.X.Scale, to = frac,
+                stiffness = 400, damping = 28,
+                apply = function(s)
+                    fill.Size     = UDim2.fromScale(s, 1)
+                    knob.Position = UDim2.fromScale(s, 0.5)
+                end,
+            })
+            valueLabel.Text = self.Prefix .. tostring(self.Value) .. self.Suffix
+        end
+        Library:SafeCallback(self.Callback, num)
+        Library:SafeCallback(self.Changed,  num)
+    end
+
+    function Slider:SetDisabled(v)
+        self.Disabled = v
+        track.Active  = not v
+    end
+
+    function Slider:SetVisible(v)
+        self.Visible = v
+        holder.Visible = v
+        Slider._groupbox:Resize()
+    end
+
+    function Slider:SetMin(v)
+        self.Min = v
+        self:SetValue(math.max(self.Value, v))
+    end
+
+    function Slider:SetMax(v)
+        self.Max = v
+        self:SetValue(math.min(self.Value, v))
+    end
+
+    -- Drag: compute position immediately on click AND on move
+    maid:Connect(track.InputBegan, function(input)
+        if input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
+        if Slider.Disabled then return end
+        dragging = true
+        TweenService:Create(knobScale, tiKnob, { Scale = 1.35 }):Play()
+        -- Immediately jump to clicked position
+        local abs  = track.AbsolutePosition
+        local size = track.AbsoluteSize
+        local frac = math.clamp((Mouse.X - abs.X) / size.X, 0, 1)
+        Slider:SetValue(Slider.Min + (Slider.Max - Slider.Min) * frac, true)
+    end)
+    maid:Connect(UserInputService.InputChanged, function(input)
+        if not dragging then return end
+        if input.UserInputType ~= Enum.UserInputType.MouseMovement then return end
+        local abs  = track.AbsolutePosition
+        local size = track.AbsoluteSize
+        local frac = math.clamp((Mouse.X - abs.X) / size.X, 0, 1)
+        local val  = Slider.Min + (Slider.Max - Slider.Min) * frac
+        Slider:SetValue(val, true)
+    end)
+    maid:Connect(UserInputService.InputEnded, function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 and dragging then
+            dragging = false
+            TweenService:Create(knobScale, tiKnob, { Scale = 1.0 }):Play()
+            TweenService:Create(fill, tiKnob, { BackgroundColor3 = Library.Scheme.AccentColor }):Play()
+        end
+    end)
+
+    -- Initial display (direct, no animation on load)
+    local initFrac = (info.Default - info.Min) / math.max(1e-6, info.Max - info.Min)
+    setFillDirect(initFrac)
+    valueLabel.Text = info.Prefix .. tostring(info.Default) .. info.Suffix
+    Slider._groupbox = self
+    self:Resize()
+
+    -- Refresh fill/knob colors when theme changes
+    maid:Give(EventBus:On("themeChange", function()
+        fill.BackgroundColor3 = Library.Scheme.AccentColor
+        knob.BackgroundColor3 = Library.Scheme.TextPrimary
+    end))
+
+    if idx then Library.Options[idx] = Slider end
+    table.insert(self.Elements, Slider)
+    Slider.Default = Slider.Value
+    return Slider
+end
+
+function BaseGroupbox:AddInput(idx, info)
+    info = Library:Validate(info, {
+        Text        = "Input",
+        Default     = "",
+        Placeholder = "",
+        Numeric     = false,
+        Finished    = false,
+        Disabled    = false,
+        Visible     = true,
+        Callback    = function() end,
+        Changed     = function() end,
+        AllowEmpty  = true,
+    })
+
+    local container = self.Container
+    local maid      = Maid.New()
+
+    local holder = New("Frame", {
+        BackgroundTransparency = 1,
+        Size    = UDim2.new(1, 0, 0, info.Text and 36 or 22),
+        Visible = info.Visible,
+        Parent  = container,
+    })
+
+    if info.Text then
+        New("TextLabel", {
+            BackgroundTransparency = 1,
+            Size = UDim2.new(1, 0, 0, 14),
+            Text = info.Text,
+            TextSize = Tokens.FontSize.MD,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            Parent = holder,
+        })
+    end
+
+    local inputFrame = New("Frame", {
+        AnchorPoint = Vector2.new(0, 1),
+        BackgroundColor3 = "SurfaceColor",
+        Position = UDim2.fromScale(0, 1),
+        Size     = UDim2.new(1, 0, 0, 22),
+        Parent   = holder,
+    })
+    New("UICorner", { CornerRadius = UDim.new(0, Tokens.RadiusSM), Parent = inputFrame })
+    New("UIStroke", { Color = "BorderColor", Thickness = 1, Parent = inputFrame })
+    New("UIPadding", {
+        PaddingLeft = UDim.new(0, 6), PaddingRight = UDim.new(0, 6),
+        Parent = inputFrame,
+    })
+
+    local box = New("TextBox", {
+        BackgroundTransparency = 1,
+        ClearTextOnFocus = false,
+        PlaceholderText  = info.Placeholder,
+        Size    = UDim2.fromScale(1, 1),
+        Text    = info.Default,
+        TextSize= Tokens.FontSize.MD,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Parent  = inputFrame,
+    })
+
+    local Input = setmetatable({
+        Text     = info.Text,
+        Value    = info.Default,
+        Disabled = info.Disabled,
+        Visible  = info.Visible,
+        Callback = info.Callback,
+        Changed  = info.Changed,
+        Type     = "Input",
+        Holder   = holder,
+        Box      = box,
+        _maid    = maid,
+    }, ComponentBase)
+
+    function Input:SetValue(v)
+        self.Value = v
+        box.Text   = tostring(v)
+        Library:SafeCallback(self.Callback, v)
+        Library:SafeCallback(self.Changed,  v)
+    end
+
+    function Input:SetDisabled(v)
+        self.Disabled = v
+        box.TextEditable = not v
+    end
+
+    function Input:SetVisible(v)
+        self.Visible = v
+        holder.Visible = v
+        Input._groupbox:Resize()
+    end
+
+    -- Focus glow using TweenService
+    local inputStroke = inputFrame:FindFirstChildOfClass("UIStroke")
+    maid:Connect(box.Focused, function()
+        if inputStroke then
+            inputStroke.Color = Library.Scheme.AccentColor
+            TweenService:Create(inputStroke,
+                TweenInfo.new(0.12, Enum.EasingStyle.Quad),
+                { Thickness = 1.5 }):Play()
+        end
+    end)
+    maid:Connect(box.FocusLost, function(enterPressed)
+        if inputStroke then
+            inputStroke.Color = Library.Scheme.BorderColor
+            TweenService:Create(inputStroke,
+                TweenInfo.new(0.12, Enum.EasingStyle.Quad),
+                { Thickness = 1 }):Play()
+        end
+        local val = box.Text
+        if info.Numeric then
+            val = tonumber(val)
+            if not val then
+                box.Text = tostring(Input.Value)
+                return
+            end
+        end
+        if val ~= Input.Value then
+            Input.Value = val
+            Library:SafeCallback(Input.Callback, val)
+            Library:SafeCallback(Input.Changed,  val)
+        end
+    end)
+
+    maid:Connect(box:GetPropertyChangedSignal("Text"), function()
+        if not info.Finished then
+            local val = box.Text
+            if info.Numeric then
+                val = tonumber(val)
+                if not val then return end
+            end
+            Library:SafeCallback(Input.Changed, val)
+        end
+    end)
+
+    Input._groupbox = self
+    self:Resize()
+    if idx then Library.Options[idx] = Input end
+    table.insert(self.Elements, Input)
+    Input.Default = Input.Value
+    return Input
+end
+
+function BaseGroupbox:AddDropdown(idx, info)
+    info = Library:Validate(info, {
+        Text     = nil,
+        Values   = {},
+        Default  = nil,
+        Multi    = false,
+        Disabled = false,
+        Visible  = true,
+        Callback = function() end,
+        Changed  = function() end,
+        Tooltip  = nil,
+        MaxVisible = 6,
+    })
+
+    local container = self.Container
+    local maid      = Maid.New()
+    local menuOpen  = false
+
+    local holder = New("Frame", {
+        BackgroundTransparency = 1,
+        Size    = UDim2.new(1, 0, 0, info.Text and 42 or 24),
+        Visible = info.Visible,
+        Parent  = container,
+    })
+
+    if info.Text then
+        New("TextLabel", {
+            BackgroundTransparency = 1,
+            Position = UDim2.fromOffset(0, 0),
+            Size = UDim2.new(1, 0, 0, 14),
+            Text = info.Text,
+            TextSize = Tokens.FontSize.MD,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            Parent = holder,
+        })
+    end
+
+    local displayBtn = New("TextButton", {
+        AnchorPoint = Vector2.new(0, 1),
+        BackgroundColor3 = "SurfaceColor",
+        Position = UDim2.fromScale(0, 1),
+        Size     = UDim2.new(1, 0, 0, 24),
+        Text     = "",
+        Parent   = holder,
+    })
+    New("UICorner", { CornerRadius = UDim.new(0, Tokens.RadiusSM), Parent = displayBtn })
+    New("UIStroke", { Color = "BorderColor", Thickness = 1, Parent = displayBtn })
+    New("UIPadding", {
+        PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 8),
+        Parent = displayBtn,
+    })
+
+    local displayLabel = New("TextLabel", {
+        BackgroundTransparency = 1,
+        Size = UDim2.new(1, -18, 1, 0),
+        Text = info.Multi and "Select..." or (info.Default or "Select..."),
+        TextSize = Tokens.FontSize.MD,
+        TextColor3 = "TextMuted",
+        TextXAlignment = Enum.TextXAlignment.Left,
+        TextYAlignment = Enum.TextYAlignment.Center,
+        Parent = displayBtn,
+    })
+
+    -- Arrow: use a simple TextLabel with a rotatable Frame chevron instead of a Unicode glyph
+    local arrowFrame = New("Frame", {
+        AnchorPoint = Vector2.new(1, 0.5),
+        BackgroundTransparency = 1,
+        Position = UDim2.new(1, 0, 0.5, 0),
+        Size     = UDim2.fromOffset(16, 16),
+        Parent   = displayBtn,
+    })
+    -- Draw a simple "v" shape using two rotated frames
+    local arrowL = New("Frame", {
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        BackgroundColor3 = "TextMuted",
+        BorderSizePixel  = 0,
+        Position = UDim2.new(0.5, -3, 0.5, 0),
+        Size     = UDim2.fromOffset(7, 1.5),
+        Rotation = 35,
+        Parent   = arrowFrame,
+    })
+    local arrowR = New("Frame", {
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        BackgroundColor3 = "TextMuted",
+        BorderSizePixel  = 0,
+        Position = UDim2.new(0.5, 3, 0.5, 0),
+        Size     = UDim2.fromOffset(7, 1.5),
+        Rotation = -35,
+        Parent   = arrowFrame,
+    })
+    local arrowLabel = arrowFrame  -- keep reference name for rotation tweens
+
+    local Dropdown = setmetatable({
+        Text     = info.Text,
+        Value    = info.Multi and {} or info.Default,
+        Values   = info.Values,
+        Multi    = info.Multi,
+        Disabled = info.Disabled,
+        Visible  = info.Visible,
+        Callback = info.Callback,
+        Changed  = info.Changed,
+        Type     = "Dropdown",
+        Holder   = holder,
+        _maid    = maid,
+        _menu    = nil,
+    }, ComponentBase)
+
+    local function updateDisplay()
+        if Dropdown.Multi then
+            local count = 0
+            local parts = {}
+            for k, v in pairs(Dropdown.Value) do
+                if v then count += 1; table.insert(parts, k) end
+            end
+            if count == 0 then
+                displayLabel.Text = "Select…"
+                displayLabel.TextColor3 = Library.Scheme.TextMuted
+            else
+                displayLabel.Text = table.concat(parts, ", "):sub(1, 40)
+                displayLabel.TextColor3 = Library.Scheme.TextPrimary
+            end
+        else
+            if Dropdown.Value then
+                displayLabel.Text = tostring(Dropdown.Value)
+                displayLabel.TextColor3 = Library.Scheme.TextPrimary
+            else
+                displayLabel.Text = "Select…"
+                displayLabel.TextColor3 = Library.Scheme.TextMuted
+            end
+        end
+    end
+
+    local function closeMenu()
+        if not Dropdown._menu then return end
+        local m = Dropdown._menu
+        Dropdown._menu = nil
+        menuOpen = false
+
+        local scaleI = m:FindFirstChildOfClass("UIScale")
+        local tiOut = TweenInfo.new(0.14, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+        if scaleI then
+            TweenService:Create(scaleI, tiOut, { Scale = 0.9 }):Play()
+        end
+        TweenService:Create(m, tiOut, { BackgroundTransparency = 1 }):Play()
+        -- Fade all descendants out too so text/strokes don't pop
+        for _, d in ipairs(m:GetDescendants()) do
+            if d:IsA("TextLabel") or d:IsA("TextButton") then
+                TweenService:Create(d, tiOut, { TextTransparency = 1 }):Play()
+            elseif d:IsA("Frame") then
+                TweenService:Create(d, tiOut, { BackgroundTransparency = 1 }):Play()
+            elseif d:IsA("UIStroke") then
+                TweenService:Create(d, tiOut, { Transparency = 1 }):Play()
+            end
+        end
+        task.delay(0.15, function() if m and m.Parent then m:Destroy() end end)
+        TweenService:Create(arrowFrame, TweenInfo.new(0.12, Enum.EasingStyle.Quad), { Rotation = 0 }):Play()
+    end
+
+    local function openMenu()
+        if menuOpen or Dropdown.Disabled then return end
+        menuOpen = true
+        InteractionManager.Push("dropdown:" .. (idx or "?"), closeMenu)
+        TweenService:Create(arrowFrame, TweenInfo.new(0.12, Enum.EasingStyle.Quad), { Rotation = 180 }):Play()
+
+        -- Position popup - clamp to screen so it never clips off edge
+        local abs  = displayBtn.AbsolutePosition
+        local absW = displayBtn.AbsoluteSize.X
+        local rowH = 22
+        local maxH = math.min(#Dropdown.Values, info.MaxVisible) * rowH + 8
+        local vp   = Camera.ViewportSize
+        local posX = math.clamp(abs.X, 4, vp.X - absW - 4)
+        local posY = abs.Y + displayBtn.AbsoluteSize.Y + 4
+        -- Flip above if not enough room below
+        if posY + maxH > vp.Y - 8 then
+            posY = abs.Y - maxH - 4
+        end
+
+        local menuFrame = New("Frame", {
+            BackgroundColor3 = "SurfaceColor",
+            Position = UDim2.fromOffset(posX, posY),
+            Size     = UDim2.fromOffset(absW, maxH),
+            ZIndex   = ZManager.Get("dropdown"),
+            ClipsDescendants = true,
+            Parent   = ScreenGui,
+        })
+        New("UICorner", { CornerRadius = UDim.new(0, Tokens.RadiusMD), Parent = menuFrame })
+        New("UIStroke", { Color = "BorderColor", Thickness = 1, Parent = menuFrame })
+
+        local menuScale = Instance.new("UIScale")
+        menuScale.Scale = 0.9
+        menuScale.Parent = menuFrame
+
+        local scroll = New("ScrollingFrame", {
+            BackgroundTransparency = 1,
+            CanvasSize  = UDim2.fromOffset(0, 0),
+            Size        = UDim2.fromScale(1, 1),
+            ScrollBarThickness = 3,
+            Parent      = menuFrame,
+        })
+        New("UIPadding", {
+            PaddingTop = UDim.new(0, 4), PaddingBottom = UDim.new(0, 4),
+            PaddingLeft = UDim.new(0, 4), PaddingRight = UDim.new(0, 4),
+            Parent = scroll,
+        })
+        local listLayout = New("UIListLayout", { Padding = UDim.new(0, 2), Parent = scroll })
+        maid:Connect(listLayout:GetPropertyChangedSignal("AbsoluteContentSize"), function()
+            scroll.CanvasSize = UDim2.fromOffset(0, listLayout.AbsoluteContentSize.Y + 8)
+        end)
+
+        for _, val in ipairs(Dropdown.Values) do
+            local selected = Dropdown.Multi and Dropdown.Value[val] or Dropdown.Value == val
+            local selBg    = Color3.fromRGB(60, 60, 80)  -- dark readable bg for selected
+            local selText  = Color3.new(1, 1, 1)
+            local row = New("TextButton", {
+                BackgroundColor3       = selected and selBg or ThemeEngine.CurrentScheme.SurfaceColor,
+                BackgroundTransparency = selected and 0 or 1,
+                Size   = UDim2.new(1, 0, 0, rowH),
+                Text   = "",
+                Parent = scroll,
+            })
+            New("UICorner", { CornerRadius = UDim.new(0, Tokens.RadiusSM), Parent = row })
+            New("UIPadding", { PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 8), Parent = row })
+            local rowLabel = New("TextLabel", {
+                BackgroundTransparency = 1,
+                Size = UDim2.fromScale(1, 1),
+                Text = tostring(val),
+                TextSize = Tokens.FontSize.MD,
+                TextXAlignment = Enum.TextXAlignment.Left,
+                TextColor3 = selected and selText or ThemeEngine.CurrentScheme.TextPrimary,
+                Parent = row,
+            })
+            row.MouseEnter:Connect(function()
+                if not (Dropdown.Multi and Dropdown.Value[val] or Dropdown.Value == val) then
+                    row.BackgroundTransparency = 0
+                    row.BackgroundColor3 = ThemeEngine.CurrentScheme.SurfaceAltColor
+                end
+            end)
+            row.MouseLeave:Connect(function()
+                local isSel = Dropdown.Multi and Dropdown.Value[val] or Dropdown.Value == val
+                row.BackgroundTransparency = isSel and 0 or 1
+                row.BackgroundColor3 = isSel and selBg or ThemeEngine.CurrentScheme.SurfaceColor
+                rowLabel.TextColor3  = isSel and selText or ThemeEngine.CurrentScheme.TextPrimary
+            end)
+            row.MouseButton1Click:Connect(function()
+                -- update visual immediately
+                if Dropdown.Multi then
+                    local nowSel = not Dropdown.Value[val]
+                    row.BackgroundTransparency = nowSel and 0 or 1
+                    row.BackgroundColor3 = nowSel and selBg or ThemeEngine.CurrentScheme.SurfaceColor
+                    rowLabel.TextColor3  = nowSel and selText or ThemeEngine.CurrentScheme.TextPrimary
+                end
+                Dropdown:SetValue(val)
+                if not Dropdown.Multi then closeMenu() end
+                updateDisplay()
+            end)
+        end
+
+        -- Fade + scale in
+        menuFrame.AnchorPoint = Vector2.new(0, 0)
+        menuFrame.BackgroundTransparency = 1
+        local tiIn = TweenInfo.new(0.16, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+        TweenService:Create(menuFrame, tiIn, { BackgroundTransparency = 0 }):Play()
+        TweenService:Create(menuScale, tiIn, { Scale = 1 }):Play()
+
+        Dropdown._menu = menuFrame
+    end
+
+    function Dropdown:SetValue(v)
+        if self.Multi then
+            if self.Value[v] then
+                self.Value[v] = nil
+            else
+                self.Value[v] = true
+            end
+        else
+            self.Value = v
+        end
+        updateDisplay()
+        Library:SafeCallback(self.Callback, self.Value)
+        Library:SafeCallback(self.Changed,  self.Value)
+    end
+
+    function Dropdown:SetValues(vals)
+        self.Values = vals
+        if self._menu then
+            closeMenu()
+        end
+    end
+
+    function Dropdown:SetDisabled(v)
+        self.Disabled = v
+        displayBtn.Active = not v
+    end
+
+    function Dropdown:SetVisible(v)
+        self.Visible = v
+        holder.Visible = v
+        Dropdown._groupbox:Resize()
+    end
+
+    maid:Connect(displayBtn.MouseButton1Click, function()
+        if menuOpen then closeMenu() else openMenu() end
+    end)
+
+    -- Close on outside click (but not if clicking the button itself or inside the popup)
+    maid:Connect(UserInputService.InputBegan, function(input)
+        if input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
+        if not menuOpen or not Dropdown._menu then return end
+        task.defer(function()
+            if not Dropdown._menu then return end
+            local overHolder = Library:MouseIsOver(displayBtn)
+            local overMenu   = Dropdown._menu and Dropdown._menu.Parent and Library:MouseIsOver(Dropdown._menu)
+            if not overHolder and not overMenu then
+                closeMenu()
+            end
+        end)
+    end)
+
+    Micro.PressDepression(displayBtn, maid)
+    updateDisplay()
+
+    Dropdown._groupbox = self
+    self:Resize()
+    if idx then Library.Options[idx] = Dropdown end
+    table.insert(self.Elements, Dropdown)
+    Dropdown.Default = Dropdown.Value
+    return Dropdown
+end
+
+function BaseGroupbox:AddButton(idx, info)
+    info = Library:Validate(info, {
+        Text     = "Button",
+        Callback = function() end,
+        Disabled = false,
+        Visible  = true,
+        Tooltip  = nil,
+        Variant  = "Primary",  -- Primary | Secondary | Ghost | Danger
+        Sub      = nil,
+    })
+
+    local container = self.Container
+    local maid      = Maid.New()
+
+    local scheme = Library.Scheme
+    -- All buttons use a neutral surface style — no loud accent or red
+    local bgColors = {
+        Primary   = scheme.SurfaceAltColor,
+        Secondary = scheme.SurfaceColor,
+        Ghost     = Color3.new(0,0,0),
+        Danger    = Color3.fromRGB(60, 25, 25),  -- very subtle dark red
+    }
+    local textColors = {
+        Primary   = scheme.TextPrimary,
+        Secondary = scheme.TextSecondary,
+        Ghost     = scheme.TextPrimary,
+        Danger    = Color3.fromRGB(220, 100, 100),  -- muted red text
+    }
+    local strokeColors = {
+        Primary   = scheme.BorderColor,
+        Secondary = scheme.BorderColor,
+        Ghost     = Color3.new(0,0,0),
+        Danger    = Color3.fromRGB(100, 40, 40),
+    }
+
+    local bg     = bgColors[info.Variant]     or scheme.SurfaceAltColor
+    local tc     = textColors[info.Variant]   or scheme.TextPrimary
+    local sc     = strokeColors[info.Variant] or scheme.BorderColor
+    local bgT    = info.Variant == "Ghost" and 1 or 0
+    local hoverBg = Color3.fromRGB(
+        math.clamp(bg.R*255 + 12, 0, 255)/255,
+        math.clamp(bg.G*255 + 12, 0, 255)/255,
+        math.clamp(bg.B*255 + 12, 0, 255)/255
+    )
+
+    local btn = New("TextButton", {
+        BackgroundColor3 = bg,
+        BackgroundTransparency = bgT,
+        Size     = UDim2.new(1, 0, 0, 22),
+        Text     = info.Text,
+        TextColor3 = tc,
+        TextSize = Tokens.FontSize.MD,
+        Visible  = info.Visible,
+        Parent   = container,
+    })
+    New("UICorner", { CornerRadius = UDim.new(0, Tokens.RadiusSM), Parent = btn })
+    New("UIStroke", { Color = sc,  Thickness = 1, Parent = btn })
+
+    Micro.PressDepression(btn, maid)
+    Micro.Ripple(btn, Color3.new(1,1,1), maid)
+
+    local tiBtn = TweenInfo.new(0.1, Enum.EasingStyle.Quad)
+    maid:Connect(btn.MouseEnter, function()
+        if not info.Disabled then
+            TweenService:Create(btn, tiBtn, { BackgroundColor3 = hoverBg, BackgroundTransparency = bgT == 1 and 0.85 or 0 }):Play()
+        end
+    end)
+    maid:Connect(btn.MouseLeave, function()
+        TweenService:Create(btn, tiBtn, { BackgroundColor3 = bg, BackgroundTransparency = bgT }):Play()
+    end)
+
+    local Button = setmetatable({
+        Text     = info.Text,
+        Disabled = info.Disabled,
+        Visible  = info.Visible,
+        Callback = info.Callback,
+        Type     = "Button",
+        Holder   = btn,
+        Instance = btn,
+        _maid    = maid,
+    }, ComponentBase)
+
+    maid:Connect(btn.MouseButton1Click, function()
+        if Button.Disabled then return end
+        Library:SafeCallback(Button.Callback)
+    end)
+
+    function Button:SetText(t)
+        self.Text = t
+        btn.Text  = t
+    end
+
+    function Button:SetDisabled(v)
+        self.Disabled = v
+        btn.Active    = not v
+        btn.BackgroundTransparency = v and 0.5 or bgT
+    end
+
+    function Button:SetVisible(v)
+        self.Visible = v
+        btn.Visible  = v
+        Button._groupbox:Resize()
+    end
+
+    if info.Tooltip then
+        maid:Connect(btn.MouseEnter, function()
+            ToastSystem.Info(info.Tooltip, { Duration = 2 })
+        end)
+    end
+
+    Button._groupbox = self
+    self:Resize()
+    if idx then Library.Buttons[idx] = Button end
+    table.insert(self.Elements, Button)
+
+    -- Refresh button colors on theme change
+    maid:Give(EventBus:On("themeChange", function()
+        local s = Library.Scheme
+        local newBg = info.Variant == "Primary" and s.SurfaceAltColor
+                   or info.Variant == "Secondary" and s.SurfaceColor
+                   or info.Variant == "Danger" and Color3.fromRGB(60, 25, 25)
+                   or Color3.new(0,0,0)
+        local newTc = info.Variant == "Primary" and s.TextPrimary
+                   or info.Variant == "Secondary" and s.TextSecondary
+                   or info.Variant == "Danger" and Color3.fromRGB(220, 100, 100)
+                   or s.TextPrimary
+        bg, tc = newBg, newTc
+        hoverBg = Color3.fromRGB(
+            math.clamp(bg.R*255 + 12, 0, 255)/255,
+            math.clamp(bg.G*255 + 12, 0, 255)/255,
+            math.clamp(bg.B*255 + 12, 0, 255)/255
+        )
+        btn.BackgroundColor3 = bg
+        btn.TextColor3 = tc
+    end))
+
+    return Button
+end
+
+-- Resize: recalculates groupbox height from content
+function BaseGroupbox:Resize()
+    if not self.Container then return end
+    local list = self.Container:FindFirstChildOfClass("UIListLayout")
+    if not list then return end
+    task.defer(function()
+        local h = list.AbsoluteContentSize.Y
+        if self.BoxHolder then
+            self.BoxHolder.Size = UDim2.new(1, 0, 0, h + 48)  -- 48 = header
+        end
+    end)
+end
+
+function BaseGroupbox:AddDependencyBox()
+    local depBox = setmetatable({
+        Elements      = {},
+        DependencyBoxes = {},
+        Container     = self.Container,
+        Visible       = true,
+        _groupbox     = self,
+    }, BaseGroupbox)
+
+    function depBox:SetVisible(v)
+        depBox.Visible = v
+        for _, e in ipairs(depBox.Elements) do
+            e.Holder.Visible = v and e.Visible
+        end
+        self._groupbox:Resize()
+    end
+
+    table.insert(self.DependencyBoxes, depBox)
+    return depBox
+end
+
+-- ─── Component Addon Methods ───────────────────────────────────────────────
+-- Lets components host an inline ColorPicker or KeyPicker on the same row.
+-- Usage:  local toggle = Box:AddToggle(...)
+--         toggle:AddColorPicker("myColor", { Default = Color3.new(1,0,0) })
+--         toggle:AddKeyPicker("myKey",   { Default = "F", Mode = "Toggle" })
+
+local function attachAddonToComponent(component, addonComponent)
+    -- Shrink the component's main label to make room on the right
+    local label = component.TextLabel
+    if label then
+        local currentSize = label.Size
+        label.Size = UDim2.new(currentSize.X.Scale, currentSize.X.Offset - 26, currentSize.Y.Scale, currentSize.Y.Offset)
+    end
+    -- Re-parent the addon holder into the component holder
+    if addonComponent.Holder then
+        addonComponent.Holder.Parent = component.Holder
+        addonComponent.Holder.Size   = UDim2.new(0, 26, 1, 0)
+        addonComponent.Holder.AnchorPoint = Vector2.new(1, 0.5)
+        addonComponent.Holder.Position    = UDim2.new(1, 0, 0.5, 0)
+        addonComponent.Holder.BackgroundTransparency = 1
+    end
+    table.insert(component.Addons, addonComponent)
+end
+
+-- Patch Toggle to support addon attachment
+local _origToggleReturn = nil  -- handled inline below via ComponentBase extension
+
+function ComponentBase:AddColorPicker(idx, info)
+    -- Delegate to groupbox but then re-attach inline
+    local gb = self._groupbox
+    if not gb then return end
+    info = info or {}
+    info.Text = ""  -- no label, it's inline
+    local cp = gb:AddColorPicker(idx, info)
+    -- Pop it out of gb.Elements (it was added there)
+    for i = #gb.Elements, 1, -1 do
+        if gb.Elements[i] == cp then
+            table.remove(gb.Elements, i)
+            break
+        end
+    end
+    attachAddonToComponent(self, cp)
+    return cp
+end
+
+function ComponentBase:AddKeyPicker(idx, info)
+    local gb = self._groupbox
+    if not gb then return end
+    info = info or {}
+    info.Text = ""
+    local kp = gb:AddKeyPicker(idx, info)
+    for i = #gb.Elements, 1, -1 do
+        if gb.Elements[i] == kp then
+            table.remove(gb.Elements, i)
+            break
+        end
+    end
+    attachAddonToComponent(self, kp)
+    return kp
+end
+
+-- ─── Status Badge ──────────────────────────────────────────────────────────
+function BaseGroupbox:AddStatusBadge(info)
+    info = Library:Validate(info, {
+        Text    = "Status",
+        Status  = "ok",     -- "ok" | "warn" | "error" | "info" | "offline"
+        Visible = true,
+    })
+
+    local statusColors = {
+        ok      = Library.Scheme.SuccessColor,
+        warn    = Library.Scheme.WarningColor,
+        error   = Library.Scheme.DangerColor,
+        info    = Library.Scheme.InfoColor,
+        offline = Library.Scheme.MutedColor,
+    }
+    local statusDot = { ok="●", warn="●", error="●", info="●", offline="○" }
+
+    local holder = New("Frame", {
+        BackgroundTransparency = 1,
+        Size    = UDim2.new(1, 0, 0, 18),
+        Visible = info.Visible,
+        Parent  = self.Container,
+    })
+    New("UIListLayout", {
+        FillDirection = Enum.FillDirection.Horizontal,
+        VerticalAlignment = Enum.VerticalAlignment.Center,
+        Padding = UDim.new(0, 6),
+        Parent = holder,
+    })
+
+    local dot = New("TextLabel", {
+        BackgroundTransparency = 1,
+        Size  = UDim2.fromOffset(10, 10),
+        Text  = statusDot[info.Status] or "●",
+        TextSize = 10,
+        TextColor3 = statusColors[info.Status] or Library.Scheme.InfoColor,
+        LayoutOrder = 1,
+        Parent = holder,
+    })
+    local textLabel = New("TextLabel", {
+        BackgroundTransparency = 1,
+        Size  = UDim2.new(1, -16, 1, 0),
+        Text  = info.Text,
+        TextSize = Tokens.FontSize.SM,
+        TextColor3 = "TextSecondary",
+        TextXAlignment = Enum.TextXAlignment.Left,
+        LayoutOrder = 2,
+        Parent = holder,
+    })
+
+    local Badge = { Type = "StatusBadge", Holder = holder, Visible = info.Visible }
+
+    function Badge:SetStatus(s)
+        dot.TextColor3 = statusColors[s] or Library.Scheme.InfoColor
+        dot.Text       = statusDot[s] or "●"
+        dot.TextTransparency = 1
+        TweenService:Create(dot, TweenInfo.new(0.2, Enum.EasingStyle.Quad), { TextTransparency = 0 }):Play()
+    end
+
+    function Badge:SetText(t)
+        textLabel.Text = t
+    end
+
+    function Badge:SetVisible(v)
+        self.Visible = v
+        holder.Visible = v
+        self._groupbox:Resize()
+    end
+
+    Badge._groupbox = self
+    table.insert(self.Elements, Badge)
+    self:Resize()
+    return Badge
+end
+
+-- ─── Progress Bar ──────────────────────────────────────────────────────────
+function BaseGroupbox:AddProgressBar(idx, info)
+    info = Library:Validate(info, {
+        Text    = "Progress",
+        Value   = 0,
+        Min     = 0,
+        Max     = 100,
+        Suffix  = "%",
+        Color   = nil,  -- nil = accent
+        Visible = true,
+    })
+
+    local holder = New("Frame", {
+        BackgroundTransparency = 1,
+        Size    = UDim2.new(1, 0, 0, 28),
+        Visible = info.Visible,
+        Parent  = self.Container,
+    })
+
+    local topRow = New("Frame", {
+        BackgroundTransparency = 1,
+        Size = UDim2.new(1, 0, 0, 14),
+        Parent = holder,
+    })
+    local nameLabel = New("TextLabel", {
+        BackgroundTransparency = 1,
+        Size = UDim2.new(0.6, 0, 1, 0),
+        Text = info.Text,
+        TextSize = Tokens.FontSize.SM,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Parent = topRow,
+    })
+    local valLabel = New("TextLabel", {
+        AnchorPoint = Vector2.new(1, 0),
+        BackgroundTransparency = 1,
+        Position = UDim2.fromScale(1, 0),
+        Size = UDim2.new(0.4, 0, 1, 0),
+        Text = tostring(info.Value) .. info.Suffix,
+        TextSize = Tokens.FontSize.XS,
+        TextColor3 = "TextMuted",
+        TextXAlignment = Enum.TextXAlignment.Right,
+        Parent = topRow,
+    })
+
+    local track = New("Frame", {
+        AnchorPoint = Vector2.new(0, 1),
+        BackgroundColor3 = "SurfaceAltColor",
+        Position = UDim2.fromScale(0, 1),
+        Size     = UDim2.new(1, 0, 0, 6),
+        Parent   = holder,
+    })
+    New("UICorner", { CornerRadius = UDim.new(1, 0), Parent = track })
+
+    local fill = New("Frame", {
+        BackgroundColor3 = info.Color or "AccentColor",
+        Size = UDim2.fromScale(0, 1),
+        Parent = track,
+    })
+    New("UICorner", { CornerRadius = UDim.new(1, 0), Parent = fill })
+
+    local frac = math.clamp((info.Value - info.Min) / math.max(1, info.Max - info.Min), 0, 1)
+    fill.Size = UDim2.fromScale(frac, 1)
+
+    local Bar = { Type = "ProgressBar", Holder = holder, Value = info.Value, Visible = info.Visible }
+
+    function Bar:SetValue(v)
+        self.Value = math.clamp(v, info.Min, info.Max)
+        local f = (self.Value - info.Min) / math.max(1, info.Max - info.Min)
+        TweenService:Create(fill,
+            TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+            { Size = UDim2.fromScale(f, 1) }):Play()
+        valLabel.Text = tostring(math.round(self.Value)) .. info.Suffix
+    end
+
+    function Bar:SetText(t)
+        nameLabel.Text = t
+    end
+
+    function Bar:SetVisible(v)
+        self.Visible = v
+        holder.Visible = v
+        self._groupbox:Resize()
+    end
+
+    Bar._groupbox = self
+    table.insert(self.Elements, Bar)
+    if idx then Library.Options[idx] = Bar end
+    self:Resize()
+    return Bar
+end
+
+-- ─── Accordion Group ───────────────────────────────────────────────────────
+function BaseGroupbox:AddAccordion(info)
+    info = Library:Validate(info, {
+        Text      = "Section",
+        Expanded  = false,
+        Visible   = true,
+    })
+
+    local expanded = info.Expanded
+    local maid     = Maid.New()
+
+    local wrapper = New("Frame", {
+        BackgroundTransparency = 1,
+        Size    = UDim2.new(1, 0, 0, 0),
+        AutomaticSize = Enum.AutomaticSize.Y,
+        ClipsDescendants = true,
+        Visible = info.Visible,
+        Parent  = self.Container,
+    })
+
+    -- Header button
+    local header = New("TextButton", {
+        BackgroundColor3 = "SurfaceAltColor",
+        BackgroundTransparency = 0.5,
+        Size = UDim2.new(1, 0, 0, 22),
+        Text = "",
+        Parent = wrapper,
+    })
+    New("UICorner", { CornerRadius = UDim.new(0, Tokens.RadiusSM), Parent = header })
+    New("UIPadding", {
+        PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 8),
+        Parent = header,
+    })
+    New("UIListLayout", {
+        FillDirection = Enum.FillDirection.Horizontal,
+        VerticalAlignment = Enum.VerticalAlignment.Center,
+        Padding = UDim.new(0, 6),
+        Parent = header,
+    })
+
+    local arrow = New("TextLabel", {
+        BackgroundTransparency = 1,
+        Size = UDim2.fromOffset(12, 12),
+        Text = "▸",
+        TextSize = 11,
+        TextColor3 = "TextMuted",
+        LayoutOrder = 1,
+        Parent = header,
+    })
+    New("TextLabel", {
+        BackgroundTransparency = 1,
+        Size = UDim2.new(1, -18, 1, 0),
+        Text = info.Text,
+        TextSize = Tokens.FontSize.MD,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        LayoutOrder = 2,
+        Parent = header,
+    })
+
+    -- Content area
+    local content = New("Frame", {
+        BackgroundTransparency = 1,
+        Position = UDim2.fromOffset(0, 22),
+        Size = UDim2.new(1, 0, 0, 0),
+        AutomaticSize = Enum.AutomaticSize.Y,
+        ClipsDescendants = false,
+        Visible = expanded,
+        Parent = wrapper,
+    })
+    New("UIPadding", {
+        PaddingLeft = UDim.new(0, 8), PaddingTop = UDim.new(0, 4),
+        PaddingBottom = UDim.new(0, 4),
+        Parent = content,
+    })
+    New("UIListLayout", { Padding = UDim.new(0, 4), Parent = content })
+
+    -- Left accent line
+    New("Frame", {
+        BackgroundColor3 = "AccentSubtle",
+        Position = UDim2.fromOffset(2, 0),
+        Size = UDim2.new(0, 2, 1, 0),
+        Parent = content,
+    })
+
+    local Accordion = setmetatable({
+        Type      = "Accordion",
+        Holder    = wrapper,
+        Elements  = {},
+        DependencyBoxes = {},
+        Container = content,
+        Expanded  = expanded,
+        Visible   = info.Visible,
+        BoxHolder = nil,
+    }, BaseGroupbox)
+
+    function Accordion:Resize()
+        self._groupbox:Resize()
+    end
+
+    local function setExpanded(v)
+        expanded = v
+        Accordion.Expanded = v
+        content.Visible = true
+
+        local tiFast = TweenInfo.new(0.12, Enum.EasingStyle.Quad)
+        TweenService:Create(arrow, tiFast, { Rotation = expanded and 0 or -90 }):Play()
+
+        if not expanded then
+            task.delay(0.25, function()
+                if not Accordion.Expanded then
+                    content.Visible = false
+                end
+            end)
+        end
+        Accordion._groupbox:Resize()
+    end
+
+    if expanded then
+        arrow.Rotation = 0
+    end
+
+    maid:Connect(header.MouseButton1Click, function()
+        setExpanded(not expanded)
+    end)
+    local tiHdr = TweenInfo.new(0.1, Enum.EasingStyle.Quad)
+    maid:Connect(header.MouseEnter, function()
+        TweenService:Create(header, tiHdr, { BackgroundTransparency = 0.3 }):Play()
+    end)
+    maid:Connect(header.MouseLeave, function()
+        TweenService:Create(header, tiHdr, { BackgroundTransparency = 0.5 }):Play()
+    end)
+
+    Accordion._groupbox = self
+    Accordion._maid     = maid
+    table.insert(self.Elements, Accordion)
+    self:Resize()
+    return Accordion
+end
+
+-- ─── Config Persistence ────────────────────────────────────────────────────
+-- Serialises all Toggles, Options (Sliders, Inputs, Dropdowns, ColorPickers,
+-- KeyPickers) to a JSON string and restores them on load.
+-- Uses writefile/readfile if available (executor), else falls back to a
+-- protected in-memory store accessible via getgenv().
+local ConfigSystem = {}
+do
+    local function tryWrite(path, data)
+        if writefile then
+            pcall(writefile, path, data)
+            return true
+        end
+        if getgenv then
+            getgenv().__NexusUI_Config = getgenv().__NexusUI_Config or {}
+            getgenv().__NexusUI_Config[path] = data
+            return true
+        end
+        return false
+    end
+
+    local function tryRead(path)
+        if readfile then
+            local ok, data = pcall(readfile, path)
+            if ok and data then return data end
+        end
+        if getgenv and getgenv().__NexusUI_Config then
+            return getgenv().__NexusUI_Config[path]
+        end
+        return nil
+    end
+
+    local function isDir(path)
+        if isfolder then return isfolder(path) end
+        return false
+    end
+
+    local function makeDir(path)
+        if makefolder and not isDir(path) then
+            pcall(makefolder, path)
+        end
+    end
+
+    local function fileExists(filename)
+        local path = "NexusUI/" .. filename .. ".json"
+        return tryRead(path) ~= nil
+    end
+
+    function ConfigSystem.Exists(filename)
+        return fileExists(filename)
+    end
+
+    function ConfigSystem.Save(filename)
+        local data = {}
+
+        for k, toggle in pairs(Library.Toggles) do
+            data["toggle:" .. k] = toggle.Value
+        end
+
+        for k, option in pairs(Library.Options) do
+            local t = option.Type
+            if t == "Slider" or t == "Input" then
+                data["option:" .. k] = option.Value
+            elseif t == "Dropdown" then
+                if option.Multi then
+                    local sel = {}
+                    for v, on in pairs(option.Value or {}) do
+                        if on then table.insert(sel, v) end
+                    end
+                    data["dropdown_multi:" .. k] = sel
+                else
+                    data["dropdown:" .. k] = option.Value
+                end
+            elseif t == "ColorPicker" then
+                local c = option.Value
+                data["color:" .. k] = {
+                    math.round(c.R * 255),
+                    math.round(c.G * 255),
+                    math.round(c.B * 255),
+                }
+            elseif t == "KeyPicker" then
+                data["key:" .. k] = { value = option.Value, mode = option.Mode }
+            end
+        end
+
+        -- Save window size and position if a window has been created
+        if Library.Window and Library.Window.Main then
+            local mainFrame = Library.Window.Main
+            data["window_size"] = {
+                X = mainFrame.Size.X.Offset,
+                Y = mainFrame.Size.Y.Offset,
+            }
+            data["window_pos"] = {
+                X = mainFrame.Position.X.Offset,
+                Y = mainFrame.Position.Y.Offset,
+                XScale = mainFrame.Position.X.Scale,
+                YScale = mainFrame.Position.Y.Scale,
+            }
+        end
+
+        local encoded = HttpService:JSONEncode(data)
+        makeDir("NexusUI")
+        local path = "NexusUI/" .. (filename or "config") .. ".json"
+        tryWrite(path, encoded)
+        EventBus:Emit("configSaved", path)
+        return encoded
+    end
+
+    --[[
+        ConfigSystem.Load
+        ─────────────────
+        Restores Toggles, Options and the window size/position from a saved
+        config file.
+
+        Robustness / "missing element" handling:
+          • If a saved key refers to a Toggle/Option/Window element that no
+            longer exists (e.g. the script removed that toggle, or it was
+            renamed), the entry is simply skipped — it is collected into
+            `missing` and reported via the `configIntegrity` event / toast
+            instead of erroring.
+          • If the *current* UI has Toggles/Options that are NOT present in
+            the saved config (new elements added since the config was saved),
+            those are left at their defaults and reported as `unset` so the
+            user knows their config is "out of date" without anything
+            breaking.
+          • Every individual restore is wrapped in pcall so one bad/corrupt
+            entry can never abort the whole load.
+    ]]
+    function ConfigSystem.Load(filename)
+        local path = "NexusUI/" .. (filename or "config") .. ".json"
+        local raw = tryRead(path)
+        if not raw then return false end
+
+        local ok, data = pcall(function() return HttpService:JSONDecode(raw) end)
+        if not ok or type(data) ~= "table" then return false end
+
+        local missing = {}   -- keys present in the config but not in the live UI
+        local applied  = {}  -- idx -> true, for computing `unset` afterwards
+
+        local function safeSetValue(target, value)
+            return pcall(function() target:SetValue(value) end)
+        end
+
+        for k, v in pairs(data) do
+            -- Window size
+            if k == "window_size" and Library.Window and Library.Window.Main then
+                pcall(function()
+                    local mainFrame = Library.Window.Main
+                    local currentSize = mainFrame.Size
+                    local newSize = UDim2.new(
+                        currentSize.X.Scale,
+                        v.X,
+                        currentSize.Y.Scale,
+                        v.Y
+                    )
+                    if Library.Window.SetSize then
+                        Library.Window:SetSize(newSize)
+                    else
+                        mainFrame.Size = newSize
+                    end
+                end)
+
+            elseif k == "window_pos" and Library.Window and Library.Window.Main then
+                pcall(function()
+                    local mainFrame = Library.Window.Main
+                    local newPos = UDim2.new(
+                        v.XScale or mainFrame.Position.X.Scale, v.X,
+                        v.YScale or mainFrame.Position.Y.Scale, v.Y
+                    )
+                    if Library.Window.SetPosition then
+                        Library.Window:SetPosition(newPos)
+                    else
+                        mainFrame.Position = newPos
+                    end
+                end)
+
+            else
+                -- Toggles
+                local toggleKey = k:match("^toggle:(.+)$")
+                if toggleKey then
+                    if Library.Toggles[toggleKey] then
+                        safeSetValue(Library.Toggles[toggleKey], v)
+                        applied["toggle:" .. toggleKey] = true
+                    else
+                        table.insert(missing, { kind = "Toggle", idx = toggleKey })
+                    end
+                end
+
+                -- Sliders / Inputs
+                local optKey = k:match("^option:(.+)$")
+                if optKey then
+                    if Library.Options[optKey] then
+                        safeSetValue(Library.Options[optKey], v)
+                        applied["option:" .. optKey] = true
+                    else
+                        table.insert(missing, { kind = "Option", idx = optKey })
+                    end
+                end
+
+                -- Dropdowns (single)
+                local dropKey = k:match("^dropdown:(.+)$")
+                if dropKey then
+                    if Library.Options[dropKey] then
+                        safeSetValue(Library.Options[dropKey], v)
+                        applied["dropdown:" .. dropKey] = true
+                    else
+                        table.insert(missing, { kind = "Dropdown", idx = dropKey })
+                    end
+                end
+
+                -- Dropdowns (multi)
+                local dropMultiKey = k:match("^dropdown_multi:(.+)$")
+                if dropMultiKey then
+                    if Library.Options[dropMultiKey] and type(v) == "table" then
+                        pcall(function()
+                            Library.Options[dropMultiKey].Value = {}
+                            for _, sv in ipairs(v) do
+                                Library.Options[dropMultiKey]:SetValue(sv)
+                            end
+                        end)
+                        applied["dropdown_multi:" .. dropMultiKey] = true
+                    else
+                        table.insert(missing, { kind = "Dropdown (multi)", idx = dropMultiKey })
+                    end
+                end
+
+                -- ColorPickers
+                local colorKey = k:match("^color:(.+)$")
+                if colorKey then
+                    if Library.Options[colorKey] and type(v) == "table" and #v == 3 then
+                        safeSetValue(Library.Options[colorKey], Color3.fromRGB(v[1], v[2], v[3]))
+                        applied["color:" .. colorKey] = true
+                    else
+                        table.insert(missing, { kind = "ColorPicker", idx = colorKey })
+                    end
+                end
+
+                -- KeyPickers
+                local keyKey = k:match("^key:(.+)$")
+                if keyKey then
+                    if Library.Options[keyKey] and type(v) == "table" then
+                        pcall(function()
+                            if v.value then Library.Options[keyKey]:SetValue(v.value, true) end
+                            if v.mode  then Library.Options[keyKey].Mode = v.mode   end
+                        end)
+                        applied["key:" .. keyKey] = true
+                    else
+                        table.insert(missing, { kind = "KeyPicker", idx = keyKey })
+                    end
+                end
+            end
+        end
+
+        -- Anything that exists in the live UI but wasn't in the config
+        -- (newly-added toggles/options) — left at defaults, just reported.
+        local unset = {}
+        for k in pairs(Library.Toggles) do
+            if not applied["toggle:" .. k] then
+                table.insert(unset, { kind = "Toggle", idx = k })
+            end
+        end
+        for k, option in pairs(Library.Options) do
+            local t = option.Type
+            local prefix
+            if t == "Dropdown" then
+                prefix = option.Multi and "dropdown_multi:" or "dropdown:"
+            elseif t == "Slider" or t == "Input" then
+                prefix = "option:"
+            elseif t == "ColorPicker" then
+                prefix = "color:"
+            elseif t == "KeyPicker" then
+                prefix = "key:"
+            end
+            if prefix and not applied[prefix .. k] then
+                table.insert(unset, { kind = t, idx = k })
+            end
+        end
+
+        if #missing > 0 or #unset > 0 then
+            EventBus:Emit("configIntegrity", { path = path, missing = missing, unset = unset })
+        end
+
+        EventBus:Emit("configLoaded", path)
+        return true, { missing = missing, unset = unset }
+    end
+
+    function ConfigSystem.Delete(filename)
+        local path = "NexusUI/" .. (filename or "config") .. ".json"
+        if delfile then pcall(delfile, path) end
+        if getgenv and getgenv().__NexusUI_Config then
+            getgenv().__NexusUI_Config[path] = nil
+        end
+    end
+
+    function ConfigSystem.List()
+        if listfiles and isDir("NexusUI") then
+            local files = {}
+            local ok, list = pcall(listfiles, "NexusUI")
+            if ok then
+                for _, f in ipairs(list) do
+                    local name = f:match("([^/\\]+)%.json$")
+                    if name and name ~= "_default" then table.insert(files, name) end
+                end
+            end
+            return files
+        end
+        if getgenv and getgenv().__NexusUI_Config then
+            local files = {}
+            for path in pairs(getgenv().__NexusUI_Config) do
+                local name = path:match("NexusUI/(.+)%.json$")
+                if name and name ~= "_default" then table.insert(files, name) end
+            end
+            return files
+        end
+        return {}
+    end
+
+    function ConfigSystem.SetDefault(filename)
+        tryWrite("NexusUI/_default.json", HttpService:JSONEncode({ default = filename }))
+    end
+
+    function ConfigSystem.GetDefault()
+        local raw = tryRead("NexusUI/_default.json")
+        if not raw then return nil end
+        local ok, data = pcall(function() return HttpService:JSONDecode(raw) end)
+        if ok and data and data.default then return data.default end
+        return nil
+    end
+
+    -- ── Integrity handler ──────────────────────────────────────────────
+    -- Fires automatically whenever ConfigSystem.Load finds entries that
+    -- don't map to a live element (deleted/renamed toggles/options) or
+    -- live elements that weren't in the saved config (new elements added
+    -- since the config was last saved). Surfaces a single, short toast so
+    -- the user knows their config is out of sync without spamming errors
+    -- or breaking the load.
+    EventBus:On("configIntegrity", function(info)
+        local missingN = #info.missing
+        local unsetN   = #info.unset
+
+        if missingN > 0 then
+            local sample = info.missing[1].idx
+            local extra  = missingN > 1 and (" +" .. (missingN - 1) .. " more") or ""
+            ToastSystem.Warning(
+                "Config: '" .. tostring(sample) .. "'" .. extra ..
+                " no longer exist" .. (missingN == 1 and "s" or "") .. " — skipped.",
+                { Duration = 4 }
+            )
+        end
+
+        if unsetN > 0 then
+            local sample = info.unset[1].idx
+            local extra  = unsetN > 1 and (" +" .. (unsetN - 1) .. " more") or ""
+            ToastSystem.Info(
+                "Config: '" .. tostring(sample) .. "'" .. extra ..
+                " not found in save — using default" .. (unsetN == 1 and "" or "s") .. ".",
+                { Duration = 4 }
+            )
+        end
+    end)
+
+    Library.Config = ConfigSystem
+end
+
+-- ─── Floating Keybind List ─────────────────────────────────────────────────
+-- A small overlay in the corner listing all active keybinds and their state.
+-- Shown/hidden via Library:ToggleKeybindList().
+local KeybindListFrame
+do
+    KeybindListFrame = New("Frame", {
+        AnchorPoint = Vector2.new(1, 1),
+        BackgroundColor3 = "SurfaceColor",
+        BackgroundTransparency = 0.1,
+        Position = UDim2.new(1, -12, 1, -42),
+        Size     = UDim2.fromOffset(160, 0),
+        AutomaticSize = Enum.AutomaticSize.Y,
+        Visible  = false,
+        Parent   = ScreenGui,
+    })
+    ZManager.Apply(KeybindListFrame, "toast", -1)
+    New("UICorner", { CornerRadius = UDim.new(0, Tokens.RadiusMD), Parent = KeybindListFrame })
+    New("UIStroke", { Color = "BorderColor", Thickness = 1, Parent = KeybindListFrame })
+    New("UIPadding", {
+        PaddingLeft = UDim.new(0, 8), PaddingRight  = UDim.new(0, 8),
+        PaddingTop  = UDim.new(0, 6), PaddingBottom = UDim.new(0, 6),
+        Parent = KeybindListFrame,
+    })
+    New("UIListLayout", { Padding = UDim.new(0, 4), Parent = KeybindListFrame })
+
+    -- Header
+    New("TextLabel", {
+        BackgroundTransparency = 1,
+        Size = UDim2.new(1, 0, 0, 14),
+        Text = "KEYBINDS",
+        TextSize = Tokens.FontSize.XS,
+        TextColor3 = "TextMuted",
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Parent = KeybindListFrame,
+    })
+    New("Frame", {
+        BackgroundColor3 = "BorderColor",
+        Size = UDim2.new(1, 0, 0, 1),
+        Parent = KeybindListFrame,
+    })
+
+    local keyRows = {}  -- idx → { row, keyLabel, stateLabel }
+
+    local updateConn = RunService.Heartbeat:Connect(function()
+        if not KeybindListFrame.Visible then return end
+        for idx, kp in pairs(Library.Options) do
+            if kp.Type == "KeyPicker" and kp.Value ~= "None" and not kp.NoUI then
+                if not keyRows[idx] then
+                    local row = New("Frame", {
+                        BackgroundTransparency = 1,
+                        Size = UDim2.new(1, 0, 0, 16),
+                        Parent = KeybindListFrame,
+                    })
+                    local nl = New("TextLabel", {
+                        BackgroundTransparency = 1,
+                        Size = UDim2.new(0.65, 0, 1, 0),
+                        Text = kp.Text,
+                        TextSize = Tokens.FontSize.XS,
+                        TextColor3 = "TextSecondary",
+                        TextXAlignment = Enum.TextXAlignment.Left,
+                        TextTruncate = Enum.TextTruncate.AtEnd,
+                        Parent = row,
+                    })
+                    local kl = New("TextLabel", {
+                        AnchorPoint = Vector2.new(1, 0),
+                        BackgroundTransparency = 1,
+                        Position = UDim2.fromScale(1, 0),
+                        Size = UDim2.new(0.34, 0, 1, 0),
+                        Text = kp.Value,
+                        TextSize = Tokens.FontSize.XS,
+                        TextXAlignment = Enum.TextXAlignment.Right,
+                        Parent = row,
+                    })
+                    keyRows[idx] = { row = row, keyLabel = kl, nameLabel = nl }
+                end
+
+                local r = keyRows[idx]
+                r.keyLabel.Text = kp.Value
+                r.nameLabel.Text = kp.Text
+                -- Active = accent color, inactive = muted
+                local isActive = kp:IsActive()
+                r.keyLabel.TextColor3 = isActive
+                    and Library.Scheme.AccentColor
+                    or  Library.Scheme.TextMuted
+            end
+        end
+        -- Remove stale rows
+        for idx, r in pairs(keyRows) do
+            local kp = Library.Options[idx]
+            if not kp or kp.Type ~= "KeyPicker" or kp.Value == "None" then
+                r.row:Destroy()
+                keyRows[idx] = nil
+            end
+        end
+    end)
+    LibraryMaid:Give(updateConn)
+
+    function Library:ToggleKeybindList(v)
+        local show = (v == nil) and not KeybindListFrame.Visible or v
+        KeybindListFrame.Visible = true
+        TweenService:Create(KeybindListFrame,
+            TweenInfo.new(0.15, Enum.EasingStyle.Quad),
+            { BackgroundTransparency = show and 0.1 or 1 }):Play()
+        task.delay(0.17, function()
+            if not show then KeybindListFrame.Visible = false end
+        end)
+    end
+end
+
+-- ─── Tooltip with Delay ────────────────────────────────────────────────────
+local tooltipFrame
+do
+    tooltipFrame = New("Frame", {
+        AutomaticSize    = Enum.AutomaticSize.XY,
+        BackgroundColor3 = "SurfaceColor",
+        Visible          = false,
+        ZIndex           = ZManager.Get("tooltip"),
+        Parent           = ScreenGui,
+    })
+    New("UICorner",  { CornerRadius = UDim.new(0, Tokens.RadiusSM), Parent = tooltipFrame })
+    New("UIStroke",  { Color = "BorderColor", Thickness = 1, Parent = tooltipFrame })
+    New("UIPadding", {
+        PaddingLeft = UDim.new(0, 6), PaddingRight = UDim.new(0, 6),
+        PaddingTop  = UDim.new(0, 3), PaddingBottom= UDim.new(0, 3),
+        Parent = tooltipFrame,
+    })
+    local tooltipLabel = New("TextLabel", {
+        AutomaticSize  = Enum.AutomaticSize.XY,
+        BackgroundTransparency = 1,
+        Text           = "",
+        TextSize       = Tokens.FontSize.SM,
+        TextColor3     = "TextSecondary",
+        TextWrapped    = true,
+        Parent         = tooltipFrame,
+    })
+
+    local currentHover = nil
+
+    function Library:AddTooltip(element, text, delaySeconds)
+        delaySeconds = delaySeconds or 0.5
+        local thread
+        local maid = Maid.New()
+
+        maid:Connect(element.MouseEnter, function()
+            currentHover = element
+            thread = task.delay(delaySeconds, function()
+                if currentHover ~= element then return end
+                tooltipLabel.Text = text
+                tooltipFrame.Visible = true
+                while currentHover == element and Library.Toggled do
+                    tooltipFrame.Position = UDim2.fromOffset(Mouse.X + 14, Mouse.Y + 10)
+                    RunService.RenderStepped:Wait()
+                end
+                tooltipFrame.Visible = false
+            end)
+        end)
+
+        maid:Connect(element.MouseLeave, function()
+            if currentHover == element then
+                currentHover = nil
+                tooltipFrame.Visible = false
+            end
+            if thread then
+                task.cancel(thread)
+                thread = nil
+            end
+        end)
+
+        return maid
+    end
+end
+
+-- ─── Color Picker ──────────────────────────────────────────────────────────
+function BaseGroupbox:AddColorPicker(idx, info)
+    info = Library:Validate(info, {
+        Text     = "Color",
+        Default  = Color3.fromRGB(255, 255, 255),
+        Callback = function() end,
+        Changed  = function() end,
+        Disabled = false,
+        Visible  = true,
+    })
+
+    local container = self.Container
+    local maid      = Maid.New()
+    local menuOpen  = false
+    local menuFrame = nil
+
+    -- Current H, S, V state
+    local H, S, V = info.Default:ToHSV()
+    local A = 1
+
+    local holder = New("Frame", {
+        BackgroundTransparency = 1,
+        Size    = UDim2.new(1, 0, 0, 20),
+        Visible = info.Visible,
+        Parent  = container,
+    })
+
+    -- Label
+    local nameLabel = New("TextLabel", {
+        BackgroundTransparency = 1,
+        Size     = UDim2.new(1, -28, 1, 0),
+        Text     = info.Text,
+        TextSize = Tokens.FontSize.MD,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Parent   = holder,
+    })
+
+    -- Outer holder (rounded border + stroke)
+    local swatchHolder = New("Frame", {
+        AnchorPoint          = Vector2.new(1, 0.5),
+        BackgroundTransparency = 1,
+        Position             = UDim2.new(1, 0, 0.5, 0),
+        Size                 = UDim2.fromOffset(24, 14),
+        Parent               = holder,
+    })
+    New("UICorner", { CornerRadius = UDim.new(0, Tokens.RadiusSM), Parent = swatchHolder })
+    New("UIStroke", { Color = "BorderColor", Thickness = 1, Parent = swatchHolder })
+    -- Inner masked frame: clips children to rounded shape
+    local swatchMask = New("Frame", {
+        BackgroundTransparency = 1,
+        ClipsDescendants       = true,
+        Size                   = UDim2.fromScale(1, 1),
+        Parent                 = swatchHolder,
+    })
+    New("UICorner", { CornerRadius = UDim.new(0, Tokens.RadiusSM), Parent = swatchMask })
+    -- Checkerboard tiles inside the mask
+    for col = 0, 3 do
+        for row = 0, 1 do
+            local isDark = (col + row) % 2 == 0
+            local tile = Instance.new("Frame")
+            tile.BackgroundColor3 = isDark and Color3.fromRGB(160,160,160) or Color3.fromRGB(220,220,220)
+            tile.BorderSizePixel  = 0
+            tile.Position         = UDim2.fromOffset(col * 6, row * 7)
+            tile.Size             = UDim2.fromOffset(6, 7)
+            tile.Parent           = swatchMask
+        end
+    end
+    -- Color overlay on top
+    local swatch = New("TextButton", {
+        BackgroundColor3       = info.Default,
+        BackgroundTransparency = 1 - A,
+        Size                   = UDim2.fromScale(1, 1),
+        Text                   = "",
+        Parent                 = swatchMask,
+    })
+
+    local ColorPicker = setmetatable({
+        Text     = info.Text,
+        Value    = info.Default,
+        Disabled = info.Disabled,
+        Visible  = info.Visible,
+        Callback = info.Callback,
+        Changed  = info.Changed,
+        Type     = "ColorPicker",
+        Holder   = holder,
+        _maid    = maid,
+        _changedListeners = {},
+    }, ComponentBase)
+
+    local function closeMenu()
+        if not menuFrame then return end
+        menuOpen = false
+        local m = menuFrame
+        menuFrame = nil
+        TweenService:Create(m, TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
+            { BackgroundTransparency = 1 }):Play()
+        task.delay(0.12, function() if m and m.Parent then m:Destroy() end end)
+        InteractionManager.Pop()
+    end
+
+    local function updateColor(newH, newS, newV)
+        H, S, V = newH, newS, newV
+        local color = Color3.fromHSV(H, S, V)
+        ColorPicker.Value = color
+        swatch.BackgroundColor3 = color
+        Library:SafeCallback(ColorPicker.Callback, color)
+        Library:SafeCallback(ColorPicker.Changed,  color)
+        for _, fn in ipairs(ColorPicker._changedListeners) do
+            Library:SafeCallback(fn, color)
+        end
+    end
+
+    local A = 1  -- alpha channel (0=transparent, 1=opaque)
+
+    local function openMenu()
+        if menuOpen or ColorPicker.Disabled then return end
+        menuOpen = true
+        InteractionManager.Push("colorpicker:" .. (idx or "?"), closeMenu)
+
+        local PICKER_W = 216
+        local PICKER_H = 150
+        local BAR_H    = 12
+        local IW       = PICKER_W - 16  -- inner width after padding
+
+        local absPos  = swatch.AbsolutePosition
+        local absSize = swatch.AbsoluteSize
+        local vp      = Camera.ViewportSize
+        local popX    = math.clamp(absPos.X, 4, vp.X - PICKER_W - 4)
+        local popY    = absPos.Y + absSize.Y + 4
+        -- Estimate height: PICKER_H + 3 bars + hex row + padding ≈ PICKER_H + 80
+        if popY + PICKER_H + 80 > vp.Y - 8 then
+            popY = absPos.Y - PICKER_H - 80
+        end
+
+        menuFrame = New("Frame", {
+            BackgroundColor3  = "SurfaceColor",
+            Position          = UDim2.fromOffset(popX, popY),
+            Size              = UDim2.fromOffset(PICKER_W, 0),
+            AutomaticSize     = Enum.AutomaticSize.Y,
+            ZIndex            = ZManager.Get("dropdown"),
+            ClipsDescendants  = false,
+            Parent            = ScreenGui,
+        })
+        New("UICorner", { CornerRadius = UDim.new(0, Tokens.RadiusMD), Parent = menuFrame })
+        New("UIStroke", { Color = "BorderColor", Thickness = 1, Parent = menuFrame })
+        New("UIPadding", {
+            PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 8),
+            PaddingTop  = UDim.new(0, 8), PaddingBottom = UDim.new(0, 8),
+            Parent = menuFrame,
+        })
+        New("UIListLayout", { Padding = UDim.new(0, 6), Parent = menuFrame })
+
+        local IW = PICKER_W - 16  -- inner width
+
+        -- ── SV Box ──────────────────────────────────────────────────────
+        local svBox = New("TextButton", {
+            BackgroundColor3 = Color3.fromHSV(H, 1, 1),
+            Size = UDim2.fromOffset(IW, PICKER_H),
+            Text = "",
+            ClipsDescendants = true,
+            LayoutOrder = 1,
+            Parent = menuFrame,
+        })
+        New("UICorner", { CornerRadius = UDim.new(0, Tokens.RadiusSM), Parent = svBox })
+
+        -- White-to-transparent gradient (left=white, right=transparent) — saturation axis
+        local whiteOverlay = New("Frame", {
+            BackgroundColor3 = Color3.new(1,1,1),
+            Size = UDim2.fromScale(1,1),
+            ZIndex = svBox.ZIndex + 1,
+            Parent = svBox,
+        })
+        New("UICorner", { CornerRadius = UDim.new(0, Tokens.RadiusSM), Parent = whiteOverlay })
+        local whiteGrad = Instance.new("UIGradient")
+        whiteGrad.Transparency = NumberSequence.new({
+            NumberSequenceKeypoint.new(0, 0),  -- left: opaque white
+            NumberSequenceKeypoint.new(1, 1),  -- right: transparent
+        })
+        whiteGrad.Parent = whiteOverlay
+
+        -- Black overlay: transparent at top, opaque at bottom — value axis
+        local blackOverlay = New("Frame", {
+            BackgroundColor3 = Color3.new(0,0,0),
+            Size = UDim2.fromScale(1,1),
+            ZIndex = svBox.ZIndex + 2,
+            Parent = svBox,
+        })
+        New("UICorner", { CornerRadius = UDim.new(0, Tokens.RadiusSM), Parent = blackOverlay })
+        local blackGrad = Instance.new("UIGradient")
+        blackGrad.Transparency = NumberSequence.new({
+            NumberSequenceKeypoint.new(0, 1),  -- top: fully transparent (bright)
+            NumberSequenceKeypoint.new(1, 0),  -- bottom: fully opaque black (dark)
+        })
+        blackGrad.Rotation = 90  -- 270° = top transparent → bottom opaque
+        blackGrad.Parent = blackOverlay
+
+        -- SV cursor: top-left = white (S=0,V=1), bottom-right = black (S=1,V=0)
+        -- X axis = saturation (0→1 left→right), Y axis = value (1→0 top→bottom)
+        local svCursor = New("Frame", {
+            AnchorPoint = Vector2.new(0.5, 0.5),
+            BackgroundColor3 = Color3.new(1,1,1),
+            Position = UDim2.fromScale(S, 1-V),  -- X=S, Y=1-V (top=bright)
+            Size     = UDim2.fromOffset(10, 10),
+            ZIndex   = svBox.ZIndex + 3,
+            Parent   = svBox,
+        })
+        New("UICorner", { CornerRadius = UDim.new(1,0), Parent = svCursor })
+        New("UIStroke", { Color = Color3.new(0,0,0), Thickness = 1.5, Parent = svCursor })
+
+        -- ── Hue Bar ─────────────────────────────────────────────────────
+        local hueBar = New("TextButton", {
+            Size = UDim2.fromOffset(IW, BAR_H),
+            Text = "",
+            LayoutOrder = 2,
+            Parent = menuFrame,
+        })
+        New("UICorner", { CornerRadius = UDim.new(1,0), Parent = hueBar })
+        local hueGrad = Instance.new("UIGradient")
+        hueGrad.Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0/6, Color3.fromHSV(0/6,1,1)),
+            ColorSequenceKeypoint.new(1/6, Color3.fromHSV(1/6,1,1)),
+            ColorSequenceKeypoint.new(2/6, Color3.fromHSV(2/6,1,1)),
+            ColorSequenceKeypoint.new(3/6, Color3.fromHSV(3/6,1,1)),
+            ColorSequenceKeypoint.new(4/6, Color3.fromHSV(4/6,1,1)),
+            ColorSequenceKeypoint.new(5/6, Color3.fromHSV(5/6,1,1)),
+            ColorSequenceKeypoint.new(1,   Color3.fromHSV(1,  1,1)),
+        })
+        hueGrad.Parent = hueBar
+
+        local hueCursor = New("Frame", {
+            AnchorPoint = Vector2.new(0.5, 0.5),
+            BackgroundColor3 = Color3.new(1,1,1),
+            Position = UDim2.fromScale(H, 0.5),
+            Size     = UDim2.fromOffset(6, BAR_H + 4),
+            ZIndex   = hueBar.ZIndex + 1,
+            Parent   = hueBar,
+        })
+        New("UICorner", { CornerRadius = UDim.new(0,2), Parent = hueCursor })
+        New("UIStroke", { Color = Color3.new(0,0,0), Thickness = 1, Parent = hueCursor })
+
+        -- ── Alpha Bar ────────────────────────────────────────────────────
+        local alphaBar = New("TextButton", {
+            Size = UDim2.fromOffset(IW, BAR_H),
+            Text = "",
+            ClipsDescendants = true,
+            LayoutOrder = 3,
+            Parent = menuFrame,
+        })
+        New("UICorner", { CornerRadius = UDim.new(1,0), Parent = alphaBar })
+
+        -- Checkerboard tiles to indicate transparency
+        for col = 0, 7 do
+            for row = 0, 1 do
+                local isDark = (col + row) % 2 == 0
+                New("Frame", {
+                    BackgroundColor3 = isDark and Color3.fromRGB(160,160,160) or Color3.fromRGB(220,220,220),
+                    BorderSizePixel  = 0,
+                    Position         = UDim2.fromOffset(col * (IW/8), row * (BAR_H/2)),
+                    Size             = UDim2.fromOffset(math.ceil(IW/8)+1, math.ceil(BAR_H/2)+1),
+                    ZIndex           = alphaBar.ZIndex,
+                    Parent           = alphaBar,
+                })
+            end
+        end
+
+        -- Color gradient overlay (from transparent to opaque)
+        local alphaFill = New("Frame", {
+            BackgroundColor3 = Color3.fromHSV(H, S, V),
+            Size = UDim2.fromScale(1,1),
+            ZIndex = alphaBar.ZIndex + 1,
+            Parent = alphaBar,
+        })
+        New("UICorner", { CornerRadius = UDim.new(1,0), Parent = alphaFill })
+        local alphaGrad = Instance.new("UIGradient")
+        alphaGrad.Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0,1), NumberSequenceKeypoint.new(1,0) })
+        alphaGrad.Parent = alphaFill
+
+        local alphaCursor = New("Frame", {
+            AnchorPoint = Vector2.new(0.5, 0.5),
+            BackgroundColor3 = Color3.new(1,1,1),
+            Position = UDim2.fromScale(A, 0.5),
+            Size     = UDim2.fromOffset(6, BAR_H + 4),
+            ZIndex   = alphaBar.ZIndex + 2,
+            Parent   = alphaBar,
+        })
+        New("UICorner", { CornerRadius = UDim.new(0,2), Parent = alphaCursor })
+        New("UIStroke", { Color = Color3.new(0,0,0), Thickness = 1, Parent = alphaCursor })
+
+        -- ── Bottom row: HEX input + preview swatch ──────────────────────
+        local bottomRow = New("Frame", {
+            BackgroundTransparency = 1,
+            Size      = UDim2.new(1, 0, 0, 22),
+            LayoutOrder = 4,
+            Parent    = menuFrame,
+        })
+        New("UIListLayout", {
+            FillDirection = Enum.FillDirection.Horizontal,
+            VerticalAlignment = Enum.VerticalAlignment.Center,
+            Padding = UDim.new(0, 6),
+            Parent = bottomRow,
+        })
+
+        New("TextLabel", {
+            BackgroundTransparency = 1,
+            Size = UDim2.fromOffset(24, 22),
+            Text = "HEX",
+            TextSize = Tokens.FontSize.XS,
+            TextColor3 = "TextMuted",
+            LayoutOrder = 1,
+            Parent = bottomRow,
+        })
+
+        local hexBox = New("TextBox", {
+            BackgroundColor3 = "BackgroundColor",
+            ClearTextOnFocus = false,
+            Size = UDim2.new(1, -56, 1, 0),
+            Text = string.format("%02X%02X%02X",
+                math.round(ColorPicker.Value.R*255),
+                math.round(ColorPicker.Value.G*255),
+                math.round(ColorPicker.Value.B*255)),
+            TextSize = Tokens.FontSize.XS,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            LayoutOrder = 2,
+            Parent = bottomRow,
+        })
+        New("UICorner", { CornerRadius = UDim.new(0, Tokens.RadiusSM), Parent = hexBox })
+        New("UIPadding", { PaddingLeft = UDim.new(0,4), PaddingRight = UDim.new(0,4), Parent = hexBox })
+
+        -- Preview swatch: checkerboard base + colored overlay to show real transparency
+        local previewHolder = New("Frame", {
+            BackgroundTransparency = 1,
+            ClipsDescendants = true,
+            Size = UDim2.fromOffset(22, 22),
+            LayoutOrder = 3,
+            Parent = bottomRow,
+        })
+        New("UICorner", { CornerRadius = UDim.new(0, Tokens.RadiusSM), Parent = previewHolder })
+        New("UIStroke", { Color = "BorderColor", Thickness = 1, Parent = previewHolder })
+        for col = 0, 1 do
+            for row = 0, 1 do
+                local isDark = (col + row) % 2 == 0
+                local tile = Instance.new("Frame")
+                tile.BackgroundColor3 = isDark and Color3.fromRGB(160,160,160) or Color3.fromRGB(220,220,220)
+                tile.BorderSizePixel  = 0
+                tile.Position         = UDim2.fromOffset(col * 11, row * 11)
+                tile.Size             = UDim2.fromOffset(11, 11)
+                tile.Parent           = previewHolder
+            end
+        end
+        local previewSwatch = New("Frame", {
+            BackgroundColor3       = ColorPicker.Value,
+            BackgroundTransparency = 1 - A,
+            Size                   = UDim2.fromScale(1, 1),
+            Parent                 = previewHolder,
+        })
+
+        -- ── Helpers ──────────────────────────────────────────────────────
+        local function hexFromCurrent()
+            return string.format("%02X%02X%02X",
+                math.round(ColorPicker.Value.R*255),
+                math.round(ColorPicker.Value.G*255),
+                math.round(ColorPicker.Value.B*255))
+        end
+
+        local function updateAlphaFill()
+            alphaFill.BackgroundColor3 = Color3.fromHSV(H, S, V)
+        end
+
+        -- Override updateColor to also refresh alpha bar and preview
+        local baseUpdateColor = updateColor
+        updateColor = function(nh, ns, nv)
+            baseUpdateColor(nh, ns, nv)
+            updateAlphaFill()
+            previewSwatch.BackgroundColor3 = ColorPicker.Value
+            previewSwatch.BackgroundTransparency = 1 - A
+            hexBox.Text = hexFromCurrent()
+            ColorPicker.Alpha = A
+        end
+
+        -- ── Drag: SV ──────────────────────────────────────────────────
+        local svDragging = false
+        maid:Connect(svBox.InputBegan, function(input)
+            if input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
+            svDragging = true
+        end)
+        maid:Connect(UserInputService.InputChanged, function(input)
+            if not svDragging then return end
+            if input.UserInputType ~= Enum.UserInputType.MouseMovement then return end
+            local abs  = svBox.AbsolutePosition
+            local size = svBox.AbsoluteSize
+            local ns = math.clamp((Mouse.X - abs.X) / size.X, 0, 1)
+            local nv = 1 - math.clamp((Mouse.Y - abs.Y) / size.Y, 0, 1)
+            svCursor.Position = UDim2.fromScale(ns, 1-nv)
+            updateColor(H, ns, nv)
+        end)
+        maid:Connect(UserInputService.InputEnded, function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 then svDragging = false end
+        end)
+
+        -- ── Drag: Hue ─────────────────────────────────────────────────
+        local hueDragging = false
+        maid:Connect(hueBar.InputBegan, function(input)
+            if input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
+            hueDragging = true
+        end)
+        maid:Connect(UserInputService.InputChanged, function(input)
+            if not hueDragging then return end
+            if input.UserInputType ~= Enum.UserInputType.MouseMovement then return end
+            local abs  = hueBar.AbsolutePosition
+            local size = hueBar.AbsoluteSize
+            local nh = math.clamp((Mouse.X - abs.X) / size.X, 0, 1)
+            hueCursor.Position = UDim2.fromScale(nh, 0.5)
+            svBox.BackgroundColor3 = Color3.fromHSV(nh, 1, 1)
+            updateColor(nh, S, V)
+        end)
+        maid:Connect(UserInputService.InputEnded, function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 then hueDragging = false end
+        end)
+
+        -- ── Drag: Alpha ───────────────────────────────────────────────
+        local alphaDragging = false
+        maid:Connect(alphaBar.InputBegan, function(input)
+            if input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
+            alphaDragging = true
+        end)
+        maid:Connect(UserInputService.InputChanged, function(input)
+            if not alphaDragging then return end
+            if input.UserInputType ~= Enum.UserInputType.MouseMovement then return end
+            local abs  = alphaBar.AbsolutePosition
+            local size = alphaBar.AbsoluteSize
+            A = math.clamp((Mouse.X - abs.X) / size.X, 0, 1)
+            alphaCursor.Position = UDim2.fromScale(A, 0.5)
+            previewSwatch.BackgroundTransparency = 1 - A
+            swatch.BackgroundTransparency = 1 - A
+            ColorPicker.Alpha = A
+            Library:SafeCallback(ColorPicker.Callback, ColorPicker.Value, A)
+            for _, fn in ipairs(ColorPicker._changedListeners) do
+                Library:SafeCallback(fn, ColorPicker.Value, A)
+            end
+        end)
+        maid:Connect(UserInputService.InputEnded, function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 then alphaDragging = false end
+        end)
+
+        -- ── Hex input ─────────────────────────────────────────────────
+        maid:Connect(hexBox.FocusLost, function()
+            local hex = hexBox.Text:gsub("#",""):upper()
+            if #hex == 6 then
+                local r = tonumber(hex:sub(1,2),16)
+                local g = tonumber(hex:sub(3,4),16)
+                local b = tonumber(hex:sub(5,6),16)
+                if r and g and b then
+                    local nc = Color3.fromRGB(r,g,b)
+                    H, S, V = nc:ToHSV()
+                    updateColor(H, S, V)
+                    svBox.BackgroundColor3 = Color3.fromHSV(H,1,1)
+                    svCursor.Position = UDim2.fromScale(S, 1-V)
+                    hueCursor.Position = UDim2.fromScale(H, 0.5)
+                end
+            end
+            hexBox.Text = hexFromCurrent()
+        end)
+
+        -- Fade in
+        menuFrame.BackgroundTransparency = 1
+        TweenService:Create(menuFrame, TweenInfo.new(0.1, Enum.EasingStyle.Quad),
+            { BackgroundTransparency = 0 }):Play()
+
+        -- Close on outside click
+        maid:Connect(UserInputService.InputBegan, function(input)
+            if input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
+            if not menuFrame or not menuFrame.Parent then return end
+            local pos  = menuFrame.AbsolutePosition
+            local size = menuFrame.AbsoluteSize
+            if Mouse.X < pos.X or Mouse.X > pos.X + size.X
+                or Mouse.Y < pos.Y or Mouse.Y > pos.Y + size.Y then
+                closeMenu()
+            end
+        end)
+    end
+
+    maid:Connect(swatch.MouseButton1Click, function()
+        if menuOpen then closeMenu() else openMenu() end
+    end)
+
+    function ColorPicker:SetValue(color, alpha)
+        self.Value = color
+        if alpha ~= nil then A = alpha; self.Alpha = alpha end
+        H, S, V = color:ToHSV()
+        swatch.BackgroundColor3       = color
+        swatch.BackgroundTransparency = 1 - A
+        Library:SafeCallback(self.Callback, color, A)
+        Library:SafeCallback(self.Changed,  color, A)
+    end
+
+    function ColorPicker:OnChanged(fn)
+        table.insert(self._changedListeners, fn)
+    end
+
+    function ColorPicker:SetDisabled(v)
+        self.Disabled = v
+        swatch.Active = not v
+    end
+
+    function ColorPicker:SetVisible(v)
+        self.Visible = v
+        holder.Visible = v
+        ColorPicker._groupbox:Resize()
+    end
+
+    function ColorPicker:SetText(t)
+        self.Text = t
+        nameLabel.Text = t
+    end
+
+    ColorPicker.Alpha    = 1
+    ColorPicker._groupbox = self
+    self:Resize()
+    if idx then Library.Options[idx] = ColorPicker end
+    table.insert(self.Elements, ColorPicker)
+    ColorPicker.Default = ColorPicker.Value
+    return ColorPicker
+end
+
+-- ─── Key Picker ────────────────────────────────────────────────────────────
+function BaseGroupbox:AddKeyPicker(idx, info)
+    info = Library:Validate(info, {
+        Text     = "Keybind",
+        Default  = "None",
+        Mode     = "Toggle",   -- "Toggle" | "Hold" | "Always"
+        Modes    = { "Toggle", "Hold", "Always" },
+        Callback = function() end,
+        Changed  = function() end,
+        Disabled = false,
+        Visible  = true,
+        Blacklisted = {},
+        NoUI     = false,      -- if true, don't show in keybind frame
+    })
+
+    local container = self.Container
+    local maid      = Maid.New()
+    local picking   = false
+    local menuOpen  = false
+    local menuFrame = nil
+
+    local SPECIAL_KEYS = {
+        ["MB1"] = Enum.UserInputType.MouseButton1,
+        ["MB2"] = Enum.UserInputType.MouseButton2,
+    }
+    local SPECIAL_INPUT = {
+        [Enum.UserInputType.MouseButton1] = "MB1",
+        [Enum.UserInputType.MouseButton2] = "MB2",
+    }
+
+    local holder = New("Frame", {
+        BackgroundTransparency = 1,
+        Size    = UDim2.new(1, 0, 0, 20),
+        Visible = info.Visible,
+        Parent  = container,
+    })
+
+    New("TextLabel", {
+        BackgroundTransparency = 1,
+        Size = UDim2.new(1, -70, 1, 0),
+        Text = info.Text,
+        TextSize = Tokens.FontSize.MD,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Parent = holder,
+    })
+
+    -- Key display button
+    local keyBtn = New("TextButton", {
+        AnchorPoint = Vector2.new(1, 0.5),
+        BackgroundColor3 = "SurfaceColor",
+        Position = UDim2.new(1, 0, 0.5, 0),
+        Size     = UDim2.fromOffset(64, 16),
+        Text     = info.Default,
+        TextSize = Tokens.FontSize.XS,
+        Parent   = holder,
+    })
+    New("UICorner", { CornerRadius = UDim.new(0, Tokens.RadiusSM), Parent = keyBtn })
+    New("UIStroke", { Color = "BorderColor", Thickness = 1, Parent = keyBtn })
+
+    local KeyPicker = setmetatable({
+        Text       = info.Text,
+        Value      = info.Default,
+        Mode       = info.Mode,
+        Modes      = info.Modes,
+        Toggled    = false,
+        Disabled   = info.Disabled,
+        Visible    = info.Visible,
+        Callback   = info.Callback,
+        Changed    = info.Changed,
+        Type       = "KeyPicker",
+        Holder     = holder,
+        _maid      = maid,
+        _changedListeners = {},
+    }, ComponentBase)
+
+    local function getDisplayText()
+        if picking then return "..." end
+        return KeyPicker.Value == "None" and "[ None ]" or "[ " .. KeyPicker.Value .. " ]"
+    end
+
+    local function refreshDisplay()
+        keyBtn.Text = getDisplayText()
+        if picking then
+            keyBtn.TextColor3 = Library.Scheme.AccentColor
+        else
+            keyBtn.TextColor3 = Library.Scheme.TextMuted
+        end
+    end
+
+    local function closeMenu()
+        if not menuFrame then return end
+        menuOpen = false
+        local m = menuFrame; menuFrame = nil
+        TweenService:Create(m, TweenInfo.new(0.1, Enum.EasingStyle.Quad), { BackgroundTransparency = 1 }):Play()
+        task.delay(0.12, function() if m and m.Parent then m:Destroy() end end)
+    end
+
+    local function openMenu()
+        if menuOpen or KeyPicker.Disabled then return end
+        menuOpen = true
+
+        local abs  = keyBtn.AbsolutePosition
+        local absH = keyBtn.AbsoluteSize.Y
+        local rowH = 26
+        local menuH = #KeyPicker.Modes * rowH + 8
+
+        menuFrame = New("Frame", {
+            BackgroundColor3 = "SurfaceColor",
+            Position = UDim2.fromOffset(abs.X, abs.Y + absH + 4),
+            Size     = UDim2.fromOffset(110, menuH),
+            ZIndex   = ZManager.Get("dropdown"),
+            Parent   = ScreenGui,
+        })
+        New("UICorner", { CornerRadius = UDim.new(0, Tokens.RadiusMD), Parent = menuFrame })
+        New("UIStroke", { Color = "BorderColor", Thickness = 1, Parent = menuFrame })
+        New("UIPadding", {
+            PaddingTop = UDim.new(0, 4), PaddingBottom = UDim.new(0, 4),
+            PaddingLeft = UDim.new(0, 4), PaddingRight = UDim.new(0, 4),
+            Parent = menuFrame,
+        })
+        New("UIListLayout", { Padding = UDim.new(0, 2), Parent = menuFrame })
+
+        for _, modeName in ipairs(KeyPicker.Modes) do
+            local isCurrent = modeName == KeyPicker.Mode
+            local row = New("TextButton", {
+                BackgroundColor3       = isCurrent and "AccentSubtle" or "SurfaceColor",
+                BackgroundTransparency = isCurrent and 0 or 1,
+                Size   = UDim2.new(1, 0, 0, rowH),
+                Text   = "",
+                Parent = menuFrame,
+            })
+            New("UICorner", { CornerRadius = UDim.new(0, Tokens.RadiusSM), Parent = row })
+            New("UIPadding", { PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 8), Parent = row })
+            New("TextLabel", {
+                BackgroundTransparency = 1,
+                Size = UDim2.fromScale(1, 1),
+                Text = modeName,
+                TextSize = Tokens.FontSize.SM,
+                TextXAlignment = Enum.TextXAlignment.Left,
+                TextColor3 = isCurrent and "AccentColor" or "TextPrimary",
+                Parent = row,
+            })
+            row.MouseEnter:Connect(function()
+                row.BackgroundTransparency = 0
+                row.BackgroundColor3 = Library.Scheme.SurfaceAltColor
+            end)
+            row.MouseLeave:Connect(function()
+                if KeyPicker.Mode ~= modeName then
+                    row.BackgroundTransparency = 1
+                end
+            end)
+            row.MouseButton1Click:Connect(function()
+                KeyPicker.Mode = modeName
+                closeMenu()
+            end)
+        end
+
+        menuFrame.BackgroundTransparency = 1
+        TweenService:Create(menuFrame, TweenInfo.new(0.1, Enum.EasingStyle.Quad),
+            { BackgroundTransparency = 0 }):Play()
+
+        maid:Connect(UserInputService.InputBegan, function(input)
+            if input.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
+            if not menuFrame or not menuFrame.Parent then return end
+            local pos  = menuFrame.AbsolutePosition
+            local size = menuFrame.AbsoluteSize
+            if Mouse.X < pos.X or Mouse.X > pos.X + size.X
+                or Mouse.Y < pos.Y or Mouse.Y > pos.Y + size.Y then
+                closeMenu()
+            end
+        end)
+    end
+
+    -- Left click: start picking key
+    maid:Connect(keyBtn.MouseButton1Click, function()
+        if KeyPicker.Disabled then return end
+        if picking then
+            picking = false
+            refreshDisplay()
+            return
+        end
+        picking = true
+        refreshDisplay()
+    end)
+
+    -- Right click: open mode menu
+    maid:Connect(keyBtn.MouseButton2Click, function()
+        if KeyPicker.Disabled then return end
+        if menuOpen then closeMenu() else openMenu() end
+    end)
+
+    -- Listen for key input when picking
+    maid:Connect(UserInputService.InputBegan, function(input, gpe)
+        if not picking then return end
+
+        local keyName
+        if SPECIAL_INPUT[input.UserInputType] then
+            keyName = SPECIAL_INPUT[input.UserInputType]
+        elseif input.UserInputType == Enum.UserInputType.Keyboard then
+            keyName = input.KeyCode.Name
+        else
+            return
+        end
+
+        -- Escape cancels
+        if input.KeyCode == Enum.KeyCode.Escape then
+            picking = false
+            refreshDisplay()
+            return
+        end
+
+        -- Check blacklist
+        for _, bl in ipairs(info.Blacklisted) do
+            if bl == keyName then
+                picking = false
+                refreshDisplay()
+                return
+            end
+        end
+
+        picking = false
+        KeyPicker.Value = keyName
+        refreshDisplay()
+
+        -- If this keybind controls the window toggle, update Library immediately
+        if idx == "toggleKey" then
+            local ok, kc = pcall(function()
+                return Enum.KeyCode[keyName]
+            end)
+            if ok and kc then
+                Library.ToggleKeybind = kc
+            end
+        end
+
+        Library:SafeCallback(KeyPicker.Changed, keyName)
+        for _, fn in ipairs(KeyPicker._changedListeners) do
+            Library:SafeCallback(fn, keyName)
+        end
+    end)
+
+    -- Handle toggle/hold firing
+    maid:Connect(UserInputService.InputBegan, function(input, gpe)
+        if picking or KeyPicker.Disabled or KeyPicker.Value == "None" then return end
+        local keyName
+        if SPECIAL_INPUT[input.UserInputType] then
+            keyName = SPECIAL_INPUT[input.UserInputType]
+        elseif input.UserInputType == Enum.UserInputType.Keyboard then
+            keyName = input.KeyCode.Name
+        end
+        if keyName ~= KeyPicker.Value then return end
+
+        if KeyPicker.Mode == "Toggle" then
+            KeyPicker.Toggled = not KeyPicker.Toggled
+            Library:SafeCallback(KeyPicker.Callback, KeyPicker.Toggled)
+        elseif KeyPicker.Mode == "Hold" then
+            KeyPicker.Toggled = true
+            Library:SafeCallback(KeyPicker.Callback, true)
+        elseif KeyPicker.Mode == "Always" then
+            Library:SafeCallback(KeyPicker.Callback, true)
+        end
+    end)
+
+    maid:Connect(UserInputService.InputEnded, function(input)
+        if KeyPicker.Disabled or KeyPicker.Value == "None" then return end
+        if KeyPicker.Mode ~= "Hold" then return end
+        local keyName
+        if SPECIAL_INPUT[input.UserInputType] then
+            keyName = SPECIAL_INPUT[input.UserInputType]
+        elseif input.UserInputType == Enum.UserInputType.Keyboard then
+            keyName = input.KeyCode.Name
+        end
+        if keyName == KeyPicker.Value and KeyPicker.Toggled then
+            KeyPicker.Toggled = false
+            Library:SafeCallback(KeyPicker.Callback, false)
+        end
+    end)
+
+    function KeyPicker:SetValue(keyName, fireCallback)
+        self.Value = keyName
+        refreshDisplay()
+        if fireCallback then
+            Library:SafeCallback(self.Changed, keyName)
+            for _, fn in ipairs(self._changedListeners) do
+                Library:SafeCallback(fn, keyName)
+            end
+        end
+    end
+
+    function KeyPicker:OnChanged(fn)
+        table.insert(self._changedListeners, fn)
+    end
+
+    function KeyPicker:SetDisabled(v)
+        self.Disabled = v
+        keyBtn.Active = not v
+    end
+
+    function KeyPicker:SetVisible(v)
+        self.Visible = v
+        holder.Visible = v
+        KeyPicker._groupbox:Resize()
+    end
+
+    function KeyPicker:IsActive()
+        if self.Mode == "Always" then return true end
+        return self.Toggled
+    end
+
+    Micro.PressDepression(keyBtn, maid)
+    refreshDisplay()
+
+    KeyPicker._groupbox = self
+    self:Resize()
+    if idx then Library.Options[idx] = KeyPicker end
+    table.insert(self.Elements, KeyPicker)
+    KeyPicker.Default = KeyPicker.Value
+    return KeyPicker
+end
+
+-- ─── UpdateDependencyBoxes (library-level) ─────────────────────────────────
+function Library:UpdateDependencyBoxes()
+    EventBus:Emit("dependencyUpdate")
+end
+
+-- ─── Built-in Settings Panel Content ───────────────────────────────────────
+--[[
+    Populates a Window's Settings panel with the standard NexusUI sections:
+      • Appearance — theme dropdown, menu transparency, acrylic toggle
+      • Keybinds   — UI toggle keybind picker
+      • Configs    — create / save / load / set default / delete configs
+                      (also persists window size & position, see ConfigSystem)
+      • Misc       — debug overlay toggle, unload button
+
+    This runs automatically from CreateWindow when `BuiltinSettings` (default
+    true) is left on. The returned Settings object is the same one passed in,
+    so user scripts can keep calling Settings:AddLeftGroupbox / 
+    Settings:AddRightGroupbox to append their own sections alongside these.
+]]
+local function PopulateBuiltinSettings(Window, Settings)
+    local UI = Library
+
+    -- ── Appearance ──────────────────────────────────────────────────────
+    local Appearance = Settings:AddLeftGroupbox("Appearance")
+
+    local themeNames = {}
+    for name in pairs(ThemeEngine.BuiltinThemes) do
+        table.insert(themeNames, name)
+    end
+    table.sort(themeNames)
+
+    Appearance:AddDropdown("nx_themeDrop", {
+        Text     = "Theme",
+        Values   = themeNames,
+        Default  = ThemeEngine.ActiveThemeName,
+        Callback = function(v) UI:SetTheme(v, nil, true) end,
+    })
+    Appearance:AddSlider("nx_menuTransparency", {
+        Text     = "Menu Transparency",
+        Default  = 18,
+        Min      = 0,
+        Max      = 80,
+        Rounding = 0,
+        Suffix   = "%",
+        Callback = function(v) Window:SetMenuTransparency(v) end,
+    })
+    Appearance:AddToggle("nx_acrylicToggle", {
+        Text     = "Acrylic / Blur Background",
+        Default  = false,
+        Callback = function(v) Window:SetAcrylicEnabled(v) end,
+    })
+    Appearance:AddToggle("nx_particlesToggle", {
+        Text     = "Particle Effects",
+        Default  = true,
+        Callback = function(v) Window:SetParticlesEnabled(v) end,
+    })
+
+    -- ── Keybinds ─────────────────────────────────────────────────────────
+    local Keybinds = Settings:AddRightGroupbox("Keybinds")
+    Keybinds:AddKeyPicker("nx_toggleKey", {
+        Text     = "Toggle UI",
+        Default  = Library.ToggleKeybind and Library.ToggleKeybind.Name or "RightControl",
+        Mode     = "Toggle",
+        Callback = function() end,
+        Changed  = function(v)
+            local key = Enum.KeyCode[v]
+            if key then Library.ToggleKeybind = key end
+        end,
+    })
+
+    -- ── Configs ──────────────────────────────────────────────────────────
+    local Configs = Settings:AddLeftGroupbox("Configs")
+
+    local function refreshConfigList()
+        local files = UI.Config.List()
+        local vals  = #files > 0 and files or { "(none)" }
+        if UI.Options.nx_configSelect then
+            UI.Options.nx_configSelect:SetValues(vals)
+            if #files > 0 then UI.Options.nx_configSelect:SetValue(files[1]) end
+        end
+    end
+
+    Configs:AddInput("nx_configName", {
+        Text        = "New Config Name",
+        Default     = "default",
+        Placeholder = "my_config",
+        Finished    = false,
+    })
+    Configs:AddButton("nx_createConfigBtn", {
+        Text     = "Create Config",
+        Variant  = "Primary",
+        Callback = function()
+            local name = (UI.Options.nx_configName and UI.Options.nx_configName.Value) or ""
+            if name == "" then
+                UI.Toast.Warning("Enter a config name.", { Duration = 2 })
+                return
+            end
+            if UI.Config.Exists(name) then
+                UI.Toast.Warning("Config '" .. name .. "' already exists.", { Duration = 2.5 })
+                return
+            end
+            local ok, err = pcall(function() UI.Config.Save(name) end)
+            if ok then
+                refreshConfigList()
+                if UI.Options.nx_configSelect then UI.Options.nx_configSelect:SetValue(name) end
+                UI.Toast.Success("Created: " .. name, { Duration = 2 })
+            else
+                UI.Toast.Error(tostring(err):sub(1, 60), { Duration = 3 })
+            end
+        end,
+    })
+
+    local configFiles = UI.Config.List()
+    Configs:AddDropdown("nx_configSelect", {
+        Text    = "Saved Configs",
+        Values  = #configFiles > 0 and configFiles or { "(none)" },
+        Default = #configFiles > 0 and configFiles[1] or "(none)",
+    })
+
+    Configs:AddButton("nx_saveConfigBtn", {
+        Text     = "Save Config",
+        Variant  = "Secondary",
+        Callback = function()
+            local sel = UI.Options.nx_configSelect and UI.Options.nx_configSelect.Value
+            if not sel or sel == "(none)" then
+                UI.Toast.Warning("No config selected to save.", { Duration = 2 })
+                return
+            end
+            local ok, err = pcall(function() UI.Config.Save(sel) end)
+            if ok then
+                UI.Toast.Success("Saved: " .. sel .. " (incl. window size)", { Duration = 2 })
+            else
+                UI.Toast.Error(tostring(err):sub(1, 60), { Duration = 3 })
+            end
+        end,
+    })
+    Configs:AddButton("nx_loadConfigBtn", {
+        Text     = "Load Selected",
+        Variant  = "Secondary",
+        Callback = function()
+            local sel = UI.Options.nx_configSelect and UI.Options.nx_configSelect.Value
+            if not sel or sel == "(none)" then
+                UI.Toast.Warning("No config selected.", { Duration = 2 })
+                return
+            end
+            -- Load returns (ok, report). report.missing / report.unset list any
+            -- toggles/options that don't line up between the saved config and
+            -- the current UI — automatically toasted via "configIntegrity" too.
+            local ok = UI.Config.Load(sel)
+            if ok then
+                UI.Toast.Success("Loaded: " .. sel, { Duration = 2 })
+            else
+                UI.Toast.Warning("Not found: " .. sel, { Duration = 2 })
+            end
+        end,
+    })
+    Configs:AddButton("nx_setDefaultConfigBtn", {
+        Text     = "Set as Default",
+        Variant  = "Secondary",
+        Callback = function()
+            local sel = UI.Options.nx_configSelect and UI.Options.nx_configSelect.Value
+            if not sel or sel == "(none)" then
+                UI.Toast.Warning("No config selected.", { Duration = 2 })
+                return
+            end
+            UI.Config.SetDefault(sel)
+            UI.Toast.Success("Default config: " .. sel, { Duration = 2 })
+        end,
+    })
+    Configs:AddButton("nx_deleteConfigBtn", {
+        Text     = "Delete Selected",
+        Variant  = "Danger",
+        Callback = function()
+            local sel = UI.Options.nx_configSelect and UI.Options.nx_configSelect.Value
+            if not sel or sel == "(none)" then return end
+            UI.Config.Delete(sel)
+            refreshConfigList()
+            UI.Toast.Info("Deleted: " .. sel, { Duration = 2 })
+        end,
+    })
+
+    -- ── Misc ─────────────────────────────────────────────────────────────
+    local Misc = Settings:AddRightGroupbox("Misc")
+    Misc:AddToggle("nx_debugOverlay", {
+        Text     = "Debug Overlay",
+        Default  = false,
+        Callback = function(v)
+            if DebugOverlay.IsVisible() ~= v then
+                DebugOverlay.Toggle()
+            end
+        end,
+    })
+    Misc:AddButton("nx_unloadBtn", {
+        Text     = "Unload UI",
+        Variant  = "Danger",
+        Callback = function()
+            UI.Toast.Warning("Unloading NexusUI...", { Duration = 1.5 })
+            task.delay(0.2, function() Library:Unload() end)
+        end,
+    })
+
+    -- Command palette entries for the built-in config actions
+    CommandPalette.Register({ name = "Open Settings", category = "UI",     action = function() Settings:Show() end })
+    CommandPalette.Register({ name = "Save Config",   category = "Config", action = function() UI.Config.Save("default") end })
+    CommandPalette.Register({ name = "Load Config",   category = "Config", action = function() UI.Config.Load("default") end })
+    CommandPalette.Register({ name = "Unload UI",      category = "UI",     action = function() Library:Unload() end })
+end
+
+-- ─── Main Window Constructor ────────────────────────────────────────────────
+function Library:CreateWindow(info)
+    info = Library:Validate(info, {
+        Title          = "NexusUI",
+        Footer         = "",
+        Position       = UDim2.fromOffset(80, 80),
+        Size           = UDim2.fromOffset(720, 540),
+        Center         = true,
+        Resizable      = true,
+        CornerRadius   = Tokens.RadiusMD,
+        ToggleKeybind  = Enum.KeyCode.RightControl,
+        AutoShow       = true,
+        PageTransition = "fade",  -- "fade" | "slide" | "scale"
+        ShowCustomCursor = true,
+        NotifySide     = "Right",
+        Font           = Enum.Font.Gotham,
+        BuiltinSettings = true,  -- auto-populate AddSettingsPanel with Appearance/Configs/Misc
+    })
+
+    Library.ToggleKeybind    = info.ToggleKeybind
+    Library.ShowCustomCursor = info.ShowCustomCursor
+
+    local windowMaid = Maid.New()
+    LibraryMaid:Give(windowMaid)
+
+    -- Layout constants
+    local TH  = 38   -- titlebar height
+    local SW  = 148  -- sidebar width
+    local FH  = 20   -- footer height
+    local CR  = info.CornerRadius
+
+    -- ── Main Frame ───────────────────────────────────────────────────────
+    local mainFrame = New("Frame", {
+        AnchorPoint      = info.Center and Vector2.new(0.5, 0.5) or Vector2.zero,
+        BackgroundColor3 = "BackgroundColor",
+        BackgroundTransparency = 0.18,
+        Position         = info.Center and UDim2.fromScale(0.5, 0.5) or info.Position,
+        Size             = info.Size,
+        Visible          = false,
+        ClipsDescendants = true,
+        Parent           = ScreenGui,
+    })
+    New("UICorner",  { CornerRadius = UDim.new(0, CR), Parent = mainFrame })
+    New("UIStroke",  { Color = "BorderColor", Thickness = 1, Transparency = 0.5, Parent = mainFrame })
+    ZManager.Apply(mainFrame, "float")
+
+    -- Frosted glass layers: stacked semi-transparent tints to fake acrylic blur
+    -- localized to the menu (Roblox BlurEffect is screen-wide, so this is the
+    -- closest approximation without affecting the whole game view).
+    local frostLayer1 = New("Frame", {
+        BackgroundColor3 = "SurfaceColor",
+        BackgroundTransparency = 0.85,
+        Size = UDim2.fromScale(1, 1),
+        ZIndex = mainFrame.ZIndex,
+        Parent = mainFrame,
+    })
+    local frostLayer2 = New("Frame", {
+        BackgroundColor3 = "AccentColor",
+        BackgroundTransparency = 0.95,
+        Size = UDim2.fromScale(1, 1),
+        ZIndex = mainFrame.ZIndex,
+        Parent = mainFrame,
+    })
+    local frostGrad = Instance.new("UIGradient")
+    frostGrad.Rotation = 45
+    frostGrad.Transparency = NumberSequence.new({
+        NumberSequenceKeypoint.new(0, 0.3),
+        NumberSequenceKeypoint.new(0.5, 0.8),
+        NumberSequenceKeypoint.new(1, 0.3),
+    })
+    frostGrad.Parent = frostLayer2
+
+    -- ── Ambient Particle Field ───────────────────────────────────────────
+    --[[
+        A handful of small, soft, accent-colored dots that drift slowly and
+        pulse behind the menu content while it's open. Purely decorative —
+        ClipsDescendants on mainFrame keeps them confined to the panel.
+
+        Performance: particles use TweenService (GPU/engine-driven, not
+        Lua-Heartbeat) with `:Repeat` via TweenInfo, so the cost is a fixed
+        number of looping tweens rather than anything in AnimEngine's
+        per-frame loop. They're parented/destroyed (not just hidden) when
+        toggled off, so a closed/minimized menu costs nothing.
+    ]]
+    local particleField = New("Frame", {
+        BackgroundTransparency = 1,
+        Size             = UDim2.fromScale(1, 1),
+        ZIndex           = mainFrame.ZIndex,
+        Parent           = mainFrame,
+    })
+
+    local PARTICLE_COUNT = 14
+    local _particleConns = {}
+    local _particlesSpawned = false
+
+    local function spawnParticles()
+        if _particlesSpawned then return end
+        _particlesSpawned = true
+
+        for i = 1, PARTICLE_COUNT do
+            local size = math.random(3, 8)
+            local dot = New("Frame", {
+                BackgroundColor3 = "AccentColor",
+                BackgroundTransparency = 1, -- fades in below
+                Size     = UDim2.fromOffset(size, size),
+                Position = UDim2.fromScale(math.random(), math.random()),
+                ZIndex   = particleField.ZIndex,
+                Parent   = particleField,
+            })
+            New("UICorner", { CornerRadius = UDim.new(1, 0), Parent = dot })
+
+            local baseTransparency = 0.82 + math.random() * 0.12 -- ~0.82–0.94, very subtle
+            local driftDist  = math.random(18, 48)
+            local driftAngle = math.random() * math.pi * 2
+            local offset     = Vector2.new(math.cos(driftAngle), math.sin(driftAngle)) * driftDist
+            local driftTime  = 4 + math.random() * 4   -- 4–8s one-way
+            local pulseTime  = 1.5 + math.random() * 2  -- 1.5–3.5s
+
+            -- Fade in from invisible
+            TweenService:Create(dot, TweenInfo.new(0.6 + math.random() * 0.6, Enum.EasingStyle.Quad),
+                { BackgroundTransparency = baseTransparency }):Play()
+
+            -- Slow positional drift, ping-ponging forever
+            local startPos = dot.Position
+            local endPos   = UDim2.new(
+                startPos.X.Scale, startPos.X.Offset + offset.X,
+                startPos.Y.Scale, startPos.Y.Offset + offset.Y
+            )
+            local driftInfo = TweenInfo.new(driftTime, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true)
+            local driftTween = TweenService:Create(dot, driftInfo, { Position = endPos })
+            driftTween:Play()
+
+            -- Gentle opacity pulse, ping-ponging forever
+            local pulseInfo = TweenInfo.new(pulseTime, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true)
+            local pulseTween = TweenService:Create(dot, pulseInfo, {
+                BackgroundTransparency = math.min(0.97, baseTransparency + 0.08),
+            })
+            -- Stagger pulse start so particles don't breathe in sync
+            task.delay(math.random() * pulseTime, function()
+                if dot.Parent then pulseTween:Play() end
+            end)
+
+            table.insert(_particleConns, dot)
+            table.insert(_particleConns, driftTween)
+            table.insert(_particleConns, pulseTween)
+        end
+    end
+
+    local function clearParticles()
+        for _, obj in ipairs(_particleConns) do
+            if typeof(obj) == "Instance" then
+                if obj:IsA("Tween") then obj:Cancel() end
+                obj:Destroy()
+            elseif obj.Cancel then
+                pcall(function() obj:Cancel() end)
+            end
+        end
+        _particleConns = {}
+        _particlesSpawned = false
+    end
+
+    Library.ParticlesEnabled = true
+
+    -- ── Titlebar ─────────────────────────────────────────────────────────
+    local titleBar = New("Frame", {
+        BackgroundColor3 = "SurfaceColor",
+        BackgroundTransparency = 0.25,
+        Size             = UDim2.new(1, 0, 0, TH),
+        ZIndex           = mainFrame.ZIndex + 1,
+        Parent           = mainFrame,
+    })
+    -- Bottom border line
+    New("Frame", {
+        AnchorPoint      = Vector2.new(0, 1),
+        BackgroundColor3 = "BorderColor",
+        Position         = UDim2.fromScale(0, 1),
+        Size             = UDim2.new(1, 0, 0, 1),
+        ZIndex           = titleBar.ZIndex,
+        Parent           = titleBar,
+    })
+
+    -- Subtle accent shimmer: a soft gradient sliver that slowly sweeps
+    -- across the titlebar's bottom edge. Purely cosmetic, single Frame +
+    -- looping UIGradient offset tween — negligible cost.
+    do
+        local shimmer = New("Frame", {
+            AnchorPoint      = Vector2.new(0, 1),
+            BackgroundColor3 = "AccentColor",
+            BackgroundTransparency = 0.5,
+            Position         = UDim2.fromScale(0, 1),
+            Size             = UDim2.new(1, 0, 0, 1),
+            ZIndex           = titleBar.ZIndex,
+            Parent           = titleBar,
+        })
+        local shimmerGrad = Instance.new("UIGradient")
+        shimmerGrad.Transparency = NumberSequence.new({
+            NumberSequenceKeypoint.new(0,    1),
+            NumberSequenceKeypoint.new(0.45, 1),
+            NumberSequenceKeypoint.new(0.5,  0),
+            NumberSequenceKeypoint.new(0.55, 1),
+            NumberSequenceKeypoint.new(1,    1),
+        })
+        shimmerGrad.Offset = Vector2.new(-1.5, 0)
+        shimmerGrad.Parent = shimmer
+
+        local shimmerInfo = TweenInfo.new(5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, false)
+        TweenService:Create(shimmerGrad, shimmerInfo, { Offset = Vector2.new(1.5, 0) }):Play()
+    end
+
+    -- Title label: starts after a left pad, ends before close button
+    local titleLabel = New("TextLabel", {
+        BackgroundTransparency = 1,
+        Position  = UDim2.fromOffset(14, 0),
+        Size      = UDim2.new(1, -50, 1, 0),
+        Text      = info.Title,
+        TextSize  = Tokens.FontSize.LG,
+        FontFace  = Font.fromEnum(Enum.Font.Gotham),
+        TextXAlignment = Enum.TextXAlignment.Left,
+        ZIndex    = titleBar.ZIndex,
+        Parent    = titleBar,
+    })
+
+    -- Close button: pinned to right edge
+    local closeBtn = New("TextButton", {
+        AnchorPoint      = Vector2.new(1, 0.5),
+        BackgroundColor3 = "SurfaceColor",
+        BackgroundTransparency = 1,
+        Position         = UDim2.new(1, -10, 0.5, 0),
+        Size             = UDim2.fromOffset(22, 22),
+        Text             = "×",
+        TextSize         = 18,
+        ZIndex           = titleBar.ZIndex + 1,
+        Parent           = titleBar,
+    })
+    New("UICorner", { CornerRadius = UDim.new(1, 0), Parent = closeBtn })
+
+    local tiClose = TweenInfo.new(0.1, Enum.EasingStyle.Quad)
+    windowMaid:Connect(closeBtn.MouseEnter, function()
+        closeBtn.BackgroundColor3      = Color3.fromRGB(210, 40, 40)
+        closeBtn.BackgroundTransparency = 0
+        TweenService:Create(closeBtn, tiClose, { TextColor3 = Color3.new(1,1,1) }):Play()
+    end)
+    windowMaid:Connect(closeBtn.MouseLeave, function()
+        closeBtn.BackgroundTransparency = 1
+        TweenService:Create(closeBtn, tiClose, { TextColor3 = Library.Scheme.TextPrimary }):Play()
+    end)
+    windowMaid:Connect(closeBtn.MouseButton1Click, function()
+        Library:Toggle(false)
+    end)
+
+    -- ── Footer ───────────────────────────────────────────────────────────
+    local footer = New("Frame", {
+        AnchorPoint      = Vector2.new(0, 1),
+        BackgroundColor3 = "SurfaceColor",
+        Position         = UDim2.fromScale(0, 1),
+        Size             = UDim2.new(1, 0, 0, FH),
+        ZIndex           = mainFrame.ZIndex + 1,
+        Parent           = mainFrame,
+    })
+    New("Frame", {  -- top border
+        BackgroundColor3 = "BorderColor",
+        Size             = UDim2.new(1, 0, 0, 1),
+        ZIndex           = footer.ZIndex,
+        Parent           = footer,
+    })
+    New("TextLabel", {
+        BackgroundTransparency = 1,
+        Position  = UDim2.fromOffset(12, 0),
+        Size      = UDim2.new(0.5, -12, 1, 0),
+        Text      = info.Footer,
+        TextSize  = Tokens.FontSize.XS,
+        TextColor3 = "TextMuted",
+        TextXAlignment = Enum.TextXAlignment.Left,
+        ZIndex    = footer.ZIndex,
+        Parent    = footer,
+    })
+    New("TextLabel", {
+        AnchorPoint    = Vector2.new(1, 0),
+        BackgroundTransparency = 1,
+        Position       = UDim2.new(1, -12, 0, 0),
+        Size           = UDim2.new(0.5, 0, 1, 0),
+        Text           = "NexusUI v" .. LIBRARY_VERSION,
+        TextSize       = Tokens.FontSize.XS,
+        TextColor3     = "TextMuted",
+        TextXAlignment = Enum.TextXAlignment.Right,
+        ZIndex         = footer.ZIndex,
+        Parent         = footer,
+    })
+
+    -- ── Sidebar ───────────────────────────────────────────────────────────
+    -- Sidebar: left column from below titlebar to above footer
+    local sidebar = New("Frame", {
+        BackgroundColor3 = "SurfaceColor",
+        BackgroundTransparency = 0.2,
+        Position         = UDim2.fromOffset(0, TH),
+        Size             = UDim2.new(0, SW, 1, -(TH + FH)),
+        ZIndex           = mainFrame.ZIndex + 1,
+        Parent           = mainFrame,
+    })
+    New("Frame", {  -- right border
+        AnchorPoint      = Vector2.new(1, 0),
+        BackgroundColor3 = "BorderColor",
+        Position         = UDim2.fromScale(1, 0),
+        Size             = UDim2.new(0, 1, 1, 0),
+        ZIndex           = sidebar.ZIndex,
+        Parent           = sidebar,
+    })
+
+    -- Tab button list: leaves 42px at bottom for settings button + separator
+    local tabList = New("Frame", {
+        BackgroundTransparency = 1,
+        Position = UDim2.fromOffset(6, 8),
+        Size     = UDim2.new(1, -12, 1, -50),
+        ZIndex   = sidebar.ZIndex,
+        Parent   = sidebar,
+    })
+    New("UIListLayout", {
+        Padding   = UDim.new(0, 2),
+        SortOrder = Enum.SortOrder.LayoutOrder,
+        Parent    = tabList,
+    })
+
+    -- Search box at bottom of sidebar (sits inside footer area on the left)
+    local searchBox = New("TextBox", {
+        BackgroundColor3 = "SurfaceColor",
+        BackgroundTransparency = 0.3,
+        Position         = UDim2.new(0, 0, 1, -(FH + 1)),
+        Size             = UDim2.new(0, SW, 0, FH),
+        PlaceholderText  = "⌕  Search…",
+        ClearTextOnFocus = true,
+        TextSize         = Tokens.FontSize.SM,
+        TextXAlignment   = Enum.TextXAlignment.Left,
+        ZIndex           = mainFrame.ZIndex + 2,
+        Parent           = mainFrame,
+    })
+    New("UIPadding", {
+        PaddingLeft  = UDim.new(0, 8),
+        PaddingRight = UDim.new(0, 4),
+        Parent       = searchBox,
+    })
+    New("Frame", {  -- top border of search box
+        BackgroundColor3 = "BorderColor",
+        Size             = UDim2.new(1, 0, 0, 1),
+        ZIndex           = searchBox.ZIndex,
+        Parent           = searchBox,
+    })
+    New("Frame", {  -- right border of search box
+        AnchorPoint      = Vector2.new(1, 0),
+        BackgroundColor3 = "BorderColor",
+        Position         = UDim2.fromScale(1, 0),
+        Size             = UDim2.new(0, 1, 1, 0),
+        ZIndex           = searchBox.ZIndex,
+        Parent           = searchBox,
+    })
+
+    -- ── Content Area ──────────────────────────────────────────────────────
+    -- Right of sidebar, below titlebar, above footer
+    local contentArea = New("Frame", {
+        BackgroundTransparency = 1,
+        Position         = UDim2.fromOffset(SW + 1, TH),
+        Size             = UDim2.new(1, -(SW + 1), 1, -(TH + FH)),
+        ClipsDescendants = true,
+        ZIndex           = mainFrame.ZIndex,
+        Parent           = mainFrame,
+    })
+
+    -- Tracks any in-flight Window:SetSize / Window:SetPosition spring so
+    -- MakeDraggable/MakeResizable can cancel it the moment the user starts
+    -- a manual drag or resize — otherwise a programmatic animation (e.g.
+    -- from config restore) keeps overwriting mainFrame.Position/Size every
+    -- Heartbeat frame and fights the drag/resize math, making the window
+    -- feel unresponsive or "stuck".
+    local MIN_WINDOW_SIZE = Vector2.new(500, 380)
+    local _cancelSizeSpring, _cancelPosSpring
+    local function cancelWindowSprings()
+        if _cancelSizeSpring then _cancelSizeSpring(); _cancelSizeSpring = nil end
+        if _cancelPosSpring  then _cancelPosSpring();  _cancelPosSpring  = nil end
+    end
+
+    -- ── Resize handle ─────────────────────────────────────────────────────
+    if info.Resizable then
+        local resizeHandle = New("TextButton", {
+            AnchorPoint = Vector2.new(1, 1),
+            BackgroundTransparency = 1,
+            Position    = UDim2.new(1, -2, 1, -2),
+            Size        = UDim2.fromOffset(14, 14),
+            Text        = "⇲",
+            TextSize    = 11,
+            TextColor3  = "TextMuted",
+            ZIndex      = mainFrame.ZIndex + 5,
+            Parent      = mainFrame,
+        })
+        Library:MakeResizable(mainFrame, resizeHandle, windowMaid, Vector2.new(500, 380), nil, cancelWindowSprings)
+    end
+
+    -- Dragging on titlebar
+    Library:MakeDraggable(mainFrame, titleBar, windowMaid, cancelWindowSprings)
+
+    -- ── Tab System ───────────────────────────────────────────────────────
+    local Window = {
+        Main       = mainFrame,
+        Tabs       = {},
+        ActiveTab  = nil,
+        _maid      = windowMaid,
+    }
+
+    function Window:SetParticlesEnabled(v)
+        Library.ParticlesEnabled = v
+        if not v then
+            clearParticles()
+        elseif Library.Toggled then
+            spawnParticles()
+        end
+    end
+
+    -- Fade overlay for transitions - sits on top and fades in/out
+    local fadeOverlay = New("Frame", {
+        BackgroundColor3   = "BackgroundColor",
+        BackgroundTransparency = 1,
+        Size               = UDim2.fromScale(1, 1),
+        ZIndex             = mainFrame.ZIndex + 2,
+        Visible            = false,
+        Parent             = contentArea,
+    })
+
+    local function showTabContent(tab, prevTab)
+        if prevTab and prevTab.Container then
+            prevTab.Container.Visible = false
+        end
+        if tab and tab.Container then
+            tab.Container.Visible = true
+            -- Quick fade overlay to smooth the switch
+            fadeOverlay.Visible = true
+            fadeOverlay.BackgroundTransparency = 0.4
+            TweenService:Create(fadeOverlay,
+                TweenInfo.new(0.12, Enum.EasingStyle.Quad),
+                { BackgroundTransparency = 1 }):Play()
+            task.delay(0.14, function()
+                fadeOverlay.Visible = false
+                fadeOverlay.BackgroundTransparency = 1
+            end)
+        end
+    end
+
+    function Window:AddTab(name, icon)
+        local tab = {
+            Name       = name,
+            Groupboxes = {},
+            Tabboxes   = {},
+            Elements   = {},
+            DependencyBoxes = {},
+        }
+
+        -- Tab button in sidebar tab list
+        local tabBtn = New("TextButton", {
+            BackgroundColor3       = "SurfaceAltColor",
+            BackgroundTransparency = 1,
+            Size                   = UDim2.new(1, 0, 0, 30),
+            Text                   = "",
+            ClipsDescendants       = false,
+            Parent                 = tabList,
+        })
+        New("UICorner", { CornerRadius = UDim.new(0, Tokens.RadiusSM), Parent = tabBtn })
+
+        local tabBtnLabel = New("TextLabel", {
+            BackgroundTransparency = 1,
+            Position         = UDim2.fromOffset(14, 0),
+            Size             = UDim2.new(1, -14, 1, 0),
+            Text             = name,
+            TextSize         = Tokens.FontSize.MD,
+            TextTransparency = 0.5,
+            TextXAlignment   = Enum.TextXAlignment.Left,
+            Parent           = tabBtn,
+        })
+
+        -- Active bar on the left edge of the button (not inside padding)
+        local activeBar = New("Frame", {
+            AnchorPoint      = Vector2.new(0, 0.5),
+            BackgroundColor3 = "AccentColor",
+            Position         = UDim2.fromOffset(3, 0),
+            Size             = UDim2.fromOffset(3, 0),
+            ZIndex           = tabBtn.ZIndex + 1,
+            Parent           = tabBtn,
+        })
+        New("UICorner", { CornerRadius = UDim.new(1, 0), Parent = activeBar })
+        -- fix anchor vertical center
+        task.defer(function()
+            if activeBar and activeBar.Parent then
+                activeBar.Position = UDim2.new(0, 3, 0.5, 0)
+            end
+        end)
+
+        -- Content container for this tab - fully transparent, no background
+        local tabContainer = New("Frame", {
+            BackgroundTransparency = 1,
+            Size             = UDim2.fromScale(1, 1),
+            Visible          = false,
+            ClipsDescendants = true,
+            Parent           = contentArea,
+        })
+
+        -- Two-column layout: each half fills full height
+        local scrollLeft = New("ScrollingFrame", {
+            BackgroundTransparency    = 1,
+            BorderSizePixel           = 0,
+            CanvasSize                = UDim2.fromOffset(0, 0),
+            AutomaticCanvasSize       = Enum.AutomaticSize.Y,
+            ScrollBarThickness        = 3,
+            ScrollBarImageColor3      = "MutedColor",
+            Position                  = UDim2.fromOffset(0, 0),
+            Size                      = UDim2.new(0.5, -1, 1, 0),
+            Parent                    = tabContainer,
+        })
+        New("UIPadding", {
+            PaddingLeft   = UDim.new(0, 8), PaddingRight  = UDim.new(0, 4),
+            PaddingTop    = UDim.new(0, 8), PaddingBottom = UDim.new(0, 8),
+            Parent = scrollLeft,
+        })
+        New("UIListLayout", { Padding = UDim.new(0, 8), SortOrder = Enum.SortOrder.LayoutOrder, Parent = scrollLeft })
+
+        -- Centre divider
+        New("Frame", {
+            BackgroundColor3 = "BorderColor",
+            Position         = UDim2.new(0.5, -1, 0, 0),
+            Size             = UDim2.new(0, 1, 1, 0),
+            Parent           = tabContainer,
+        })
+
+        local scrollRight = New("ScrollingFrame", {
+            BackgroundTransparency    = 1,
+            BorderSizePixel           = 0,
+            CanvasSize                = UDim2.fromOffset(0, 0),
+            AutomaticCanvasSize       = Enum.AutomaticSize.Y,
+            ScrollBarThickness        = 3,
+            ScrollBarImageColor3      = "MutedColor",
+            Position                  = UDim2.new(0.5, 1, 0, 0),
+            Size                      = UDim2.new(0.5, -1, 1, 0),
+            Parent                    = tabContainer,
+        })
+        New("UIPadding", {
+            PaddingLeft   = UDim.new(0, 4), PaddingRight  = UDim.new(0, 8),
+            PaddingTop    = UDim.new(0, 8), PaddingBottom = UDim.new(0, 8),
+            Parent = scrollRight,
+        })
+        New("UIListLayout", { Padding = UDim.new(0, 8), SortOrder = Enum.SortOrder.LayoutOrder, Parent = scrollRight })
+
+        tab.Container   = tabContainer
+        tab.LeftScroll  = scrollLeft
+        tab.RightScroll = scrollRight
+
+        -- Show/hide logic
+        local function showTab()
+            if Window.ActiveTab == tab then return end
+            NavHistory.Push({ type = "tab", name = name })
+            local prev = Window.ActiveTab
+            Window.ActiveTab = tab
+
+            local tiNorm = TweenInfo.new(0.13, Enum.EasingStyle.Quad)
+            local tiFast = TweenInfo.new(0.1,  Enum.EasingStyle.Quad)
+
+            -- Hide settings container if it was active
+            if Window.Settings and Window.Settings.Container then
+                Window.Settings.Container.Visible = false
+            end
+            -- Deactivate settings button visuals
+            if Window.Settings and Window.Settings._btn then
+                TweenService:Create(Window.Settings._btn,   tiNorm, { BackgroundTransparency = 1 }):Play()
+                TweenService:Create(Window.Settings._label, tiNorm, { TextTransparency = 0.5 }):Play()
+                if Window.Settings._bar then Window.Settings._bar.Size = UDim2.fromOffset(3, 0) end
+            end
+
+            for _, t in pairs(Window.Tabs) do
+                if t ~= tab then
+                    TweenService:Create(t._btn,   tiNorm, { BackgroundTransparency = 1 }):Play()
+                    TweenService:Create(t._label, tiNorm, { TextTransparency = 0.5 }):Play()
+                    t._bar.Size = UDim2.fromOffset(3, 0)
+                end
+            end
+
+            TweenService:Create(tabBtn,      tiNorm, { BackgroundTransparency = 0 }):Play()
+            TweenService:Create(tabBtnLabel, tiNorm, { TextTransparency = 0 }):Play()
+            TweenService:Create(activeBar,   tiFast, { Size = UDim2.fromOffset(3, 18) }):Play()
+
+            showTabContent(tab, prev)
+            Library.ActiveTab = tab
+            EventBus:Emit("tabChanged", tab)
+        end
+
+        windowMaid:Connect(tabBtn.MouseButton1Click, showTab)
+        windowMaid:Connect(tabBtn.MouseEnter, function()
+            if Window.ActiveTab ~= tab then
+                TweenService:Create(tabBtnLabel,
+                    TweenInfo.new(0.1, Enum.EasingStyle.Quad),
+                    { TextTransparency = 0.2 }):Play()
+            end
+        end)
+        windowMaid:Connect(tabBtn.MouseLeave, function()
+            if Window.ActiveTab ~= tab then
+                TweenService:Create(tabBtnLabel,
+                    TweenInfo.new(0.1, Enum.EasingStyle.Quad),
+                    { TextTransparency = 0.5 }):Play()
+            end
+        end)
+
+        tab._btn   = tabBtn
+        tab._label = tabBtnLabel
+        tab._bar   = activeBar
+        tab.Show   = showTab
+
+        -- AddGroupbox for tab
+        function tab:AddGroupbox(gbInfo)
+            gbInfo = gbInfo or {}
+            local side = gbInfo.Side or 1
+            local scroll = side == 1 and scrollLeft or scrollRight
+
+            local boxHolder = New("Frame", {
+                BackgroundColor3 = "SurfaceColor",
+                BackgroundTransparency = 0.35,
+                Size = UDim2.new(1, 0, 0, 0),
+                AutomaticSize = Enum.AutomaticSize.Y,
+                Parent = scroll,
+            })
+            New("UICorner", { CornerRadius = UDim.new(0, info.CornerRadius), Parent = boxHolder })
+            New("UIStroke", { Color = "BorderColor", Thickness = 1, Parent = boxHolder })
+
+            -- Header
+            local header = New("Frame", {
+                BackgroundTransparency = 1,
+                Size = UDim2.new(1, 0, 0, 30),
+                Parent = boxHolder,
+            })
+            New("UIPadding", {
+                PaddingLeft = UDim.new(0, 12), PaddingRight = UDim.new(0, 8),
+                Parent = header,
+            })
+            New("TextLabel", {
+                BackgroundTransparency = 1,
+                Size = UDim2.fromScale(1, 1),
+                Text = gbInfo.Name or "",
+                TextSize = Tokens.FontSize.MD,
+                FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json",
+                    Enum.FontWeight.Medium, Enum.FontStyle.Normal),
+                TextColor3 = "TextPrimary",
+                TextXAlignment = Enum.TextXAlignment.Left,
+                Parent = header,
+            })
+
+            -- Divider
+            New("Frame", {
+                AnchorPoint = Vector2.new(0, 0),
+                BackgroundColor3 = "BorderColor",
+                Position = UDim2.fromOffset(0, 30),
+                Size = UDim2.new(1, 0, 0, 1),
+                Parent = boxHolder,
+            })
+
+            -- Content
+            local gbContainer = New("Frame", {
+                BackgroundTransparency = 1,
+                Position = UDim2.fromOffset(0, 31),
+                Size = UDim2.new(1, 0, 0, 0),
+                AutomaticSize = Enum.AutomaticSize.Y,
+                Parent = boxHolder,
+            })
+            New("UIPadding", {
+                PaddingLeft   = UDim.new(0, 10),
+                PaddingRight  = UDim.new(0, 10),
+                PaddingTop    = UDim.new(0, 6),
+                PaddingBottom = UDim.new(0, 8),
+                Parent = gbContainer,
+            })
+            New("UIListLayout", {
+                Padding = UDim.new(0, 5),
+                Parent  = gbContainer,
+            })
+
+            local gb = setmetatable({
+                Name            = gbInfo.Name or "",
+                Elements        = {},
+                DependencyBoxes = {},
+                Container       = gbContainer,
+                BoxHolder       = boxHolder,
+                Visible         = true,
+            }, BaseGroupbox)
+
+            function gb:Resize()
+                task.defer(function()
+                    if not gbContainer or not gbContainer.Parent then return end
+                    local list = gbContainer:FindFirstChildOfClass("UIListLayout")
+                    if list then
+                        gbContainer.Size = UDim2.new(1, 0, 0, list.AbsoluteContentSize.Y + 14)
+                    end
+                end)
+            end
+
+            -- Entrance animation
+            local entryScale = Instance.new("UIScale")
+            entryScale.Scale = 0.97
+            entryScale.Parent = boxHolder
+            boxHolder.BackgroundTransparency = 1
+            TweenService:Create(entryScale,
+                TweenInfo.new(0.18, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+                { Scale = 1 }):Play()
+            TweenService:Create(boxHolder,
+                TweenInfo.new(0.15, Enum.EasingStyle.Quad),
+                { BackgroundTransparency = 0 }):Play()
+            task.delay(0.22, function()
+                if entryScale and entryScale.Parent then entryScale:Destroy() end
+            end)
+
+            table.insert(tab.Groupboxes, gb)
+            return gb
+        end
+
+        function tab:AddTabbox(tbInfo)
+            tbInfo = tbInfo or {}
+            local side   = tbInfo.Side or 1
+            local scroll = side == 1 and scrollLeft or scrollRight
+
+            local tbHolder = New("Frame", {
+                BackgroundColor3 = "SurfaceColor",
+                Size = UDim2.new(1, 0, 0, 0),
+                AutomaticSize = Enum.AutomaticSize.Y,
+                Parent = scroll,
+            })
+            New("UICorner", { CornerRadius = UDim.new(0, info.CornerRadius), Parent = tbHolder })
+            New("UIStroke", { Color = "BorderColor", Thickness = 1, Parent = tbHolder })
+
+            local tabHeader = New("Frame", {
+                BackgroundColor3 = "SurfaceAltColor",
+                Size = UDim2.new(1, 0, 0, 30),
+                Parent = tbHolder,
+            })
+            New("UICorner", { CornerRadius = UDim.new(0, info.CornerRadius), Parent = tabHeader })
+            New("Frame", {
+                AnchorPoint = Vector2.new(0, 1),
+                BackgroundColor3 = "SurfaceAltColor",
+                Position = UDim2.fromScale(0, 1),
+                Size     = UDim2.new(1, 0, 0, info.CornerRadius),
+                Parent   = tabHeader,
+            })
+            New("UIListLayout", {
+                FillDirection = Enum.FillDirection.Horizontal,
+                Padding = UDim.new(0, 0),
+                Parent  = tabHeader,
+            })
+
+            local tbContent = New("Frame", {
+                BackgroundTransparency = 1,
+                Position = UDim2.fromOffset(0, 31),
+                Size = UDim2.new(1, 0, 0, 0),
+                AutomaticSize = Enum.AutomaticSize.Y,
+                Parent = tbHolder,
+            })
+            New("UIPadding", {
+                PaddingBottom = UDim.new(0, 6),
+                Parent = tbContent,
+            })
+
+            local Tabbox = {
+                ActiveTab = nil,
+                Tabs      = {},
+                Holder    = tbHolder,
+            }
+
+            function Tabbox:AddTab(tabName)
+                local subMaid = Maid.New()
+
+                local btn = New("TextButton", {
+                    BackgroundColor3 = "SurfaceAltColor",
+                    BackgroundTransparency = 1,
+                    Size   = UDim2.new(0, 80, 1, 0),
+                    Text   = tabName,
+                    TextSize = Tokens.FontSize.SM,
+                    TextTransparency = 0.5,
+                    Parent = tabHeader,
+                })
+                New("UIStroke", { Color = "BorderColor", Thickness = 1, Parent = btn })
+
+                local subContainer = New("Frame", {
+                    BackgroundTransparency = 1,
+                    Size = UDim2.new(1, 0, 0, 0),
+                    AutomaticSize = Enum.AutomaticSize.Y,
+                    Visible = false,
+                    Parent  = tbContent,
+                })
+                New("UIPadding", {
+                    PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 10),
+                    PaddingTop = UDim.new(0, 6),
+                    Parent = subContainer,
+                })
+                New("UIListLayout", {
+                    Padding = UDim.new(0, 5),
+                    Parent  = subContainer,
+                })
+
+                local SubTab = setmetatable({
+                    Name = tabName,
+                    Elements = {},
+                    DependencyBoxes = {},
+                    Container = subContainer,
+                    ButtonHolder = btn,
+                }, BaseGroupbox)
+
+                function SubTab:Resize()
+                    task.defer(function()
+                        if not subContainer or not subContainer.Parent then return end
+                        local list = subContainer:FindFirstChildOfClass("UIListLayout")
+                        if list then
+                            subContainer.Size = UDim2.new(1, 0, 0, list.AbsoluteContentSize.Y + 12)
+                        end
+                    end)
+                end
+
+                local function showSubTab()
+                    if Tabbox.ActiveTab and Tabbox.ActiveTab ~= SubTab then
+                        local prev = Tabbox.ActiveTab
+                        prev.Container.Visible = false
+                        prev.ButtonHolder.TextTransparency = 0.5
+                        prev.ButtonHolder.BackgroundTransparency = 1
+                    end
+                    Tabbox.ActiveTab = SubTab
+                    subContainer.Visible = true
+                    btn.TextTransparency = 0
+                    btn.BackgroundTransparency = 0
+                    btn.BackgroundColor3 = Library.Scheme.BackgroundColor
+                end
+
+                subMaid:Connect(btn.MouseButton1Click, showSubTab)
+
+                if not Tabbox.ActiveTab then
+                    showSubTab()
+                end
+
+                Tabbox.Tabs[tabName] = SubTab
+                windowMaid:Give(subMaid)
+                return SubTab
+            end
+
+            table.insert(tab.Tabboxes, Tabbox)
+            return Tabbox
+        end
+
+        function tab:AddLeftGroupbox(gbInfo)
+            gbInfo = gbInfo or {}
+            gbInfo.Side = 1
+            return self:AddGroupbox(gbInfo)
+        end
+
+        function tab:AddRightGroupbox(gbInfo)
+            gbInfo = gbInfo or {}
+            gbInfo.Side = 2
+            return self:AddGroupbox(gbInfo)
+        end
+
+        function tab:AddLeftTabbox()
+            return self:AddTabbox({ Side = 1 })
+        end
+
+        function tab:AddRightTabbox()
+            return self:AddTabbox({ Side = 2 })
+        end
+
+        Window.Tabs[name] = tab
+        table.insert(Library.Tabs, tab)
+
+        -- Auto-show first tab
+        if not Window.ActiveTab then
+            showTab()
+        end
+
+        PluginSystem.Emit("onTabCreate", tab)
+        return tab
+    end
+
+    -- ── Glass / Acrylic helpers ─────────────────────────────────────────
+    function Window:SetMenuTransparency(pct)
+        -- pct: 0 = opaque, 100 = fully transparent
+        local t = math.clamp(pct, 0, 100) / 100
+        TweenService:Create(mainFrame, TweenInfo.new(0.15, Enum.EasingStyle.Quad), { BackgroundTransparency = t }):Play()
+        TweenService:Create(titleBar,  TweenInfo.new(0.15, Enum.EasingStyle.Quad), { BackgroundTransparency = math.clamp(t + 0.07, 0, 1) }):Play()
+        TweenService:Create(sidebar,   TweenInfo.new(0.15, Enum.EasingStyle.Quad), { BackgroundTransparency = math.clamp(t + 0.02, 0, 1) }):Play()
+        TweenService:Create(footer,    TweenInfo.new(0.15, Enum.EasingStyle.Quad), { BackgroundTransparency = math.clamp(t + 0.07, 0, 1) }):Play()
+
+        -- Cards/groupboxes get a smaller proportional bump in transparency
+        local cardT = math.clamp(t * 0.6 + 0.2, 0.2, 0.85)
+        for _, tab in pairs(Window.Tabs) do
+            for _, gb in ipairs(tab.Groupboxes or {}) do
+                if gb.BoxHolder then
+                    TweenService:Create(gb.BoxHolder, TweenInfo.new(0.15, Enum.EasingStyle.Quad), { BackgroundTransparency = cardT }):Play()
+                end
+            end
+        end
+
+        -- Search box
+        TweenService:Create(searchBox, TweenInfo.new(0.15, Enum.EasingStyle.Quad), { BackgroundTransparency = cardT }):Play()
+
+        -- Toggles, dropdowns, sliders, inputs — adjust base transparency
+        local elT = math.clamp(t * 0.5 + 0.15, 0.15, 0.8)
+        Library.ElementTransparency = elT
+
+        for idx, toggle in pairs(Library.Toggles) do
+            if toggle._refreshTransparency then toggle._refreshTransparency() end
+        end
+        for _, opt in pairs(Library.Options) do
+            if opt.Type == "Dropdown" and opt.Holder then
+                local displayBtn = opt.Holder:FindFirstChildWhichIsA("TextButton")
+                if displayBtn then
+                    TweenService:Create(displayBtn, TweenInfo.new(0.15, Enum.EasingStyle.Quad), { BackgroundTransparency = elT }):Play()
+                end
+            elseif (opt.Type == "Input") and opt.Box and opt.Box.Parent then
+                TweenService:Create(opt.Box.Parent, TweenInfo.new(0.15, Enum.EasingStyle.Quad), { BackgroundTransparency = elT }):Play()
+            elseif opt.Type == "Slider" and opt.Holder then
+                local track = opt.Holder:FindFirstChildWhichIsA("TextButton")
+                if track then
+                    TweenService:Create(track, TweenInfo.new(0.15, Enum.EasingStyle.Quad), { BackgroundTransparency = elT }):Play()
+                end
+            end
+        end
+    end
+
+    function Window:SetAcrylicEnabled(v)
+        local target = v and 0.08 or 0.18
+        TweenService:Create(frostLayer1, TweenInfo.new(0.2, Enum.EasingStyle.Quad), { BackgroundTransparency = v and 0.55 or 0.85 }):Play()
+        TweenService:Create(frostLayer2, TweenInfo.new(0.2, Enum.EasingStyle.Quad), { BackgroundTransparency = v and 0.75 or 0.95 }):Play()
+    end
+
+    -- ── Size / Position (used by config restore + resize handle) ────────
+    -- Instant by default. A spring-based animation is only used when the
+    -- caller explicitly passes `animate = true` — e.g. for a deliberate
+    -- "snap into place" effect from a script. Config restore (and the
+    -- resize handle) always apply instantly: an in-flight spring writing
+    -- to mainFrame.Position/Size every Heartbeat frame would fight with
+    -- MakeDraggable's per-frame tween and MakeResizable's direct writes,
+    -- which is what made dragging/resizing feel "broken" after a config
+    -- with a saved size/position was loaded.
+
+    function Window:SetSize(newSize, animate)
+        local clampedX = math.max(MIN_WINDOW_SIZE.X, newSize.X.Offset)
+        local clampedY = math.max(MIN_WINDOW_SIZE.Y, newSize.Y.Offset)
+        local target = UDim2.new(newSize.X.Scale, clampedX, newSize.Y.Scale, clampedY)
+
+        if _cancelSizeSpring then _cancelSizeSpring(); _cancelSizeSpring = nil end
+
+        if animate then
+            _cancelSizeSpring = AnimEngine.Spring({
+                from      = mainFrame.Size,
+                to        = target,
+                stiffness = 280, damping = 26,
+                apply     = function(v) mainFrame.Size = v end,
+                onDone    = function() _cancelSizeSpring = nil end,
+            })
+        else
+            mainFrame.Size = target
+        end
+
+        EventBus:Emit("windowResized", target)
+        return target
+    end
+
+    function Window:SetPosition(newPos, animate)
+        if _cancelPosSpring then _cancelPosSpring(); _cancelPosSpring = nil end
+
+        if animate then
+            _cancelPosSpring = AnimEngine.Spring({
+                from      = mainFrame.Position,
+                to        = newPos,
+                stiffness = 280, damping = 26,
+                apply     = function(v) mainFrame.Position = v end,
+                onDone    = function() _cancelPosSpring = nil end,
+            })
+        else
+            mainFrame.Position = newPos
+        end
+
+        return newPos
+    end
+
+    -- ── Window Toggle ────────────────────────────────────────────────────
+    function Window:Toggle(v)
+        if typeof(v) == "boolean" then
+            Library.Toggled = v
+        else
+            Library.Toggled = not Library.Toggled
+        end
+
+        if Library.Toggled then
+            mainFrame.Visible            = true
+            mainFrame.BackgroundTransparency = 0
+
+            if Library.ParticlesEnabled then
+                spawnParticles()
+            end
+
+            local scaleI = Instance.new("UIScale")
+            scaleI.Scale = 0.96
+            scaleI.Parent = mainFrame
+            TweenService:Create(scaleI,
+                TweenInfo.new(0.18, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+                { Scale = 1 }):Play()
+            task.delay(0.22, function()
+                if scaleI and scaleI.Parent then scaleI:Destroy() end
+            end)
+
+
+        else
+            TweenService:Create(mainFrame,
+                TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
+                { BackgroundTransparency = 1 }
+            ):Play()
+            task.delay(0.14, function()
+                if mainFrame and mainFrame.Parent then
+                    mainFrame.Visible = false
+                    mainFrame.BackgroundTransparency = 0
+                end
+                clearParticles()
+            end)
+        end
+    end
+
+    function Library:Toggle(v)
+        Window:Toggle(v)
+    end
+
+    -- ── AddDialog ────────────────────────────────────────────────────────
+    function Window:AddDialog(dialogInfo)
+        dialogInfo = dialogInfo or {}
+        local overlay = New("TextButton", {
+            BackgroundColor3 = Color3.new(0,0,0),
+            BackgroundTransparency = 0.5,
+            Size    = UDim2.fromScale(1, 1),
+            Text    = "",
+            ZIndex  = ZManager.Get("modal"),
+            Parent  = mainFrame,
+        })
+        overlay.BackgroundTransparency = 1
+        TweenService:Create(overlay,
+            TweenInfo.new(0.15, Enum.EasingStyle.Quad),
+            { BackgroundTransparency = 0.5 }):Play()
+
+        local dFrame = New("TextButton", {
+            AnchorPoint = Vector2.new(0.5, 0.5),
+            BackgroundColor3 = "SurfaceColor",
+            Position = UDim2.fromScale(0.5, 0.5),
+            Size     = UDim2.fromOffset(300, 0),
+            AutomaticSize = Enum.AutomaticSize.Y,
+            Text     = "",
+            ZIndex   = ZManager.Get("modal") + 1,
+            Parent   = overlay,
+        })
+        New("UICorner", { CornerRadius = UDim.new(0, info.CornerRadius), Parent = dFrame })
+        New("UIStroke", { Color = "BorderColor", Thickness = 1, Parent = dFrame })
+        New("UIPadding", {
+            PaddingLeft = UDim.new(0, 16), PaddingRight = UDim.new(0, 16),
+            PaddingTop  = UDim.new(0, 14), PaddingBottom= UDim.new(0, 14),
+            Parent = dFrame,
+        })
+        New("UIListLayout", { Padding = UDim.new(0, 10), Parent = dFrame })
+
+        local scaleI = Instance.new("UIScale")
+        scaleI.Scale = 0.94
+        scaleI.Parent = dFrame
+        TweenService:Create(scaleI,
+            TweenInfo.new(0.18, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+            { Scale = 1 }):Play()
+        task.delay(0.22, function()
+            if scaleI and scaleI.Parent then scaleI:Destroy() end
+        end)
+
+        -- Title
+        if dialogInfo.Title then
+            New("TextLabel", {
+                BackgroundTransparency = 1,
+                Size = UDim2.new(1, 0, 0, 22),
+                Text = dialogInfo.Title,
+                TextSize = Tokens.FontSize.H3,
+                TextXAlignment = Enum.TextXAlignment.Left,
+                LayoutOrder = 1,
+                Parent = dFrame,
+            })
+        end
+        if dialogInfo.Description then
+            New("TextLabel", {
+                BackgroundTransparency = 1,
+                Size = UDim2.new(1, 0, 0, 0),
+                AutomaticSize = Enum.AutomaticSize.Y,
+                Text = dialogInfo.Description,
+                TextSize = Tokens.FontSize.MD,
+                TextColor3 = "TextSecondary",
+                TextXAlignment = Enum.TextXAlignment.Left,
+                TextWrapped = true,
+                LayoutOrder = 2,
+                Parent = dFrame,
+            })
+        end
+
+        -- Separator
+        New("Frame", {
+            BackgroundColor3 = "BorderColor",
+            Size = UDim2.new(1, 0, 0, 1),
+            LayoutOrder = 3,
+            Parent = dFrame,
+        })
+
+        -- Buttons
+        local btnRow = New("Frame", {
+            BackgroundTransparency = 1,
+            Size = UDim2.new(1, 0, 0, 0),
+            AutomaticSize = Enum.AutomaticSize.Y,
+            LayoutOrder = 4,
+            Parent = dFrame,
+        })
+        New("UIListLayout", {
+            FillDirection = Enum.FillDirection.Horizontal,
+            HorizontalAlignment = Enum.HorizontalAlignment.Right,
+            Padding = UDim.new(0, 8),
+            Parent  = btnRow,
+        })
+
+        local Dialog = {
+            Frame   = dFrame,
+            Overlay = overlay,
+        }
+
+        function Dialog:Dismiss()
+            Library.ActiveDialog = nil
+            local ti = TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+            if dFrame and dFrame.Parent then
+                TweenService:Create(dFrame, ti, { BackgroundTransparency = 1 }):Play()
+            end
+            TweenService:Create(overlay, ti, { BackgroundTransparency = 1 }):Play()
+            task.delay(0.14, function()
+                if overlay and overlay.Parent then overlay:Destroy() end
+            end)
+        end
+
+        function Dialog:AddButton(btnInfo)
+            local col = btnInfo.Variant == "Primary" and Library.Scheme.AccentColor
+                     or btnInfo.Variant == "Danger"  and Library.Scheme.DangerColor
+                     or Library.Scheme.SurfaceColor
+
+            local b = New("TextButton", {
+                BackgroundColor3 = col,
+                Size = UDim2.fromOffset(0, 26),
+                AutomaticSize = Enum.AutomaticSize.X,
+                Text = "",
+                Parent = btnRow,
+            })
+            New("UICorner", { CornerRadius = UDim.new(0, Tokens.RadiusSM), Parent = b })
+            New("UIStroke", { Color = "BorderColor", Thickness = 1, Parent = b })
+            New("UIPadding", {
+                PaddingLeft = UDim.new(0, 14), PaddingRight = UDim.new(0, 14),
+                Parent = b,
+            })
+            New("TextLabel", {
+                BackgroundTransparency = 1,
+                Size = UDim2.fromScale(1, 1),
+                Text = btnInfo.Title or "OK",
+                TextSize = Tokens.FontSize.MD,
+                TextColor3 = btnInfo.Variant == "Primary" and Color3.new(1,1,1) or "TextPrimary",
+                Parent = b,
+            })
+            b.MouseButton1Click:Connect(function()
+                if btnInfo.Callback then pcall(btnInfo.Callback, Dialog) end
+                if dialogInfo.AutoDismiss ~= false then Dialog:Dismiss() end
+            end)
+            return b
+        end
+
+        for i, btn in ipairs(dialogInfo.FooterButtons or {}) do
+            Dialog:AddButton(btn)
+        end
+
+        if dialogInfo.OutsideClickDismiss ~= false then
+            overlay.MouseButton1Click:Connect(function()
+                Dialog:Dismiss()
+            end)
+        end
+
+        Library.ActiveDialog = Dialog
+        return Dialog
+    end
+
+    -- ── Settings Tab (pinned at bottom of sidebar) ────────────────────────
+    function Window:AddSettingsPanel()
+        -- Settings tab button pinned at the bottom of the sidebar
+        local settingsBtn = New("TextButton", {
+            AnchorPoint      = Vector2.new(0, 1),
+            BackgroundColor3 = "SurfaceAltColor",
+            BackgroundTransparency = 1,
+            Position         = UDim2.new(0, 6, 1, -6),
+            Size             = UDim2.new(1, -12, 0, 30),
+            Text             = "",
+            ClipsDescendants = false,
+            ZIndex           = sidebar.ZIndex + 1,
+            Parent           = sidebar,
+        })
+        New("UICorner", { CornerRadius = UDim.new(0, Tokens.RadiusSM), Parent = settingsBtn })
+
+        -- Separator line above settings button
+        New("Frame", {
+            AnchorPoint      = Vector2.new(0, 1),
+            BackgroundColor3 = "BorderColor",
+            Position         = UDim2.new(0, 0, 1, -36),
+            Size             = UDim2.new(1, 0, 0, 1),
+            ZIndex           = sidebar.ZIndex,
+            Parent           = sidebar,
+        })
+
+        local settingsBtnLabel = New("TextLabel", {
+            BackgroundTransparency = 1,
+            Position         = UDim2.fromOffset(14, 0),
+            Size             = UDim2.new(1, -14, 1, 0),
+            Text             = "Settings",
+            TextSize         = Tokens.FontSize.MD,
+            TextTransparency = 0.5,
+            TextXAlignment   = Enum.TextXAlignment.Left,
+            ZIndex           = settingsBtn.ZIndex,
+            Parent           = settingsBtn,
+        })
+
+        local settingsActiveBar = New("Frame", {
+            AnchorPoint      = Vector2.new(0, 0.5),
+            BackgroundColor3 = "AccentColor",
+            Position         = UDim2.new(0, 3, 0.5, 0),
+            Size             = UDim2.fromOffset(3, 0),
+            ZIndex           = settingsBtn.ZIndex + 1,
+            Parent           = settingsBtn,
+        })
+        New("UICorner", { CornerRadius = UDim.new(1, 0), Parent = settingsActiveBar })
+
+        -- Content panel (same structure as a tab container)
+        local settingsContainer = New("Frame", {
+            BackgroundTransparency = 1,
+            Size             = UDim2.fromScale(1, 1),
+            Visible          = false,
+            ClipsDescendants = true,
+            Parent           = contentArea,
+        })
+
+        local scrollLeft = New("ScrollingFrame", {
+            BackgroundTransparency = 1,
+            BorderSizePixel        = 0,
+            CanvasSize             = UDim2.fromOffset(0, 0),
+            AutomaticCanvasSize    = Enum.AutomaticSize.Y,
+            ScrollBarThickness     = 3,
+            Position               = UDim2.fromOffset(0, 0),
+            Size                   = UDim2.new(0.5, -1, 1, 0),
+            Parent                 = settingsContainer,
+        })
+        New("UIPadding", {
+            PaddingLeft = UDim.new(0,8), PaddingRight  = UDim.new(0,4),
+            PaddingTop  = UDim.new(0,8), PaddingBottom = UDim.new(0,8),
+            Parent = scrollLeft,
+        })
+        New("UIListLayout", { Padding = UDim.new(0,8), SortOrder = Enum.SortOrder.LayoutOrder, Parent = scrollLeft })
+
+        New("Frame", {
+            BackgroundColor3 = "BorderColor",
+            Position = UDim2.new(0.5,-1,0,0),
+            Size     = UDim2.new(0,1,1,0),
+            Parent   = settingsContainer,
+        })
+
+        local scrollRight = New("ScrollingFrame", {
+            BackgroundTransparency = 1,
+            BorderSizePixel        = 0,
+            CanvasSize             = UDim2.fromOffset(0, 0),
+            AutomaticCanvasSize    = Enum.AutomaticSize.Y,
+            ScrollBarThickness     = 3,
+            Position               = UDim2.new(0.5, 1, 0, 0),
+            Size                   = UDim2.new(0.5, -1, 1, 0),
+            Parent                 = settingsContainer,
+        })
+        New("UIPadding", {
+            PaddingLeft = UDim.new(0,4), PaddingRight  = UDim.new(0,8),
+            PaddingTop  = UDim.new(0,8), PaddingBottom = UDim.new(0,8),
+            Parent = scrollRight,
+        })
+        New("UIListLayout", { Padding = UDim.new(0,8), SortOrder = Enum.SortOrder.LayoutOrder, Parent = scrollRight })
+
+        local function makeGroupbox(name, parent)
+            local boxHolder = New("Frame", {
+                BackgroundColor3 = "SurfaceColor",
+                Size             = UDim2.new(1, 0, 0, 0),
+                AutomaticSize    = Enum.AutomaticSize.Y,
+                Parent           = parent,
+            })
+            New("UICorner", { CornerRadius = UDim.new(0, Tokens.RadiusMD), Parent = boxHolder })
+            New("UIStroke",  { Color = "BorderColor", Thickness = 1, Parent = boxHolder })
+
+            if name and name ~= "" then
+                local hdr = New("Frame", {
+                    BackgroundTransparency = 1,
+                    Size = UDim2.new(1,0,0,32),
+                    Parent = boxHolder,
+                })
+                New("TextLabel", {
+                    BackgroundTransparency = 1,
+                    Position  = UDim2.fromOffset(12,0),
+                    Size      = UDim2.new(1,-12,1,0),
+                    Text      = name,
+                    TextSize  = Tokens.FontSize.MD,
+                    TextColor3 = "TextPrimary",
+                    TextXAlignment = Enum.TextXAlignment.Left,
+                    Parent    = hdr,
+                })
+                New("Frame", {
+                    AnchorPoint      = Vector2.new(0,1),
+                    BackgroundColor3 = "BorderColor",
+                    Position         = UDim2.fromScale(0,1),
+                    Size             = UDim2.new(1,0,0,1),
+                    Parent           = hdr,
+                })
+            end
+
+            local container = New("Frame", {
+                BackgroundTransparency = 1,
+                Position  = UDim2.fromOffset(0, (name and name ~= "") and 33 or 0),
+                Size      = UDim2.new(1,0,0,0),
+                AutomaticSize = Enum.AutomaticSize.Y,
+                Parent    = boxHolder,
+            })
+            New("UIPadding", {
+                PaddingLeft   = UDim.new(0,10), PaddingRight  = UDim.new(0,10),
+                PaddingTop    = UDim.new(0,6),  PaddingBottom = UDim.new(0,8),
+                Parent = container,
+            })
+            New("UIListLayout", { Padding = UDim.new(0,5), Parent = container })
+
+            local gb = setmetatable({
+                Name = name or "", Elements = {}, DependencyBoxes = {},
+                Container = container, BoxHolder = boxHolder, Visible = true,
+            }, BaseGroupbox)
+            function gb:Resize()
+                task.defer(function()
+                    if not container or not container.Parent then return end
+                    local l = container:FindFirstChildOfClass("UIListLayout")
+                    if l then container.Size = UDim2.new(1,0,0, l.AbsoluteContentSize.Y+14) end
+                end)
+            end
+            return gb
+        end
+
+        local function activateSettings()
+            -- Deactivate all regular tabs
+            for _, t in pairs(Window.Tabs) do
+                TweenService:Create(t._btn,   TweenInfo.new(0.13, Enum.EasingStyle.Quad), { BackgroundTransparency = 1 }):Play()
+                TweenService:Create(t._label, TweenInfo.new(0.13, Enum.EasingStyle.Quad), { TextTransparency = 0.5 }):Play()
+                t._bar.Size = UDim2.fromOffset(3, 0)
+                if t.Container then t.Container.Visible = false end
+            end
+            showTabContent({ Container = settingsContainer }, nil)
+            Window.ActiveTab = "settings"
+            TweenService:Create(settingsBtn,      TweenInfo.new(0.13, Enum.EasingStyle.Quad), { BackgroundTransparency = 0 }):Play()
+            TweenService:Create(settingsBtnLabel, TweenInfo.new(0.13, Enum.EasingStyle.Quad), { TextTransparency = 0 }):Play()
+            TweenService:Create(settingsActiveBar, TweenInfo.new(0.1, Enum.EasingStyle.Quad), { Size = UDim2.fromOffset(3, 18) }):Play()
+        end
+
+        windowMaid:Connect(settingsBtn.MouseButton1Click, function()
+            if Window.ActiveTab == "settings" then return end
+            activateSettings()
+        end)
+        windowMaid:Connect(settingsBtn.MouseEnter, function()
+            if Window.ActiveTab ~= "settings" then
+                TweenService:Create(settingsBtnLabel, TweenInfo.new(0.1,Enum.EasingStyle.Quad), { TextTransparency = 0.2 }):Play()
+            end
+        end)
+        windowMaid:Connect(settingsBtn.MouseLeave, function()
+            if Window.ActiveTab ~= "settings" then
+                TweenService:Create(settingsBtnLabel, TweenInfo.new(0.1,Enum.EasingStyle.Quad), { TextTransparency = 0.5 }):Play()
+            end
+        end)
+
+        local Settings = {
+            Container = settingsContainer,
+            Visible   = false,
+            _btn      = settingsBtn,
+            _label    = settingsBtnLabel,
+            _bar      = settingsActiveBar,
+        }
+        function Settings:AddLeftGroupbox(name)  return makeGroupbox(name, scrollLeft)  end
+        function Settings:AddRightGroupbox(name) return makeGroupbox(name, scrollRight) end
+        function Settings:Show()  activateSettings() end
+
+        Window.Settings = Settings
+        return Settings
+    end
+    Window.SearchText  = ""
+    Window.IsSearching = false
+
+    local function applySearch(query)
+        query = (query or ""):lower():match("^%s*(.-)%s*$")
+        Window.SearchText  = query
+        Window.IsSearching = query ~= ""
+
+        local activeTab = Window.ActiveTab
+        if not activeTab then return end
+
+        local function restoreGroupbox(gb)
+            for _, el in ipairs(gb.Elements or {}) do
+                if el.Holder then el.Holder.Visible = el.Visible ~= false end
+            end
+            if gb.BoxHolder then gb.BoxHolder.Visible = true end
+        end
+
+        for _, gb in ipairs(activeTab.Groupboxes or {}) do
+            restoreGroupbox(gb)
+        end
+
+        if not Window.IsSearching then return end
+
+        local function filterGroupbox(gb)
+            local anyVisible = false
+            for _, el in ipairs(gb.Elements or {}) do
+                if el.Type == "Divider" then
+                    if el.Holder then el.Holder.Visible = false end
+                elseif el.Holder then
+                    local txt = (el.Text or ""):lower()
+                    local match = txt:find(query, 1, true) ~= nil
+                    el.Holder.Visible = match and el.Visible ~= false
+                    if el.Holder.Visible then anyVisible = true end
+                end
+            end
+            if gb.BoxHolder then gb.BoxHolder.Visible = anyVisible end
+        end
+
+        for _, gb in ipairs(activeTab.Groupboxes or {}) do
+            filterGroupbox(gb)
+        end
+    end
+
+    windowMaid:Connect(searchBox:GetPropertyChangedSignal("Text"), function()
+        applySearch(searchBox.Text)
+    end)
+
+    -- ── Notification helper ───────────────────────────────────────────────
+    function Window:Notify(msg, duration)
+        return ToastSystem.Info(msg, { Duration = duration })
+    end
+
+    -- ── Keybind handler ───────────────────────────────────────────────────
+    windowMaid:Connect(UserInputService.InputBegan, function(input, gpe)
+        if input.KeyCode == Library.ToggleKeybind then
+            Window:Toggle()
+            return
+        end
+        if gpe then return end
+        if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then
+            if input.KeyCode == Enum.KeyCode.Z then
+                if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then
+                    UndoManager.Redo("default")
+                else
+                    UndoManager.Undo("default")
+                end
+            end
+            if input.KeyCode == Enum.KeyCode.D then
+                DebugOverlay.Toggle()
+            end
+        end
+    end)
+
+    if info.AutoShow then
+        Window:Toggle(true)
+    end
+
+    PluginSystem.Emit("onWindowCreate", Window)
+    Library.Window = Window
+
+    -- Register default commands
+    CommandPalette.Register({ name = "Toggle Window",       category = "UI",    action = function() Window:Toggle() end })
+    CommandPalette.Register({ name = "Toggle Debug Overlay",category = "Debug", action = function() DebugOverlay.Toggle() end })
+    CommandPalette.Register({ name = "Toggle Light Mode",   category = "Theme", action = function() Library:ToggleLightMode(true) end })
+    CommandPalette.Register({ name = "Reset Theme to Dark", category = "Theme", action = function() Library:SetTheme("Dark", nil, true) end })
+    CommandPalette.Register({ name = "Theme: Midnight",     category = "Theme", action = function() Library:SetTheme("Midnight", nil, true) end })
+    CommandPalette.Register({ name = "Theme: Ember",        category = "Theme", action = function() Library:SetTheme("Ember", nil, true) end })
+
+    -- Built-in Settings panel (Appearance / Keybinds / Configs / Misc).
+    -- Settings:AddLeftGroupbox / AddRightGroupbox remain available afterwards
+    -- so a script can append its own groupboxes to the same panel.
+    if info.BuiltinSettings then
+        local Settings = Window:AddSettingsPanel()
+        PopulateBuiltinSettings(Window, Settings)
+    end
+
+    return Window
+end
+
+-- ─── Notify shorthand ──────────────────────────────────────────────────────
+function Library:Notify(msg, notifType, duration)
+    return ToastSystem.Show(msg, notifType or "info", { Duration = duration })
+end
+
+-- ─── Loading Screen ────────────────────────────────────────────────────────
+function Library:CreateLoading(options)
+    return LoadingScreen.Create(options)
+end
+
+-- ─── Unload ────────────────────────────────────────────────────────────────
+function Library:Unload()
+    Library.Unloaded = true
+    LibraryMaid:Destroy()
+    pcall(function()
+        RunService:UnbindFromRenderStep("NexusUI_cursor")
+    end)
+    if ScreenGui and ScreenGui.Parent then
+        ScreenGui:Destroy()
+    end
+    if getgenv then
+        getgenv().NexusUI = nil
+    end
+    EventBus:Emit("unload")
+end
+
+-- ─── Export ────────────────────────────────────────────────────────────────
+if getgenv then
+    getgenv().NexusUI = Library
+end
