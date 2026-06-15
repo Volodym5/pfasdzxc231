@@ -14,48 +14,23 @@ local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local Networking = require(game.ReplicatedStorage.SharedModules.Networking)
 
--- Sorted by price (cheapest first)
 local fruitNames = {
-    "Carrot",
-    "Strawberry",
-    "Blueberry",
-    "Tulip",
-    "Tomato",
-    "Apple",
-    "Bamboo",
-    "Corn",
-    "Cactus",
-    "Pineapple",
-    "Mushroom",
-    "Green Bean",
-    "Banana",
-    "Grape",
-    "Coconut",
-    "Mango",
-    "Dragon Fruit",
-    "Acorn",
-    "Cherry",
-    "Sunflower",
-    "Venus Fly Trap",
-    "Pomegranate",
-    "Poison Apple",
-    "Moon Bloom",
-    "Dragon's Breath",
+    "Carrot", "Strawberry", "Blueberry", "Tulip", "Tomato", "Apple",
+    "Bamboo", "Corn", "Cactus", "Pineapple", "Mushroom", "Green Bean",
+    "Banana", "Grape", "Coconut", "Mango", "Dragon Fruit", "Acorn",
+    "Cherry", "Sunflower", "Venus Fly Trap", "Pomegranate", "Poison Apple",
+    "Moon Bloom", "Dragon's Breath",
 }
 
--- Make all prompts instant (except steal prompts)
+-- Make harvest prompts instant only
 for _, prompt in ipairs(game:GetDescendants()) do
-    if prompt:IsA("ProximityPrompt") then
-        if prompt.ActionText ~= "Steal" then
-            prompt.HoldDuration = 0
-        end
+    if prompt:IsA("ProximityPrompt") and prompt.ActionText == "Harvest" then
+        prompt.HoldDuration = 0
     end
 end
 game.DescendantAdded:Connect(function(obj)
-    if obj:IsA("ProximityPrompt") then
-        if obj.ActionText ~= "Steal" then
-            obj.HoldDuration = 0
-        end
+    if obj:IsA("ProximityPrompt") and obj.ActionText == "Harvest" then
+        obj.HoldDuration = 0
     end
 end)
 
@@ -71,8 +46,6 @@ local lastSeedPack = 0
 local seedPackDelay = 1
 local homePosition = nil
 local ignoredSeeds = {}
-local lastSteal = 0
-local stealDelay = 0.3
 
 -- WalkSpeed
 local walkSpeedEnabled = false
@@ -85,24 +58,17 @@ local function startWalkSpeed()
         local char = player.Character
         if char then
             local humanoid = char:FindFirstChild("Humanoid")
-            if humanoid then
-                humanoid.WalkSpeed = walkSpeedValue
-            end
+            if humanoid then humanoid.WalkSpeed = walkSpeedValue end
         end
     end)
 end
 
 local function stopWalkSpeed()
-    if walkSpeedConnection then
-        walkSpeedConnection:Disconnect()
-        walkSpeedConnection = nil
-    end
+    if walkSpeedConnection then walkSpeedConnection:Disconnect(); walkSpeedConnection = nil end
     local char = player.Character
     if char then
         local humanoid = char:FindFirstChild("Humanoid")
-        if humanoid then
-            humanoid.WalkSpeed = 16
-        end
+        if humanoid then humanoid.WalkSpeed = 16 end
     end
 end
 
@@ -117,26 +83,21 @@ local function startFly()
     if char and char:FindFirstChild("HumanoidRootPart") then
         local root = char.HumanoidRootPart
         local humanoid = char.Humanoid
-        
         local bodyGyro = Instance.new("BodyGyro")
         bodyGyro.P = 9e4
         bodyGyro.MaxTorque = Vector3.new(9e4, 9e4, 9e4)
         bodyGyro.CFrame = root.CFrame
         bodyGyro.Parent = root
-        
         local bodyVelocity = Instance.new("BodyVelocity")
         bodyVelocity.Velocity = Vector3.zero
         bodyVelocity.MaxForce = Vector3.new(9e4, 9e4, 9e4)
         bodyVelocity.Parent = root
-        
         humanoid.PlatformStand = true
         
         flyConnection = RunService.RenderStepped:Connect(function()
             if not flyEnabled then return end
             if not root or not root.Parent then return end
-            
             bodyGyro.CFrame = workspace.CurrentCamera.CFrame
-            
             local moveVector = Vector3.zero
             if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveVector = moveVector + workspace.CurrentCamera.CFrame.LookVector end
             if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveVector = moveVector - workspace.CurrentCamera.CFrame.LookVector end
@@ -144,17 +105,13 @@ local function startFly()
             if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveVector = moveVector + workspace.CurrentCamera.CFrame.RightVector end
             if UserInputService:IsKeyDown(Enum.KeyCode.Space) then moveVector = moveVector + Vector3.new(0, 1, 0) end
             if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then moveVector = moveVector - Vector3.new(0, 1, 0) end
-            
             bodyVelocity.Velocity = moveVector.Magnitude > 0 and moveVector.Unit * flySpeed or Vector3.zero
         end)
     end
 end
 
 local function stopFly()
-    if flyConnection then
-        flyConnection:Disconnect()
-        flyConnection = nil
-    end
+    if flyConnection then flyConnection:Disconnect(); flyConnection = nil end
     local char = player.Character
     if char then
         local root = char:FindFirstChild("HumanoidRootPart")
@@ -169,10 +126,7 @@ end
 
 local function isNightTime()
     local night = game.ReplicatedStorage:FindFirstChild("Night")
-    if night and night:IsA("BoolValue") then
-        return night.Value == true
-    end
-    return false
+    return night and night:IsA("BoolValue") and night.Value == true
 end
 
 local function collectSeedPack()
@@ -180,28 +134,15 @@ local function collectSeedPack()
     if not char then return end
     local root = char:FindFirstChild("HumanoidRootPart")
     if not root then return end
-    
-    local seedPackPart = workspace.Map.SeedPackSpawnServerLocations:FindFirstChild("Part")
-    if seedPackPart and seedPackPart:IsA("BasePart") then
-        root.CFrame = seedPackPart.CFrame * CFrame.new(0, 2, 2)
+    local part = workspace.Map.SeedPackSpawnServerLocations:FindFirstChild("Part")
+    if part and part:IsA("BasePart") then
+        root.CFrame = part.CFrame * CFrame.new(0, 2, 2)
         task.wait(0.1)
-        local prompt = seedPackPart:FindFirstChildOfClass("ProximityPrompt")
+        local prompt = part:FindFirstChildOfClass("ProximityPrompt")
         if prompt then fireproximityprompt(prompt) end
-        firetouchinterest(root, seedPackPart, 0)
-        firetouchinterest(root, seedPackPart, 1)
+        firetouchinterest(root, part, 0)
+        firetouchinterest(root, part, 1)
     end
-end
-
-local function isPlotUnlocked(plotNum)
-    local plotGui = player.PlayerGui:FindFirstChild("Plot" .. plotNum)
-    if plotGui then
-        local playerFrame = plotGui:FindFirstChild("PlayerFrame")
-        if playerFrame then
-            local unlocked = playerFrame:FindFirstChild("Unlocked")
-            if unlocked then return unlocked.Visible end
-        end
-    end
-    return false
 end
 
 local function getHomePosition()
@@ -249,6 +190,9 @@ local function doHarvest()
     end
 end
 
+local stealQueue = {}
+local stealQueueIndex = 0
+
 local function doSteal()
     if not isNightTime() then return end
     
@@ -258,79 +202,78 @@ local function doSteal()
     if not root then return end
     local myUserId = player.UserId
     
-    local savedCFrame = root.CFrame
-    
-    for _, obj in ipairs(workspace:GetDescendants()) do
-        if obj.Name == "HarvestPart" and obj:IsA("BasePart") and obj.Parent then
-            local prompt = obj:FindFirstChildOfClass("ProximityPrompt")
-            if not prompt or prompt.ActionText ~= "Steal" then continue end
-            
-            local fruitModel = obj.Parent
-            local plant = fruitModel.Parent
-            if not plant then continue end
-            
-            local userId = plant:GetAttribute("UserId")
-            if not userId or userId == myUserId then continue end
-            
-            local seedName = plant:GetAttribute("SeedName")
-            if seedName and ignoredSeeds[seedName] then continue end
-            
-            local current = obj
-            local plotNum = nil
-            while current do
-                if current.Name:find("^Plot%d+$") then
-                    plotNum = tonumber(current.Name:match("%d+$"))
-                    break
-                end
-                current = current.Parent
-            end
-            if not plotNum or not isPlotUnlocked(plotNum) then continue end
-            
-            root.CFrame = obj.CFrame * CFrame.new(0, 2, 2)
-            task.wait(0.08)
-            
-            fireproximityprompt(prompt)
-            firetouchinterest(root, obj, 0)
-            firetouchinterest(root, obj, 1)
-            
-            if prompt.HoldDuration > 0 then
-                local holdEnd = tick() + prompt.HoldDuration
-                while tick() < holdEnd do
-                    fireproximityprompt(prompt)
-                    task.wait(0.1)
+    -- Build queue of all stealable fruits
+    if #stealQueue == 0 then
+        stealQueue = {}
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            if obj.Name == "HarvestPart" and obj:IsA("BasePart") and obj.Parent then
+                local prompt = obj:FindFirstChildOfClass("ProximityPrompt")
+                if prompt and prompt.ActionText == "Steal" then
+                    local fruitModel = obj.Parent
+                    local plant = fruitModel.Parent
+                    if plant then
+                        local userId = plant:GetAttribute("UserId")
+                        if userId and userId ~= myUserId then
+                            local seedName = plant:GetAttribute("SeedName")
+                            if not seedName or not ignoredSeeds[seedName] then
+                                table.insert(stealQueue, {part = obj, prompt = prompt})
+                            end
+                        end
+                    end
                 end
             end
-            
-            task.wait(0.08)
         end
+        stealQueueIndex = 0
     end
     
-    root.CFrame = savedCFrame
+    if #stealQueue == 0 then return end
+    
+    -- Process one fruit per call
+    stealQueueIndex = stealQueueIndex + 1
+    if stealQueueIndex > #stealQueue then
+        stealQueueIndex = 1
+    end
+    
+    local target = stealQueue[stealQueueIndex]
+    if not target or not target.part or not target.part.Parent then
+        stealQueue = {}
+        return
+    end
+    
+    -- Teleport and steal
+    root.CFrame = target.part.CFrame * CFrame.new(0, 2, 2)
+    
+    fireproximityprompt(target.prompt)
+    firetouchinterest(root, target.part, 0)
+    firetouchinterest(root, target.part, 1)
+    
+    if target.prompt.HoldDuration > 0 then
+        local holdEnd = tick() + target.prompt.HoldDuration
+        while tick() < holdEnd do
+            fireproximityprompt(target.prompt)
+            task.wait(0.1)
+        end
+    end
 end
 
 local function doSell()
-    pcall(function()
-        Networking.NPCS.SellAll:Fire()
-    end)
+    pcall(function() Networking.NPCS.SellAll:Fire() end)
 end
 
 RunService.Heartbeat:Connect(function()
     local now = tick()
     if harvestEnabled and now - lastHarvest > harvestDelay then
-        lastHarvest = now
-        doHarvest()
+        lastHarvest = now; doHarvest()
     end
     if sellEnabled and now - lastSell > sellDelay then
-        lastSell = now
-        doSell()
+        lastSell = now; doSell()
     end
-    if stealEnabled and now - lastSteal > stealDelay then
-        lastSteal = now
+    if stealEnabled then
         doSteal()
+        task.wait(0.3)
     end
     if seedPackEnabled and now - lastSeedPack > seedPackDelay then
-        lastSeedPack = now
-        collectSeedPack()
+        lastSeedPack = now; collectSeedPack()
     end
 end)
 
@@ -350,6 +293,7 @@ FarmBox:AddToggle("Steal", {
     Risky = true,
     Callback = function(value)
         stealEnabled = value
+        stealQueue = {}
         if not value then goHome() end
     end,
 })
@@ -358,9 +302,7 @@ FarmBox:AddDropdown("IgnoreList", {
     Text = "Ignore List",
     Values = fruitNames,
     Multi = true,
-    Callback = function(selected)
-        ignoredSeeds = selected
-    end,
+    Callback = function(selected) ignoredSeeds = selected end,
 })
 
 FarmBox:AddToggle("Sell", {
@@ -389,18 +331,12 @@ MovementBox:AddToggle("WalkSpeed", {
 })
 
 MovementBox:AddSlider("WalkSpeedValue", {
-    Text = "Walk Speed",
-    Default = 24,
-    Min = 16,
-    Max = 200,
-    Rounding = 0,
+    Text = "Walk Speed", Default = 24, Min = 16, Max = 200, Rounding = 0,
     Callback = function(value) walkSpeedValue = value end,
 })
 
 MovementBox:AddKeyPicker("WalkSpeedKey", {
-    Text = "WalkSpeed",
-    Default = "V",
-    Mode = "Toggle",
+    Text = "WalkSpeed", Default = "V", Mode = "Toggle",
     Callback = function()
         walkSpeedEnabled = not walkSpeedEnabled
         UI.Toggles.WalkSpeed:SetValue(walkSpeedEnabled)
@@ -409,8 +345,7 @@ MovementBox:AddKeyPicker("WalkSpeedKey", {
 })
 
 MovementBox:AddToggle("Fly", {
-    Text = "Fly",
-    Default = false,
+    Text = "Fly", Default = false,
     Callback = function(value)
         flyEnabled = value
         if value then startFly() else stopFly() end
@@ -418,18 +353,12 @@ MovementBox:AddToggle("Fly", {
 })
 
 MovementBox:AddSlider("FlySpeed", {
-    Text = "Fly Speed",
-    Default = 50,
-    Min = 10,
-    Max = 200,
-    Rounding = 0,
+    Text = "Fly Speed", Default = 50, Min = 10, Max = 200, Rounding = 0,
     Callback = function(value) flySpeed = value end,
 })
 
 MovementBox:AddKeyPicker("FlyKey", {
-    Text = "Fly",
-    Default = "B",
-    Mode = "Toggle",
+    Text = "Fly", Default = "B", Mode = "Toggle",
     Callback = function()
         flyEnabled = not flyEnabled
         UI.Toggles.Fly:SetValue(flyEnabled)
@@ -438,8 +367,6 @@ MovementBox:AddKeyPicker("FlyKey", {
 })
 
 MovementBox:AddKeyPicker("HomeKey", {
-    Text = "Teleport Home",
-    Default = "T",
-    Mode = "Always",
+    Text = "Teleport Home", Default = "T", Mode = "Always",
     Callback = function() goHome() end,
 })
