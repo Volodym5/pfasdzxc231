@@ -7076,7 +7076,7 @@ function Library:CreateWindow(info)
             -- Accent left bar on header
             New("Frame", {
                 BackgroundColor3 = "AccentColor",
-                Position = UDim2.fromOffset(-5, 8),
+                Position = UDim2.fromOffset(-7, 7.5),
                 Size     = UDim2.fromOffset(3, 16),
                 ZIndex   = boxHolder.ZIndex + 1,
                 Parent   = header,
