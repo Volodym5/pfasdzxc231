@@ -57,7 +57,7 @@ local buyGearIndex = 0
 local lastSell = 0
 local sellDelay = 2
 local lastSeedPack = 0
-local seedPackDelay = 0.005
+local seedPackDelay = 0.001
 local lastAutoBuySeed = 0
 local lastAutoBuyGear = 0
 local autoBuyDelay = 0.07
@@ -68,7 +68,7 @@ local harvestCache = {}
 local lastHarvestScan = 0
 local harvestScanDelay = 4
 local harvestIndex = 0
-local harvestCollectDelay = 0.05
+local harvestCollectDelay = 0.2
 local lastHarvestCollect = 0
 
 local antiCactusEnabled = false
