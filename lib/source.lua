@@ -5,7 +5,7 @@
     ── 1. STARTUP ──────────────────────────────────────────────────────────────
     Load the library and create a window. All components hang off the window.
 
-        local UI = loadstring(game:HttpGet("YOUR_RAW_URL"))()
+        local UI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Volodym5/pfasdzxc231/main/lib/source.lua"))()
 
         local Window = UI:CreateWindow({
             Title           = "My Menu",          -- window title
