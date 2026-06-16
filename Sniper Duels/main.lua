@@ -759,7 +759,7 @@ local Window = UI:CreateWindow({
     Size           = UDim2.fromOffset(520, 440),
     Center         = true,
     Resizable      = true,
-    ToggleKeybind  = Enum.KeyCode.Insert,
+    ToggleKeybind  = Enum.KeyCode.RightShift,
     AutoShow       = true,
 })
 
