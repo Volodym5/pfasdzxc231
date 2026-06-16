@@ -3,20 +3,29 @@
     =====================
 
     ── 1. STARTUP ──────────────────────────────────────────────────────────────
-    Load the library and create a window. Everything is built off the window.
+    Load the library and create a window. All components hang off the window.
 
         local UI = loadstring(game:HttpGet("YOUR_RAW_URL"))()
 
         local Window = UI:CreateWindow({
-            Title          = "My Menu",
-            Size           = UDim2.fromOffset(760, 540),
-            Center         = true,
-            Resizable      = true,
-            ToggleKeybind  = Enum.KeyCode.RightControl,
-            AutoShow       = true,
+            Title           = "My Menu",          -- window title
+            Footer          = "v1.0",             -- small text in bottom-right
+            Size            = UDim2.fromOffset(720, 540),
+            Center          = true,               -- false = use Position instead
+            Position        = UDim2.fromOffset(80, 80),
+            Resizable       = true,
+            CornerRadius    = 7,                  -- corner rounding in px
+            ToggleKeybind   = Enum.KeyCode.RightControl,
+            AutoShow        = true,               -- show immediately on load
+            PageTransition  = "fade",             -- "fade" | "slide" | "scale"
+            ShowCustomCursor = true,
+            ConfigFolder    = "MyScript",         -- folder name for saved configs
+            BuiltinSettings = true,               -- adds Settings tab automatically
         })
 
-        -- Add a tab, then a groupbox inside it (Side = 1 for left, 2 for right)
+        -- Add a tab, then a groupbox inside it
+        -- Side = 1 → left column,  Side = 2 → right column
+        -- If only one side is used it auto-expands to full width.
         local Tab = Window:AddTab("Main")
         local Box = Tab:AddGroupbox({ Name = "Settings", Side = 1 })
 
@@ -33,13 +42,14 @@
         Box:AddToggle("myToggle", {
             Text     = "Enable Feature",
             Default  = false,
-            Risky    = false,       -- true = shows a red warning style
+            Risky    = false,       -- true = red warning style
+            Disabled = false,
             Callback = function(value)
                 print("Toggle is now:", value)
             end,
         })
 
-        -- Read or set the value later:
+        -- Read or set later:
         print(UI.Toggles.myToggle.Value)
         UI.Toggles.myToggle:SetValue(true)
 
@@ -50,16 +60,34 @@
             Min      = 0,
             Max      = 100,
             Rounding = 0,           -- decimal places (0 = integer)
+            Suffix   = " studs",    -- optional unit label shown after value
+            Disabled = false,
             Callback = function(value)
                 print("Slider value:", value)
             end,
         })
 
-        -- Read or set the value later:
+        -- Read or set later:
         print(UI.Options.mySlider.Value)
         UI.Options.mySlider:SetValue(50)
 
-    ── 5. COLOR PICKER ──────────────────────────────────────────────────────────
+    ── 5. INPUT ─────────────────────────────────────────────────────────────────
+        Box:AddInput("myInput", {
+            Text        = "Player Name",
+            Default     = "",
+            Placeholder = "Enter name…",
+            Numeric     = false,    -- true = numbers only
+            Finished    = true,     -- true = callback fires on Enter, false = every keystroke
+            Callback    = function(value)
+                print("Input:", value)
+            end,
+        })
+
+        -- Read or set later:
+        print(UI.Options.myInput.Value)
+        UI.Options.myInput:SetValue("hello")
+
+    ── 6. COLOR PICKER ──────────────────────────────────────────────────────────
         Box:AddColorPicker("myColor", {
             Text     = "Highlight Color",
             Default  = Color3.fromRGB(108, 82, 246),
@@ -68,11 +96,32 @@
             end,
         })
 
-        -- Read or set the value later:
+        -- Read or set later:
         print(UI.Options.myColor.Value)
         UI.Options.myColor:SetValue(Color3.fromRGB(255, 0, 0))
 
-    ── 6. DROPDOWN ──────────────────────────────────────────────────────────────
+    ── 7. KEYBIND ───────────────────────────────────────────────────────────────
+        Box:AddKeyPicker("myKey", {
+            Text     = "Activate",
+            Default  = "F",         -- key name or "None" or "MB1" / "MB2"
+            Mode     = "Toggle",    -- "Toggle" | "Hold" | "Always"
+            NoUI     = false,       -- true = hidden from the Keybinds list in Settings
+            Callback = function(value)
+                -- fires when key state changes (bool in Toggle/Hold, always true in Always)
+                print("Key active:", value)
+            end,
+            Changed  = function(newKey)
+                -- fires when the user rebinds it
+                print("Rebound to:", newKey)
+            end,
+        })
+
+        -- Read or set later:
+        print(UI.Options.myKey.Value)      -- current key name string
+        print(UI.Options.myKey:IsActive()) -- true if currently held/toggled on
+        UI.Options.myKey:SetValue("G")
+
+    ── 8. DROPDOWN ──────────────────────────────────────────────────────────────
         Box:AddDropdown("myDropdown", {
             Text     = "Select Mode",
             Values   = { "Off", "Low", "Medium", "High" },
@@ -82,11 +131,11 @@
             end,
         })
 
-        -- Read or set the value later:
+        -- Read or set later:
         print(UI.Options.myDropdown.Value)
         UI.Options.myDropdown:SetValue("High")
 
-    ── 7. MULTI-DROPDOWN ────────────────────────────────────────────────────────
+    ── 9. MULTI-DROPDOWN ────────────────────────────────────────────────────────
         Box:AddDropdown("myMulti", {
             Text   = "Select Features",
             Values = { "Aimbot", "ESP", "Wallhack", "Speedhack" },
@@ -99,7 +148,7 @@
             end,
         })
 
-        -- Set a default selection explicitly (Multi ignores the Default field):
+        -- Default selection must be set manually for Multi dropdowns:
         UI.Options.myMulti:SetValue("ESP")
 
         -- Read current selections:
@@ -107,12 +156,74 @@
             print(name, enabled)
         end
 
+    ── 10. LABEL ────────────────────────────────────────────────────────────────
+        local lbl = Box:AddLabel("myLabel", { Text = "Hello World", Visible = true })
+        lbl:SetText("Updated text")
+
+    ── 11. DIVIDER ──────────────────────────────────────────────────────────────
+        Box:AddDivider()                        -- plain line
+        Box:AddDivider({ Text = "── Section ──" })  -- line with centred label
+
+    ── 12. DEPENDENCY BOX ───────────────────────────────────────────────────────
+    A sub-groupbox whose elements are shown/hidden as a unit. Drive it from a
+    toggle callback to only show relevant options:
+
+        local depBox = Box:AddDependencyBox()
+        depBox:AddSlider("depSlider", { Text = "Sub Slider", Default = 50, Min = 0, Max = 100, Callback = function() end })
+
+        Box:AddToggle("showDep", {
+            Text = "Show Extra Options",
+            Default = false,
+            Callback = function(v) depBox:SetVisible(v) end,
+        })
+        depBox:SetVisible(false)  -- start hidden
+
+    ── 13. INLINE ADDONS (color picker / keybind on the same row) ───────────────
+    Any toggle, slider, or dropdown can host an inline ColorPicker or KeyPicker
+    on its right side — no extra row needed:
+
+        local toggle = Box:AddToggle("espToggle", { Text = "ESP", Default = false, Callback = function() end })
+        toggle:AddColorPicker("espColor", { Default = Color3.fromRGB(255, 80, 80), Callback = function(c) end })
+        toggle:AddKeyPicker("espKey",    { Default = "X", Mode = "Toggle",          Callback = function(v) end })
+
+    ── 14. TABBOX (sub-tabs inside a groupbox) ──────────────────────────────────
+        local TBox   = Tab:AddTabbox({ Side = 2 })
+        local SubTab = TBox:AddTab("Combat")
+        SubTab:AddToggle("aimbot", { Text = "Aimbot", Default = false, Callback = function() end })
+
+    ── 15. CONFIGS ──────────────────────────────────────────────────────────────
+    Configs save all toggles, sliders, dropdowns, color pickers, keybinds and
+    window size/position. They are stored in the ConfigFolder you set above.
+
+        UI.Config.Save("myConfig")          -- save current state
+        UI.Config.Load("myConfig")          -- restore a saved state
+        UI.Config.SetDefault("myConfig")    -- auto-load this config on next launch
+        UI.Config.GetDefault()              -- returns the current default name (or nil)
+        UI.Config.Exists("myConfig")        -- true if the file exists
+        UI.Config.Delete("myConfig")        -- delete a saved config
+        UI.Config.List()                    -- returns table of all saved config names
+
+    ── 16. KEYBINDS (global) ────────────────────────────────────────────────────
+    These work at all times regardless of what's focused:
+
+        RightControl          — toggle menu open / closed  (customisable via ToggleKeybind)
+        Ctrl + K              — toggle Debug Overlay
+        Ctrl + Shift + P      — open Command Palette
+        Ctrl + Z              — undo last value change
+        Ctrl + Shift + Z      — redo
+
     ── NOTES ────────────────────────────────────────────────────────────────────
-    • All component keys (first argument) must be unique across the whole menu.
-    • Toggles are accessed via UI.Toggles.<key>
-    • Sliders, dropdowns, color pickers, inputs are accessed via UI.Options.<key>
-    • Toggle keybind: RightControl by default (change via ToggleKeybind in CreateWindow)
-    • Built-in Settings tab (Appearance, Keybinds, Configs, Misc) is added automatically.
+    • All component keys (first argument) must be unique across the whole script.
+    • Toggles  → UI.Toggles.<key>.Value   /  :SetValue(bool)
+    • Options  → UI.Options.<key>.Value   /  :SetValue(...)
+      (covers Sliders, Inputs, Dropdowns, ColorPickers, KeyPickers)
+    • Labels   → UI.Labels.<key>          /  :SetText(str)
+    • Buttons are fire-and-forget; they are not saved in configs.
+    • The built-in Settings tab (Appearance, Keybinds, Configs, Misc) is added
+      automatically when BuiltinSettings = true (default). Settings are saved
+      and restored as part of every config.
+    • Window size is saved as the base (100% DPI) size and restores correctly
+      regardless of what DPI scale is active when you load.
 ]]
 
 -- ─── Service Acquisition ───────────────────────────────────────────────────
@@ -2711,7 +2822,11 @@ function Library:MakeDraggable(window, dragHandle, maid, onStart)
 end
 
 function Library:MakeResizable(window, resizeHandle, maid, minSize, onResize, onStart)
-    minSize = minSize or Vector2.new(400, 300)
+    -- minSize may be a Vector2 or a function() returning Vector2 (for DPI-aware min)
+    local function getMin()
+        if type(minSize) == "function" then return minSize() end
+        return minSize or Vector2.new(400, 300)
+    end
     local dragging = false
     local startMouse, startSize
 
@@ -2727,11 +2842,12 @@ function Library:MakeResizable(window, resizeHandle, maid, minSize, onResize, on
         if not dragging then return end
         if input.UserInputType ~= Enum.UserInputType.MouseMovement then return end
         local delta = input.Position - startMouse
+        local mn = getMin()
         window.Size = UDim2.new(
             startSize.X.Scale,
-            math.max(minSize.X, startSize.X.Offset + delta.X),
+            math.max(mn.X, startSize.X.Offset + delta.X),
             startSize.Y.Scale,
-            math.max(minSize.Y, startSize.Y.Offset + delta.Y)
+            math.max(mn.Y, startSize.Y.Offset + delta.Y)
         )
         if onResize then pcall(onResize, window.Size) end
     end)
@@ -4381,7 +4497,7 @@ do
     end
 
     local function fileExists(filename)
-        local path = "NexusUI/" .. filename .. ".json"
+        local path = (Library.ConfigFolder or "NexusUI") .. "/" .. filename .. ".json"
         return tryRead(path) ~= nil
     end
 
@@ -4396,8 +4512,14 @@ do
             data["toggle:" .. k] = toggle.Value
         end
 
+        -- Saveable types only — Buttons, ProgressBars, StatusBadges etc. are skipped
+        local SAVEABLE_TYPES = {
+            Toggle = true, Slider = true, Input = true, Dropdown = true,
+            ColorPicker = true, KeyPicker = true,
+        }
         for k, option in pairs(Library.Options) do
             local t = option.Type
+            if not SAVEABLE_TYPES[t] then continue end
             if t == "Slider" or t == "Input" then
                 data["option:" .. k] = option.Value
             elseif t == "Dropdown" then
@@ -4422,13 +4544,65 @@ do
             end
         end
 
-        -- Save window size and position if a window has been created
+        -- Save builtin settings (nx_ keys) separately so they restore last
+        -- after PopulateBuiltinSettings has fully wired up its callbacks.
+        -- Toggles
+        for k, toggle in pairs(Library.Toggles) do
+            if k:sub(1, 3) == "nx_" then
+                data["settings_toggle:" .. k] = toggle.Value
+                data["toggle:" .. k] = nil  -- remove from normal toggle namespace
+            end
+        end
+        -- Options
+        for k, option in pairs(Library.Options) do
+            local t = option.Type
+            if k:sub(1, 3) == "nx_" and SAVEABLE_TYPES[t] then
+                if t == "Slider" or t == "Input" then
+                    data["settings_option:" .. k] = option.Value
+                    data["option:" .. k] = nil
+                elseif t == "Dropdown" then
+                    if option.Multi then
+                        local sel = {}
+                        for v, on in pairs(option.Value or {}) do
+                            if on then table.insert(sel, v) end
+                        end
+                        data["settings_dropdown_multi:" .. k] = sel
+                        data["dropdown_multi:" .. k] = nil
+                    else
+                        data["settings_dropdown:" .. k] = option.Value
+                        data["dropdown:" .. k] = nil
+                    end
+                elseif t == "ColorPicker" then
+                    local c = option.Value
+                    data["settings_color:" .. k] = {
+                        math.round(c.R * 255),
+                        math.round(c.G * 255),
+                        math.round(c.B * 255),
+                    }
+                    data["color:" .. k] = nil
+                elseif t == "KeyPicker" then
+                    data["settings_key:" .. k] = { value = option.Value, mode = option.Mode }
+                    data["key:" .. k] = nil
+                end
+            end
+        end
+
+        -- Save window size and position if a window has been created.
+        -- Always store the BASE (100% DPI) size so it restores correctly at any DPI level.
         if Library.Window and Library.Window.Main then
             local mainFrame = Library.Window.Main
-            data["window_size"] = {
-                X = mainFrame.Size.X.Offset,
-                Y = mainFrame.Size.Y.Offset,
-            }
+            local baseSize = Library.Window._getBaseSize and Library.Window._getBaseSize()
+            local saveX, saveY
+            if baseSize then
+                saveX = baseSize.X.Offset
+                saveY = baseSize.Y.Offset
+            else
+                -- Fallback: divide current size by DPI scale to get base
+                local dpi = Library.DPIScale or 1
+                saveX = math.round(mainFrame.Size.X.Offset / dpi)
+                saveY = math.round(mainFrame.Size.Y.Offset / dpi)
+            end
+            data["window_size"] = { X = saveX, Y = saveY }
             data["window_pos"] = {
                 X = mainFrame.Position.X.Offset,
                 Y = mainFrame.Position.Y.Offset,
@@ -4438,8 +4612,8 @@ do
         end
 
         local encoded = HttpService:JSONEncode(data)
-        makeDir("NexusUI")
-        local path = "NexusUI/" .. (filename or "config") .. ".json"
+        makeDir(Library.ConfigFolder or "NexusUI")
+        local path = (Library.ConfigFolder or "NexusUI") .. "/" .. (filename or "config") .. ".json"
         tryWrite(path, encoded)
         EventBus:Emit("configSaved", path)
         return encoded
@@ -4466,7 +4640,7 @@ do
             entry can never abort the whole load.
     ]]
     function ConfigSystem.Load(filename)
-        local path = "NexusUI/" .. (filename or "config") .. ".json"
+        local path = (Library.ConfigFolder or "NexusUI") .. "/" .. (filename or "config") .. ".json"
         local raw = tryRead(path)
         if not raw then return false end
 
@@ -4480,42 +4654,51 @@ do
             return pcall(function() target:SetValue(value) end)
         end
 
+        -- Split data into normal entries and settings (nx_) entries;
+        -- settings are applied last so PopulateBuiltinSettings is ready.
+        local normalData   = {}
+        local settingsData = {}
         for k, v in pairs(data) do
-            -- Window size
+            if k:sub(1, 9) == "settings_" then
+                settingsData[k] = v
+            else
+                normalData[k] = v
+            end
+        end
+
+        -- Maps saved prefixes to restore logic. Shared by both normal and settings passes.
+        local function restoreEntry(k, v)
+            -- Window size/pos (only on normal pass, not settings pass)
             if k == "window_size" and Library.Window and Library.Window.Main then
                 pcall(function()
-                    local mainFrame = Library.Window.Main
-                    local currentSize = mainFrame.Size
-                    local newSize = UDim2.new(
-                        currentSize.X.Scale,
-                        v.X,
-                        currentSize.Y.Scale,
-                        v.Y
-                    )
-                    if Library.Window.SetSize then
-                        Library.Window:SetSize(newSize)
-                    else
-                        mainFrame.Size = newSize
+                    local mf = Library.Window.Main
+                    -- v.X/Y are base (100% DPI) dimensions; scale by current DPI before applying
+                    local dpi = Library.DPIScale or 1
+                    local scaledX = math.round(v.X * dpi)
+                    local scaledY = math.round(v.Y * dpi)
+                    local newSize = UDim2.new(mf.Size.X.Scale, scaledX, mf.Size.Y.Scale, scaledY)
+                    -- Also update _dpiBaseSize so future DPI changes stay correct
+                    if Library.Window._getBaseSize then
+                        -- Replace the base reference via the applyDPISize path
+                        Library.Window._restoreBaseSize = UDim2.fromOffset(v.X, v.Y)
                     end
+                    if Library.Window.SetSize then Library.Window:SetSize(newSize)
+                    else mf.Size = newSize end
                 end)
-
             elseif k == "window_pos" and Library.Window and Library.Window.Main then
                 pcall(function()
-                    local mainFrame = Library.Window.Main
+                    local mf = Library.Window.Main
                     local newPos = UDim2.new(
-                        v.XScale or mainFrame.Position.X.Scale, v.X,
-                        v.YScale or mainFrame.Position.Y.Scale, v.Y
-                    )
-                    if Library.Window.SetPosition then
-                        Library.Window:SetPosition(newPos)
-                    else
-                        mainFrame.Position = newPos
-                    end
+                        v.XScale or mf.Position.X.Scale, v.X,
+                        v.YScale or mf.Position.Y.Scale, v.Y)
+                    if Library.Window.SetPosition then Library.Window:SetPosition(newPos)
+                    else mf.Position = newPos end
                 end)
-
             else
-                -- Toggles
-                local toggleKey = k:match("^toggle:(.+)$")
+                -- Strip settings_ prefix so patterns below work for both passes
+                local stripped = k:gsub("^settings_", "")
+
+                local toggleKey = stripped:match("^toggle:(.+)$")
                 if toggleKey then
                     if Library.Toggles[toggleKey] then
                         safeSetValue(Library.Toggles[toggleKey], v)
@@ -4525,8 +4708,7 @@ do
                     end
                 end
 
-                -- Sliders / Inputs
-                local optKey = k:match("^option:(.+)$")
+                local optKey = stripped:match("^option:(.+)$")
                 if optKey then
                     if Library.Options[optKey] then
                         safeSetValue(Library.Options[optKey], v)
@@ -4536,8 +4718,7 @@ do
                     end
                 end
 
-                -- Dropdowns (single)
-                local dropKey = k:match("^dropdown:(.+)$")
+                local dropKey = stripped:match("^dropdown:(.+)$")
                 if dropKey then
                     if Library.Options[dropKey] then
                         safeSetValue(Library.Options[dropKey], v)
@@ -4547,8 +4728,7 @@ do
                     end
                 end
 
-                -- Dropdowns (multi)
-                local dropMultiKey = k:match("^dropdown_multi:(.+)$")
+                local dropMultiKey = stripped:match("^dropdown_multi:(.+)$")
                 if dropMultiKey then
                     if Library.Options[dropMultiKey] and type(v) == "table" then
                         pcall(function()
@@ -4563,8 +4743,7 @@ do
                     end
                 end
 
-                -- ColorPickers
-                local colorKey = k:match("^color:(.+)$")
+                local colorKey = stripped:match("^color:(.+)$")
                 if colorKey then
                     if Library.Options[colorKey] and type(v) == "table" and #v == 3 then
                         safeSetValue(Library.Options[colorKey], Color3.fromRGB(v[1], v[2], v[3]))
@@ -4574,13 +4753,12 @@ do
                     end
                 end
 
-                -- KeyPickers
-                local keyKey = k:match("^key:(.+)$")
+                local keyKey = stripped:match("^key:(.+)$")
                 if keyKey then
                     if Library.Options[keyKey] and type(v) == "table" then
                         pcall(function()
                             if v.value then Library.Options[keyKey]:SetValue(v.value, true) end
-                            if v.mode  then Library.Options[keyKey].Mode = v.mode   end
+                            if v.mode  then Library.Options[keyKey].Mode = v.mode end
                         end)
                         applied["key:" .. keyKey] = true
                     else
@@ -4590,8 +4768,16 @@ do
             end
         end
 
+        -- Pass 1: normal user values
+        for k, v in pairs(normalData) do restoreEntry(k, v) end
+
+        -- Pass 2: builtin settings (nx_ keys) — deferred one frame so the
+        -- Settings panel callbacks are guaranteed to be wired up
+        task.defer(function()
+            for k, v in pairs(settingsData) do restoreEntry(k, v) end
+        end)
+
         -- Anything that exists in the live UI but wasn't in the config
-        -- (newly-added toggles/options) — left at defaults, just reported.
         local unset = {}
         for k in pairs(Library.Toggles) do
             if not applied["toggle:" .. k] then
@@ -4624,7 +4810,7 @@ do
     end
 
     function ConfigSystem.Delete(filename)
-        local path = "NexusUI/" .. (filename or "config") .. ".json"
+        local path = (Library.ConfigFolder or "NexusUI") .. "/" .. (filename or "config") .. ".json"
         if delfile then pcall(delfile, path) end
         if getgenv and getgenv().__NexusUI_Config then
             getgenv().__NexusUI_Config[path] = nil
@@ -4632,9 +4818,10 @@ do
     end
 
     function ConfigSystem.List()
-        if listfiles and isDir("NexusUI") then
+        local _cfolder = Library.ConfigFolder or "NexusUI"
+        if listfiles and isDir(_cfolder) then
             local files = {}
-            local ok, list = pcall(listfiles, "NexusUI")
+            local ok, list = pcall(listfiles, _cfolder)
             if ok then
                 for _, f in ipairs(list) do
                     local name = f:match("([^/\\]+)%.json$")
@@ -4646,7 +4833,8 @@ do
         if getgenv and getgenv().__NexusUI_Config then
             local files = {}
             for path in pairs(getgenv().__NexusUI_Config) do
-                local name = path:match("NexusUI/(.+)%.json$")
+                local cfolder = Library.ConfigFolder or "NexusUI"
+                local name = path:match(cfolder:gsub("%-", "%%%%-") .. "/(.+)%.json$")
                 if name and name ~= "_default" then table.insert(files, name) end
             end
             return files
@@ -4655,11 +4843,11 @@ do
     end
 
     function ConfigSystem.SetDefault(filename)
-        tryWrite("NexusUI/_default.json", HttpService:JSONEncode({ default = filename }))
+        tryWrite((Library.ConfigFolder or "NexusUI") .. "/_default.json", HttpService:JSONEncode({ default = filename }))
     end
 
     function ConfigSystem.GetDefault()
-        local raw = tryRead("NexusUI/_default.json")
+        local raw = tryRead((Library.ConfigFolder or "NexusUI") .. "/_default.json")
         if not raw then return nil end
         local ok, data = pcall(function() return HttpService:JSONDecode(raw) end)
         if ok and data and data.default then return data.default end
@@ -5950,18 +6138,20 @@ function Library:CreateWindow(info)
         NotifySide     = "Right",
         Font           = Enum.Font.Gotham,
         BuiltinSettings = true,  -- auto-populate AddSettingsPanel with Appearance/Configs/Misc
+        ConfigFolder   = "NexusUI",  -- folder name under workspace for config files
     })
 
     Library.ToggleKeybind    = info.ToggleKeybind
     Library.ShowCustomCursor = info.ShowCustomCursor
+    Library.ConfigFolder     = info.ConfigFolder
 
     local windowMaid = Maid.New()
     LibraryMaid:Give(windowMaid)
 
     -- Layout constants
-    local TH  = 38   -- titlebar height
-    local SW  = 148  -- sidebar width
-    local FH  = 20   -- footer height
+    local TH  = 42   -- titlebar height
+    local SW  = 152  -- sidebar width
+    local FH  = 22   -- footer height
     local CR  = info.CornerRadius
 
     -- ── Main Frame ───────────────────────────────────────────────────────
@@ -6012,6 +6202,11 @@ function Library:CreateWindow(info)
 
     local function applyDPISize(s)
         _applyingDPI = true
+        -- If a config restore has set a new base size, adopt it
+        if Window._restoreBaseSize then
+            _dpiBaseSize = Window._restoreBaseSize
+            Window._restoreBaseSize = nil
+        end
         local baseX = _dpiBaseSize.X.Offset
         local baseY = _dpiBaseSize.Y.Offset
         local newSize = UDim2.fromOffset(
@@ -6202,11 +6397,12 @@ function Library:CreateWindow(info)
     -- Title label: starts after a left pad, ends before close button
     local titleLabel = New("TextLabel", {
         BackgroundTransparency = 1,
-        Position  = UDim2.fromOffset(14, 0),
-        Size      = UDim2.new(1, -50, 1, 0),
+        Position  = UDim2.fromOffset(16, 0),
+        Size      = UDim2.new(1, -56, 1, 0),
         Text      = info.Title,
-        TextSize  = Tokens.FontSize.LG,
-        FontFace  = Font.fromEnum(Enum.Font.Gotham),
+        TextSize  = Tokens.FontSize.XL,
+        FontFace  = Font.new("rbxasset://fonts/families/GothamSSm.json",
+            Enum.FontWeight.SemiBold, Enum.FontStyle.Normal),
         TextXAlignment = Enum.TextXAlignment.Left,
         ZIndex    = titleBar.ZIndex,
         Parent    = titleBar,
@@ -6215,26 +6411,30 @@ function Library:CreateWindow(info)
     -- Close button: pinned to right edge
     local closeBtn = New("TextButton", {
         AnchorPoint      = Vector2.new(1, 0.5),
-        BackgroundColor3 = "SurfaceColor",
+        BackgroundColor3 = Color3.fromRGB(210, 40, 40),
         BackgroundTransparency = 1,
-        Position         = UDim2.new(1, -10, 0.5, 0),
-        Size             = UDim2.fromOffset(22, 22),
+        Position         = UDim2.new(1, -12, 0.5, 0),
+        Size             = UDim2.fromOffset(24, 24),
         Text             = "×",
-        TextSize         = 18,
+        TextSize         = 16,
+        TextColor3       = "TextMuted",
         ZIndex           = titleBar.ZIndex + 1,
         Parent           = titleBar,
     })
-    New("UICorner", { CornerRadius = UDim.new(1, 0), Parent = closeBtn })
+    New("UICorner", { CornerRadius = UDim.new(0, Tokens.RadiusSM), Parent = closeBtn })
 
-    local tiClose = TweenInfo.new(0.1, Enum.EasingStyle.Quad)
+    local tiClose = TweenInfo.new(0.12, Enum.EasingStyle.Quad)
     windowMaid:Connect(closeBtn.MouseEnter, function()
-        closeBtn.BackgroundColor3      = Color3.fromRGB(210, 40, 40)
-        closeBtn.BackgroundTransparency = 0
-        TweenService:Create(closeBtn, tiClose, { TextColor3 = Color3.new(1,1,1) }):Play()
+        TweenService:Create(closeBtn, tiClose, {
+            BackgroundTransparency = 0,
+            TextColor3 = Color3.new(1, 1, 1),
+        }):Play()
     end)
     windowMaid:Connect(closeBtn.MouseLeave, function()
-        closeBtn.BackgroundTransparency = 1
-        TweenService:Create(closeBtn, tiClose, { TextColor3 = Library.Scheme.TextPrimary }):Play()
+        TweenService:Create(closeBtn, tiClose, {
+            BackgroundTransparency = 1,
+            TextColor3 = Library.Scheme.TextMuted,
+        }):Play()
     end)
     windowMaid:Connect(closeBtn.MouseButton1Click, function()
         Library:Toggle(false)
@@ -6382,7 +6582,13 @@ function Library:CreateWindow(info)
             ZIndex      = mainFrame.ZIndex + 5,
             Parent      = mainFrame,
         })
-        Library:MakeResizable(mainFrame, resizeHandle, windowMaid, Vector2.new(500, 380), nil, cancelWindowSprings)
+        -- Min size scales with current DPI — passed as a function so it
+        -- re-evaluates on every resize (after DPI has been changed).
+        local function getScaledMin()
+            local d = Library.DPIScale or 1
+            return Vector2.new(math.round(500 * d), math.round(380 * d))
+        end
+        Library:MakeResizable(mainFrame, resizeHandle, windowMaid, getScaledMin, nil, cancelWindowSprings)
     end
 
     -- Dragging on titlebar
@@ -6445,42 +6651,38 @@ function Library:CreateWindow(info)
 
         -- Tab button in sidebar tab list
         local tabBtn = New("TextButton", {
-            BackgroundColor3       = "SurfaceAltColor",
+            BackgroundColor3       = "AccentColor",
             BackgroundTransparency = 1,
-            Size                   = UDim2.new(1, 0, 0, 30),
+            Size                   = UDim2.new(1, 0, 0, 32),
             Text                   = "",
-            ClipsDescendants       = false,
+            ClipsDescendants       = true,
             Parent                 = tabList,
         })
         New("UICorner", { CornerRadius = UDim.new(0, Tokens.RadiusSM), Parent = tabBtn })
+
+        -- Accent pill on the left edge
+        local activeBar = New("Frame", {
+            AnchorPoint      = Vector2.new(0, 0.5),
+            BackgroundColor3 = "AccentColor",
+            Position         = UDim2.new(0, 0, 0.5, 0),
+            Size             = UDim2.fromOffset(0, 14),
+            ZIndex           = tabBtn.ZIndex + 1,
+            Parent           = tabBtn,
+        })
+        New("UICorner", { CornerRadius = UDim.new(0, 2), Parent = activeBar })
 
         local tabBtnLabel = New("TextLabel", {
             BackgroundTransparency = 1,
             Position         = UDim2.fromOffset(14, 0),
             Size             = UDim2.new(1, -14, 1, 0),
             Text             = name,
-            TextSize         = Tokens.FontSize.MD,
-            TextTransparency = 0.5,
+            TextSize         = Tokens.FontSize.SM,
+            TextTransparency = 0.45,
+            FontFace         = Font.new("rbxasset://fonts/families/GothamSSm.json",
+                Enum.FontWeight.Medium, Enum.FontStyle.Normal),
             TextXAlignment   = Enum.TextXAlignment.Left,
             Parent           = tabBtn,
         })
-
-        -- Active bar on the left edge of the button (not inside padding)
-        local activeBar = New("Frame", {
-            AnchorPoint      = Vector2.new(0, 0.5),
-            BackgroundColor3 = "AccentColor",
-            Position         = UDim2.fromOffset(3, 0),
-            Size             = UDim2.fromOffset(3, 0),
-            ZIndex           = tabBtn.ZIndex + 1,
-            Parent           = tabBtn,
-        })
-        New("UICorner", { CornerRadius = UDim.new(1, 0), Parent = activeBar })
-        -- fix anchor vertical center
-        task.defer(function()
-            if activeBar and activeBar.Parent then
-                activeBar.Position = UDim2.new(0, 3, 0.5, 0)
-            end
-        end)
 
         -- Content container for this tab - fully transparent, no background
         local tabContainer = New("Frame", {
@@ -6497,8 +6699,9 @@ function Library:CreateWindow(info)
             BorderSizePixel           = 0,
             CanvasSize                = UDim2.fromOffset(0, 0),
             AutomaticCanvasSize       = Enum.AutomaticSize.Y,
-            ScrollBarThickness        = 3,
-            ScrollBarImageColor3      = "MutedColor",
+            ScrollBarThickness        = 4,
+            ScrollBarImageColor3      = "AccentColor",
+            ScrollingDirection        = Enum.ScrollingDirection.Y,
             Position                  = UDim2.fromOffset(0, 0),
             Size                      = UDim2.new(0.5, -1, 1, 0),
             Parent                    = tabContainer,
@@ -6524,8 +6727,9 @@ function Library:CreateWindow(info)
             BorderSizePixel           = 0,
             CanvasSize                = UDim2.fromOffset(0, 0),
             AutomaticCanvasSize       = Enum.AutomaticSize.Y,
-            ScrollBarThickness        = 3,
-            ScrollBarImageColor3      = "MutedColor",
+            ScrollBarThickness        = 4,
+            ScrollBarImageColor3      = "AccentColor",
+            ScrollingDirection        = Enum.ScrollingDirection.Y,
             Position                  = UDim2.new(0.5, 1, 0, 0),
             Size                      = UDim2.new(0.5, -1, 1, 0),
             Visible                   = false,
@@ -6592,19 +6796,21 @@ function Library:CreateWindow(info)
             -- Deactivate settings button visuals
             if Window.Settings and Window.Settings._btn then
                 TweenService:Create(Window.Settings._btn,   tiNorm, { BackgroundTransparency = 1 }):Play()
-                TweenService:Create(Window.Settings._label, tiNorm, { TextTransparency = 0.5 }):Play()
-                if Window.Settings._bar then Window.Settings._bar.Size = UDim2.fromOffset(3, 0) end
+                TweenService:Create(Window.Settings._label, tiNorm, { TextTransparency = 0.45 }):Play()
+                if Window.Settings._bar then
+                    TweenService:Create(Window.Settings._bar, tiFast, { Size = UDim2.fromOffset(0, 14) }):Play()
+                end
             end
 
             for _, t in pairs(Window.Tabs) do
                 if t ~= tab then
                     TweenService:Create(t._btn,   tiNorm, { BackgroundTransparency = 1 }):Play()
-                    TweenService:Create(t._label, tiNorm, { TextTransparency = 0.5 }):Play()
-                    t._bar.Size = UDim2.fromOffset(3, 0)
+                    TweenService:Create(t._label, tiNorm, { TextTransparency = 0.45 }):Play()
+                    TweenService:Create(t._bar,   tiFast, { Size = UDim2.fromOffset(0, 14) }):Play()
                 end
             end
 
-            TweenService:Create(tabBtn,      tiNorm, { BackgroundTransparency = 0 }):Play()
+            TweenService:Create(tabBtn,      tiNorm, { BackgroundTransparency = 0.88 }):Play()
             TweenService:Create(tabBtnLabel, tiNorm, { TextTransparency = 0 }):Play()
             TweenService:Create(activeBar,   tiFast, { Size = UDim2.fromOffset(3, 18) }):Play()
 
@@ -6647,41 +6853,57 @@ function Library:CreateWindow(info)
 
             local boxHolder = New("Frame", {
                 BackgroundColor3 = "SurfaceColor",
-                BackgroundTransparency = 0.35,
+                BackgroundTransparency = 0.4,
                 Size = UDim2.new(1, 0, 0, 0),
                 AutomaticSize = Enum.AutomaticSize.Y,
                 Parent = scroll,
             })
-            New("UICorner", { CornerRadius = UDim.new(0, info.CornerRadius), Parent = boxHolder })
-            New("UIStroke", { Color = "BorderColor", Thickness = 1, Parent = boxHolder })
-
-            -- Header
-            local header = New("Frame", {
-                BackgroundTransparency = 1,
-                Size = UDim2.new(1, 0, 0, 30),
+            New("UICorner", { CornerRadius = UDim.new(0, Tokens.RadiusMD), Parent = boxHolder })
+            New("UIStroke", {
+                Color = "BorderColor",
+                Thickness = 1,
+                Transparency = 0.4,
                 Parent = boxHolder,
             })
+
+            -- Header row
+            local header = New("Frame", {
+                BackgroundTransparency = 1,
+                Size = UDim2.new(1, 0, 0, 32),
+                Parent = boxHolder,
+            })
+            -- Accent left bar on header
+            New("Frame", {
+                BackgroundColor3 = "AccentColor",
+                Position = UDim2.fromOffset(0, 8),
+                Size     = UDim2.fromOffset(3, 16),
+                ZIndex   = boxHolder.ZIndex + 1,
+                Parent   = header,
+            })
+            New("UICorner", { CornerRadius = UDim.new(1, 0),
+                Parent = header:FindFirstChildOfClass("Frame") })
             New("UIPadding", {
-                PaddingLeft = UDim.new(0, 12), PaddingRight = UDim.new(0, 8),
+                PaddingLeft = UDim.new(0, 14), PaddingRight = UDim.new(0, 8),
                 Parent = header,
             })
             New("TextLabel", {
                 BackgroundTransparency = 1,
                 Size = UDim2.fromScale(1, 1),
                 Text = gbInfo.Name or "",
-                TextSize = Tokens.FontSize.MD,
+                TextSize = Tokens.FontSize.SM,
                 FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json",
-                    Enum.FontWeight.Medium, Enum.FontStyle.Normal),
-                TextColor3 = "TextPrimary",
+                    Enum.FontWeight.SemiBold, Enum.FontStyle.Normal),
+                TextColor3 = "TextSecondary",
                 TextXAlignment = Enum.TextXAlignment.Left,
                 Parent = header,
             })
 
-            -- Divider
+            -- Divider under header
             New("Frame", {
                 AnchorPoint = Vector2.new(0, 0),
                 BackgroundColor3 = "BorderColor",
-                Position = UDim2.fromOffset(0, 30),
+                BackgroundTransparency = 0.5,
+                Position = UDim2.fromOffset(0, 32),
                 Size = UDim2.new(1, 0, 0, 1),
                 Parent = boxHolder,
             })
@@ -6689,7 +6911,7 @@ function Library:CreateWindow(info)
             -- Content
             local gbContainer = New("Frame", {
                 BackgroundTransparency = 1,
-                Position = UDim2.fromOffset(0, 31),
+                Position = UDim2.fromOffset(0, 33),
                 Size = UDim2.new(1, 0, 0, 0),
                 AutomaticSize = Enum.AutomaticSize.Y,
                 Parent = boxHolder,
@@ -6697,12 +6919,12 @@ function Library:CreateWindow(info)
             New("UIPadding", {
                 PaddingLeft   = UDim.new(0, 10),
                 PaddingRight  = UDim.new(0, 10),
-                PaddingTop    = UDim.new(0, 6),
-                PaddingBottom = UDim.new(0, 8),
+                PaddingTop    = UDim.new(0, 7),
+                PaddingBottom = UDim.new(0, 9),
                 Parent = gbContainer,
             })
             New("UIListLayout", {
-                Padding = UDim.new(0, 5),
+                Padding = UDim.new(0, 4),
                 Parent  = gbContainer,
             })
 
@@ -6720,7 +6942,7 @@ function Library:CreateWindow(info)
                     if not gbContainer or not gbContainer.Parent then return end
                     local list = gbContainer:FindFirstChildOfClass("UIListLayout")
                     if list then
-                        gbContainer.Size = UDim2.new(1, 0, 0, list.AbsoluteContentSize.Y + 14)
+                        gbContainer.Size = UDim2.new(1, 0, 0, list.AbsoluteContentSize.Y + 16)
                     end
                 end)
             end
@@ -6973,8 +7195,10 @@ function Library:CreateWindow(info)
     -- with a saved size/position was loaded.
 
     function Window:SetSize(newSize, animate)
-        local clampedX = math.max(MIN_WINDOW_SIZE.X, newSize.X.Offset)
-        local clampedY = math.max(MIN_WINDOW_SIZE.Y, newSize.Y.Offset)
+        -- Clamp against the minimum scaled by current DPI so there's no jump
+        local dpi = Library.DPIScale or 1
+        local clampedX = math.max(math.round(MIN_WINDOW_SIZE.X * dpi), newSize.X.Offset)
+        local clampedY = math.max(math.round(MIN_WINDOW_SIZE.Y * dpi), newSize.Y.Offset)
         local target = UDim2.new(newSize.X.Scale, clampedX, newSize.Y.Scale, clampedY)
 
         if _cancelSizeSpring then _cancelSizeSpring(); _cancelSizeSpring = nil end
@@ -7537,6 +7761,10 @@ function Library:CreateWindow(info)
         Window:Toggle(true)
     end
 
+    -- Expose the base (100% DPI) window size so ConfigSystem.Save stores
+    -- the unscaled dimensions — restoring always works regardless of current DPI.
+    Window._getBaseSize = function() return _dpiBaseSize end
+
     PluginSystem.Emit("onWindowCreate", Window)
     Library.Window = Window
 
@@ -7555,6 +7783,24 @@ function Library:CreateWindow(info)
         local Settings = Window:AddSettingsPanel()
         PopulateBuiltinSettings(Window, Settings)
     end
+
+    -- Autoload default config — deferred two frames so that:
+    --   1. All user groupboxes/toggles/options are registered (user code runs first)
+    --   2. PopulateBuiltinSettings callbacks are wired up
+    --   3. The settings pass (task.defer inside Load) fires after both passes
+    task.defer(function()
+        task.defer(function()
+            local defaultCfg = Library.Config and Library.Config.GetDefault()
+            if defaultCfg and Library.Config.Exists(defaultCfg) then
+                local ok = Library.Config.Load(defaultCfg)
+                if ok then
+                    ToastSystem.Info("Loaded config: " .. tostring(defaultCfg), { Duration = 3 })
+                else
+                    ToastSystem.Warning("Failed to load default config: " .. tostring(defaultCfg), { Duration = 4 })
+                end
+            end
+        end)
+    end)
 
     return Window
 end
