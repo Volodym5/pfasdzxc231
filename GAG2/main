@@ -67,7 +67,9 @@ local ignoredSeeds = {}
 local antiCactusEnabled = false
 local noErrorSoundEnabled = false
 local antiGhostPepperEnabled = false
+local antiDragonEnabled = false
 local ghostPepperParts = {}
+local dragonParts = {}
 
 local walkSpeedEnabled = false
 local walkSpeedValue = 40
@@ -381,6 +383,56 @@ local function processGhostPeppers()
     end
 end
 
+-- Anti Dragon (cached)
+local function scanDragons()
+    for _, obj in ipairs(CollectionService:GetTagged("DragonBreath")) do
+        dragonParts[obj] = true
+    end
+end
+
+workspace.DescendantAdded:Connect(function(obj)
+    if obj:IsA("Model") and CollectionService:HasTag(obj, "DragonBreath") then
+        dragonParts[obj] = true
+    end
+end)
+
+workspace.DescendantRemoving:Connect(function(obj)
+    dragonParts[obj] = nil
+end)
+
+scanDragons()
+
+local function processDragons()
+    for model in pairs(dragonParts) do
+        if model.Parent then
+            pcall(function()
+                local breathEnd = model:FindFirstChild("DragonBreathEnd", true)
+                if breathEnd then
+                    breathEnd:SetAttribute("Enabled", false)
+                    for _, child in ipairs(breathEnd:GetDescendants()) do
+                        if child:IsA("ParticleEmitter") or child:IsA("SurfaceGui") then
+                            child.Enabled = false
+                        end
+                    end
+                end
+                local head = model:FindFirstChild("Head", true)
+                if head then
+                    local emitter = head:FindFirstChild("Emitter")
+                    if emitter then
+                        for _, child in ipairs(emitter:GetChildren()) do
+                            if child:IsA("Beam") or child:IsA("ParticleEmitter") then
+                                child.Enabled = false
+                            end
+                        end
+                    end
+                end
+            end)
+        else
+            dragonParts[model] = nil
+        end
+    end
+end
+
 RunService.Heartbeat:Connect(function()
     local now = tick()
     if harvestEnabled and now - lastHarvest > harvestDelay then
@@ -400,6 +452,9 @@ RunService.Heartbeat:Connect(function()
     end
     if antiGhostPepperEnabled then
         processGhostPeppers()
+    end
+    if antiDragonEnabled then
+        processDragons()
     end
     if antiCactusEnabled then
         local char = player.Character
@@ -455,6 +510,7 @@ StealBox:AddDropdown("IgnoreList", { Text = "Ignore List", Values = fruitNames, 
 local AntiBox = MainTab:AddGroupbox({ Name = "Anti", Side = 2 })
 AntiBox:AddToggle("AntiCactus", { Text = "Anti Cactus", Default = false, Callback = function(value) antiCactusEnabled = value end })
 AntiBox:AddToggle("AntiGhostPepper", { Text = "Anti Ghost Pepper", Default = false, Callback = function(value) antiGhostPepperEnabled = value end })
+AntiBox:AddToggle("AntiDragon", { Text = "Anti Dragon", Default = false, Callback = function(value) antiDragonEnabled = value end })
 AntiBox:AddToggle("NoErrorSound", { Text = "No Error Sound", Default = false, Callback = function(value) noErrorSoundEnabled = value end })
 
 -- Auto Buy Tab
