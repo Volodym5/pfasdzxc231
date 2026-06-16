@@ -20,7 +20,7 @@
             PageTransition  = "fade",             -- "fade" | "slide" | "scale"
             ShowCustomCursor = true,
             ConfigFolder    = "MyScript",         -- folder name for saved configs
-            BuiltinSettings = true,               -- adds Settings tab automatically
+            BuiltinSettings = true,               -- false = blank Settings tab (gear always shown)
         })
 
         -- Add a tab, then a groupbox inside it
@@ -2920,28 +2920,61 @@ function BaseGroupbox:AddDivider(info)
     info = info or {}
     local holder = New("Frame", {
         BackgroundTransparency = 1,
-        Size = UDim2.new(1, 0, 0, info.Padding or 6),
+        Size   = UDim2.new(1, 0, 0, info.Padding or 14),
         Parent = self.Container,
     })
+
     if info.Text then
-        New("TextLabel", {
+        -- Label centred; two line frames stop 10 px short of the text on each side
+        local lbl = New("TextLabel", {
             AnchorPoint = Vector2.new(0.5, 0.5),
             BackgroundTransparency = 1,
-            Position = UDim2.fromScale(0.5, 0.5),
-            Size     = UDim2.new(1, -20, 1, 0),
-            Text     = info.Text,
-            TextSize = Tokens.FontSize.SM,
+            Position   = UDim2.fromScale(0.5, 0.5),
+            Size       = UDim2.new(1, -20, 1, 0),
+            Text       = info.Text,
+            TextSize   = Tokens.FontSize.SM,
             TextColor3 = "TextMuted",
-            Parent = holder,
+            ZIndex     = holder.ZIndex + 1,
+            Parent     = holder,
+        })
+        -- Left line: from left edge up to 10 px before the text
+        New("Frame", {
+            AnchorPoint      = Vector2.new(0, 0.5),
+            BackgroundColor3 = "BorderColor",
+            Position         = UDim2.fromOffset(0, 0),  -- vertically centred via AnchorPoint
+            Size             = UDim2.new(0.5, -10 - (lbl.TextBounds.X / 2), 0, 1),
+            Parent           = holder,
+        })
+        -- Right line: from 10 px after the text to right edge
+        New("Frame", {
+            AnchorPoint      = Vector2.new(1, 0.5),
+            BackgroundColor3 = "BorderColor",
+            Position         = UDim2.new(1, 0, 0.5, 0),
+            Size             = UDim2.new(0.5, -10 - (lbl.TextBounds.X / 2), 0, 1),
+            Parent           = holder,
+        })
+        -- Use AbsoluteSize-aware sizing once the label has rendered
+        task.defer(function()
+            if not lbl or not lbl.Parent then return end
+            local halfText = lbl.TextBounds.X / 2 + 10
+            local halfWidth = holder.AbsoluteSize.X / 2
+            local lineW = math.max(0, halfWidth - halfText)
+            for _, child in ipairs(holder:GetChildren()) do
+                if child:IsA("Frame") then
+                    child.Size = UDim2.fromOffset(lineW, 1)
+                end
+            end
+        end)
+    else
+        -- Plain line, full width, vertically centred
+        New("Frame", {
+            AnchorPoint      = Vector2.new(0.5, 0.5),
+            BackgroundColor3 = "BorderColor",
+            Position         = UDim2.fromScale(0.5, 0.5),
+            Size             = UDim2.new(1, 0, 0, 1),
+            Parent           = holder,
         })
     end
-    New("Frame", {
-        AnchorPoint = Vector2.new(0.5, 0.5),
-        BackgroundColor3 = "BorderColor",
-        Position = UDim2.fromScale(0.5, 0.5),
-        Size     = UDim2.new(1, 0, 0, 1),
-        Parent   = holder,
-    })
 
     local div = { Type = "Divider", Holder = holder, Visible = true }
     table.insert(self.Elements, div)
@@ -7776,12 +7809,14 @@ function Library:CreateWindow(info)
     CommandPalette.Register({ name = "Theme: Midnight",     category = "Theme", action = function() Library:SetTheme("Midnight", nil, true) end })
     CommandPalette.Register({ name = "Theme: Ember",        category = "Theme", action = function() Library:SetTheme("Ember", nil, true) end })
 
-    -- Built-in Settings panel (Appearance / Keybinds / Configs / Misc).
-    -- Settings:AddLeftGroupbox / AddRightGroupbox remain available afterwards
-    -- so a script can append its own groupboxes to the same panel.
-    if info.BuiltinSettings then
+    -- Settings panel is always created so the gear button is always present.
+    -- PopulateBuiltinSettings (Appearance / Keybinds / Configs / Misc) runs
+    -- by default; set BuiltinSettings = false to get a blank panel instead.
+    do
         local Settings = Window:AddSettingsPanel()
-        PopulateBuiltinSettings(Window, Settings)
+        if info.BuiltinSettings ~= false then
+            PopulateBuiltinSettings(Window, Settings)
+        end
     end
 
     -- Autoload default config — deferred two frames so that:
