@@ -13,7 +13,7 @@ local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
 
--- Load your UI library
+-- Load UI library
 local UI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Volodym5/pfasdzxc231/main/lib/source.lua"))()
 
 -- ========================================================
@@ -84,6 +84,21 @@ local config = {
         Color = Color3.fromRGB(255, 255, 255),
         SilentColor = Color3.fromRGB(255, 100, 100),
         Thickness = 1.5
+    },
+    
+    -- Movement settings
+    Movement = {
+        WalkSpeed = {
+            Enabled = false,
+            Speed = 40
+        },
+        AirJump = {
+            Enabled = false
+        },
+        Gravity = {
+            Enabled = false,
+            Value = 0.5 -- 50% gravity
+        }
     }
 }
 
@@ -101,6 +116,7 @@ local state = {
     silentFovTrackTime = 0,
     fovTrackScreenPos = nil,
     spawnTimes = {},
+    originalGravity = Workspace.Gravity,
     humanizer = {
         lastTarget = nil,
         lastSwitch = 0,
@@ -494,22 +510,18 @@ local function HandleAutoShoot()
     if state.autoShootActive then return end
     
     if config.Rage.AutoShoot.TieToSilentAim then
-        -- Use Silent Aim's exact target if available and still valid
         if state.silentTarget and state.silentTarget.Parent then
             local char = state.silentTarget.Parent
             local hum = char:FindFirstChildOfClass("Humanoid")
             local player = Players:GetPlayerFromCharacter(char)
             
-            -- Verify target is still valid
             if hum and hum.Health > 0 then
                 if not player or not IsSpawnProtectedForShoot(player) then
                     if IsPartVisible(state.silentTarget, char, Global.Rage.VisCheck) then
                         state.autoShootActive = true
-                        
                         VIM:SendMouseButtonEvent(0, 0, 0, true, game, 0)
                         task.wait(0.02)
                         VIM:SendMouseButtonEvent(0, 0, 0, false, game, 0)
-                        
                         task.wait(config.Rage.AutoShoot.Delay)
                         state.autoShootActive = false
                         return
@@ -518,30 +530,24 @@ local function HandleAutoShoot()
             end
         end
         
-        -- Fallback: Silent Aim target not available, find our own
         local target, targetChar = FindTargetRage(config.Rage.SilentAim.FOV, "Nearest", Global.Rage.VisCheck, Global.Rage.TeamCheck, config.Rage.SilentAim.DynamicFOV, true, IsSpawnProtectedForShoot)
         
         if target then
             state.autoShootActive = true
-            
             VIM:SendMouseButtonEvent(0, 0, 0, true, game, 0)
             task.wait(0.02)
             VIM:SendMouseButtonEvent(0, 0, 0, false, game, 0)
-            
             task.wait(config.Rage.AutoShoot.Delay)
             state.autoShootActive = false
         end
     else
-        -- Independent mode
         local target, targetChar = FindTargetRage(config.Rage.SilentAim.FOV, "Nearest", Global.Rage.VisCheck, Global.Rage.TeamCheck, config.Rage.SilentAim.DynamicFOV, true, IsSpawnProtectedForShoot)
         
         if target then
             state.autoShootActive = true
-            
             VIM:SendMouseButtonEvent(0, 0, 0, true, game, 0)
             task.wait(0.02)
             VIM:SendMouseButtonEvent(0, 0, 0, false, game, 0)
-            
             task.wait(config.Rage.AutoShoot.Delay)
             state.autoShootActive = false
         end
@@ -661,7 +667,7 @@ local function ProcessLegitAimbot()
 end
 
 -- ========================================================
--- SILENT AIM - STORES TARGET FOR AUTOSHOOT TIE-IN
+-- SILENT AIM
 -- ========================================================
 local function SetupSilentAim()
     local s, gunMod = pcall(function()
@@ -685,7 +691,6 @@ local function SetupSilentAim()
                 if math.random(1, 100) <= config.Rage.SilentAim.HitChance then
                     local tgt = FindTargetRage(config.Rage.SilentAim.FOV, config.Rage.SilentAim.HitPart, Global.Rage.VisCheck, Global.Rage.TeamCheck, config.Rage.SilentAim.DynamicFOV, false, nil)
                     if tgt and WillStillBeVisible(tgt, tgt.Parent) then
-                        -- Store for AutoShoot tie-in
                         state.silentTarget = tgt
                         args[5] = tgt.Position
                         args[6] = tgt
@@ -795,11 +800,71 @@ local function UpdateFOVCircles()
 end
 
 -- ========================================================
+-- MOVEMENT SYSTEM
+-- ========================================================
+
+-- Air Jump
+UIS.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if not config.Movement.AirJump.Enabled then return end
+    
+    if input.KeyCode == Enum.KeyCode.Space then
+        local char = LocalPlayer.Character
+        if char then
+            local hum = char:FindFirstChildOfClass("Humanoid")
+            if hum and hum.Health > 0 then
+                if hum.FloorMaterial == Enum.Material.Air then
+                    hum:ChangeState(Enum.HumanoidStateType.Jumping)
+                end
+            end
+        end
+    end
+end)
+
+-- Gravity loop
+task.spawn(function()
+    while true do
+        task.wait(0.5)
+        if config.Movement.Gravity.Enabled then
+            Workspace.Gravity = state.originalGravity * config.Movement.Gravity.Value
+        end
+    end
+end)
+
+-- WalkSpeed loop
+task.spawn(function()
+    while true do
+        task.wait(0.1)
+        if config.Movement.WalkSpeed.Enabled then
+            local char = LocalPlayer.Character
+            if char then
+                local hum = char:FindFirstChildOfClass("Humanoid")
+                if hum and hum.Health > 0 then
+                    hum.WalkSpeed = config.Movement.WalkSpeed.Speed
+                end
+            end
+        end
+    end
+end)
+
+-- Reset gravity when disabled
+task.spawn(function()
+    local wasEnabled = false
+    while true do
+        task.wait(1)
+        if not config.Movement.Gravity.Enabled and wasEnabled then
+            Workspace.Gravity = state.originalGravity
+        end
+        wasEnabled = config.Movement.Gravity.Enabled
+    end
+end)
+
+-- ========================================================
 -- CREATE UI WINDOW
 -- ========================================================
 local Window = UI:CreateWindow({
     Title          = "nexus.gg",
-    Size           = UDim2.fromOffset(520, 460),
+    Size           = UDim2.fromOffset(520, 500),
     Center         = true,
     Resizable      = true,
     ToggleKeybind  = Enum.KeyCode.RightShift,
@@ -809,7 +874,7 @@ local Window = UI:CreateWindow({
 -- ========================================================
 -- LEGIT TAB
 -- ========================================================
-local LegitTab = Window:AddTab("🎯 Legit")
+local LegitTab = Window:AddTab("Legit")
 
 local LegitGlobalBox = LegitTab:AddGroupbox({ Name = "Global", Side = 2 })
 LegitGlobalBox:AddToggle("LegitVisCheck", {
@@ -888,7 +953,7 @@ TriggerbotBox:AddSlider("TriggerbotHitbox", {
 -- ========================================================
 -- RAGE TAB
 -- ========================================================
-local RageTab = Window:AddTab("💀 Rage")
+local RageTab = Window:AddTab("Rage")
 
 local RageGlobalBox = RageTab:AddGroupbox({ Name = "Global", Side = 2 })
 RageGlobalBox:AddToggle("RageVisCheck", {
@@ -986,9 +1051,51 @@ AutoShootBox:AddSlider("AutoShootSpawnProtect", {
 })
 
 -- ========================================================
+-- MOVEMENT TAB
+-- ========================================================
+local MovementTab = Window:AddTab("Movement")
+
+local WalkSpeedBox = MovementTab:AddGroupbox({ Name = "Walk Speed", Side = 1 })
+WalkSpeedBox:AddToggle("WalkSpeedEnabled", {
+    Text     = "Enabled",
+    Default  = config.Movement.WalkSpeed.Enabled,
+    Callback = function(v) config.Movement.WalkSpeed.Enabled = v end,
+})
+WalkSpeedBox:AddSlider("WalkSpeedValue", {
+    Text     = "Speed",
+    Default  = config.Movement.WalkSpeed.Speed,
+    Min      = 16,
+    Max      = 100,
+    Rounding = 0,
+    Callback = function(v) config.Movement.WalkSpeed.Speed = v end,
+})
+
+local AirJumpBox = MovementTab:AddGroupbox({ Name = "Air Jump", Side = 1 })
+AirJumpBox:AddToggle("AirJumpEnabled", {
+    Text     = "Enabled",
+    Default  = config.Movement.AirJump.Enabled,
+    Callback = function(v) config.Movement.AirJump.Enabled = v end,
+})
+
+local GravityBox = MovementTab:AddGroupbox({ Name = "Gravity", Side = 2 })
+GravityBox:AddToggle("GravityEnabled", {
+    Text     = "Enabled",
+    Default  = config.Movement.Gravity.Enabled,
+    Callback = function(v) config.Movement.Gravity.Enabled = v end,
+})
+GravityBox:AddSlider("GravityValue", {
+    Text     = "Gravity %",
+    Default  = config.Movement.Gravity.Value * 100,
+    Min      = 10,
+    Max      = 100,
+    Rounding = 0,
+    Callback = function(v) config.Movement.Gravity.Value = v / 100 end,
+})
+
+-- ========================================================
 -- VISUALS TAB
 -- ========================================================
-local VisualsTab = Window:AddTab("👁️ Visuals")
+local VisualsTab = Window:AddTab("Visuals")
 
 local ESPBox = VisualsTab:AddGroupbox({ Name = "ESP", Side = 1 })
 ESPBox:AddToggle("ESPEnabled", {
