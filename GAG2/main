@@ -220,7 +220,7 @@ local function collectSeedPack()
     end
 end
 
--- Scan for harvestable fruits on our plot
+-- Scan for harvestable fruits (handles regular plants + bamboo/mushrooms)
 local function scanHarvest()
     table.clear(harvestCache)
     local myUserId = player.UserId
@@ -230,6 +230,7 @@ local function scanHarvest()
             local plants = plot:FindFirstChild("Plants")
             if plants then
                 for _, plant in ipairs(plants:GetChildren()) do
+                    -- Regular fruits (in Fruits folder)
                     local fruits = plant:FindFirstChild("Fruits")
                     if fruits then
                         for _, fruit in ipairs(fruits:GetChildren()) do
@@ -242,6 +243,14 @@ local function scanHarvest()
                             end
                         end
                     end
+                    -- Bamboo/mushrooms (HarvestPart directly in plant)
+                    local hp = plant:FindFirstChild("HarvestPart")
+                    if hp and hp:IsA("BasePart") then
+                        local prompt = hp:FindFirstChildOfClass("ProximityPrompt")
+                        if prompt and prompt.ActionText == "Harvest" then
+                            table.insert(harvestCache, {part = hp, prompt = prompt})
+                        end
+                    end
                 end
             end
             break
@@ -250,7 +259,7 @@ local function scanHarvest()
     harvestIndex = 0
 end
 
--- Collect one fruit from cache (spam within the delay window)
+-- Collect one fruit from cache
 local function doHarvest()
     local char = player.Character
     if not char then return end
@@ -266,13 +275,9 @@ local function doHarvest()
     
     local target = harvestCache[harvestIndex]
     if target.part and target.part.Parent then
-        -- Spam fire 5 times quickly for hold-duration fruits
-        for _ = 1, 5 do
-            fireproximityprompt(target.prompt)
-            firetouchinterest(root, target.part, 0)
-            firetouchinterest(root, target.part, 1)
-            task.wait(0.03)
-        end
+        fireproximityprompt(target.prompt)
+        firetouchinterest(root, target.part, 0)
+        firetouchinterest(root, target.part, 1)
     end
 end
 
@@ -314,6 +319,7 @@ local function collectFruitsOnPlot(plot)
         if userId and userId ~= player.UserId then
             local seedName = plant:GetAttribute("SeedName")
             if not seedName or not ignoredSeeds[seedName] then
+                -- Regular fruits
                 local fruits = plant:FindFirstChild("Fruits")
                 if fruits then
                     for _, fruit in ipairs(fruits:GetChildren()) do
@@ -328,6 +334,19 @@ local function collectFruitsOnPlot(plot)
                                     fireproximityprompt(prompt)
                                 end
                             end
+                        end
+                    end
+                end
+                -- Bamboo/mushrooms
+                local hp = plant:FindFirstChild("HarvestPart")
+                if hp then
+                    local prompt = hp:FindFirstChildOfClass("ProximityPrompt")
+                    if prompt and prompt.ActionText == "Steal" then
+                        fireproximityprompt(prompt)
+                        firetouchinterest(root, hp, 0)
+                        firetouchinterest(root, hp, 1)
+                        if prompt.HoldDuration > 0 then
+                            fireproximityprompt(prompt)
                         end
                     end
                 end
