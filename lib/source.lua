@@ -3264,11 +3264,14 @@ function BaseGroupbox:AddToggle(idx, info)
                 Library:SafeCallback(fn, v)
             end
         end
-        UndoManager.Push("toggle:" .. (idx or "?"),
-            function() self:SetValue(old) end,
-            function() self:SetValue(v)   end,
-            "Toggle " .. self.Text
-        )
+        -- Don't pollute undo history while restoring a config
+        if not Library._loadingConfig then
+            UndoManager.Push("toggle:" .. (idx or "?"),
+                function() self:SetValue(old) end,
+                function() self:SetValue(v)   end,
+                "Toggle " .. self.Text
+            )
+        end
     end
 
     function Toggle:OnChanged(fn)
@@ -3485,7 +3488,9 @@ function BaseGroupbox:AddSlider(idx, info)
         if not num then return end
         num = math.clamp(num, self.Min, self.Max)
         num = round(num, self.Rounding)
-        if num == self.Value then return end
+        -- During config load always refresh display even if value is identical
+        -- (ensures visual bar is correct when default == saved value)
+        if num == self.Value and not Library._loadingConfig then return end
         self.Value = num
         local frac = (num - self.Min) / math.max(1e-6, self.Max - self.Min)
         -- Use fast tween during drag (smooth but responsive), spring for programmatic
@@ -3990,6 +3995,26 @@ function BaseGroupbox:AddDropdown(idx, info)
                 self.Value[v] = nil
             else
                 self.Value[v] = true
+            end
+        else
+            self.Value = v
+        end
+        updateDisplay()
+        Library:SafeCallback(self.Callback, self.Value)
+        Library:SafeCallback(self.Changed,  self.Value)
+    end
+
+    -- Used by config restore: sets the value directly without toggle-semantics.
+    -- For multi-dropdowns, v should be an array of selected keys (replaces entire selection).
+    -- For single dropdowns, v is the string value to select.
+    function Dropdown:SetValueConfig(v)
+        if self.Multi then
+            -- Replace entire selection atomically
+            self.Value = {}
+            if type(v) == "table" then
+                for _, sv in ipairs(v) do
+                    self.Value[sv] = true
+                end
             end
         else
             self.Value = v
@@ -4669,6 +4694,7 @@ do
                     math.round(c.R * 255),
                     math.round(c.G * 255),
                     math.round(c.B * 255),
+                    option.Alpha or 1,
                 }
             elseif t == "KeyPicker" then
                 data["key:" .. k] = { value = option.Value, mode = option.Mode }
@@ -4709,6 +4735,7 @@ do
                         math.round(c.R * 255),
                         math.round(c.G * 255),
                         math.round(c.B * 255),
+                        option.Alpha or 1,
                     }
                     data["color:" .. k] = nil
                 elseif t == "KeyPicker" then
@@ -4781,6 +4808,7 @@ do
         local missing = {}   -- keys present in the config but not in the live UI
         local applied  = {}  -- idx -> true, for computing `unset` afterwards
 
+        -- Safe wrapper for single-value SetValue calls
         local function safeSetValue(target, value)
             return pcall(function() target:SetValue(value) end)
         end
@@ -4829,43 +4857,71 @@ do
                 -- Strip settings_ prefix so patterns below work for both passes
                 local stripped = k:gsub("^settings_", "")
 
+                -- ── Toggle ───────────────────────────────────────────────────
                 local toggleKey = stripped:match("^toggle:(.+)$")
                 if toggleKey then
-                    if Library.Toggles[toggleKey] then
-                        safeSetValue(Library.Toggles[toggleKey], v)
+                    local target = Library.Toggles[toggleKey]
+                    if target then
+                        -- Coerce to boolean with fallback to false
+                        local boolVal = (v == true or v == 1) and true or false
+                        safeSetValue(target, boolVal)
                         applied["toggle:" .. toggleKey] = true
                     else
                         table.insert(missing, { kind = "Toggle", idx = toggleKey })
                     end
                 end
 
+                -- ── Slider / Input (option:) ─────────────────────────────────
                 local optKey = stripped:match("^option:(.+)$")
                 if optKey then
-                    if Library.Options[optKey] then
-                        safeSetValue(Library.Options[optKey], v)
+                    local target = Library.Options[optKey]
+                    if target then
+                        safeSetValue(target, v)
                         applied["option:" .. optKey] = true
                     else
                         table.insert(missing, { kind = "Option", idx = optKey })
                     end
                 end
 
+                -- ── Single Dropdown ──────────────────────────────────────────
                 local dropKey = stripped:match("^dropdown:(.+)$")
                 if dropKey then
-                    if Library.Options[dropKey] then
-                        safeSetValue(Library.Options[dropKey], v)
+                    local target = Library.Options[dropKey]
+                    if target then
+                        -- Use SetValueConfig if available to avoid toggle-semantics issues
+                        if target.SetValueConfig then
+                            pcall(function() target:SetValueConfig(v) end)
+                        else
+                            safeSetValue(target, v)
+                        end
                         applied["dropdown:" .. dropKey] = true
                     else
                         table.insert(missing, { kind = "Dropdown", idx = dropKey })
                     end
                 end
 
+                -- ── Multi Dropdown ───────────────────────────────────────────
+                -- Use SetValueConfig to replace selection atomically — avoids
+                -- the old bug where calling SetValue per-item would toggle
+                -- items that were already selected by a default value.
                 local dropMultiKey = stripped:match("^dropdown_multi:(.+)$")
                 if dropMultiKey then
-                    if Library.Options[dropMultiKey] and type(v) == "table" then
+                    local target = Library.Options[dropMultiKey]
+                    if target and type(v) == "table" then
                         pcall(function()
-                            Library.Options[dropMultiKey].Value = {}
-                            for _, sv in ipairs(v) do
-                                Library.Options[dropMultiKey]:SetValue(sv)
+                            if target.SetValueConfig then
+                                target:SetValueConfig(v)
+                            else
+                                -- Fallback: wipe then set each item directly
+                                target.Value = {}
+                                for _, sv in ipairs(v) do
+                                    target.Value[sv] = true
+                                end
+                                -- Manually fire updateDisplay via SetValue on a
+                                -- dummy then undo, or call the callback directly.
+                                -- Safest: just call Callback with the final value.
+                                Library:SafeCallback(target.Callback, target.Value)
+                                Library:SafeCallback(target.Changed,  target.Value)
                             end
                         end)
                         applied["dropdown_multi:" .. dropMultiKey] = true
@@ -4874,22 +4930,40 @@ do
                     end
                 end
 
+                -- ── ColorPicker ──────────────────────────────────────────────
+                -- v is {R, G, B} or {R, G, B, alpha} — alpha added in newer saves.
                 local colorKey = stripped:match("^color:(.+)$")
                 if colorKey then
-                    if Library.Options[colorKey] and type(v) == "table" and #v == 3 then
-                        safeSetValue(Library.Options[colorKey], Color3.fromRGB(v[1], v[2], v[3]))
+                    local target = Library.Options[colorKey]
+                    if target and type(v) == "table" and #v >= 3 then
+                        pcall(function()
+                            local color = Color3.fromRGB(v[1], v[2], v[3])
+                            local alpha = v[4]  -- nil on old saves → SetValue keeps current alpha
+                            target:SetValue(color, alpha)
+                        end)
                         applied["color:" .. colorKey] = true
                     else
                         table.insert(missing, { kind = "ColorPicker", idx = colorKey })
                     end
                 end
 
+                -- ── KeyPicker ────────────────────────────────────────────────
+                -- Restore both key AND mode, then fire refreshDisplay by calling
+                -- SetValue (which calls refreshDisplay internally).
                 local keyKey = stripped:match("^key:(.+)$")
                 if keyKey then
-                    if Library.Options[keyKey] and type(v) == "table" then
+                    local target = Library.Options[keyKey]
+                    if target and type(v) == "table" then
                         pcall(function()
-                            if v.value then Library.Options[keyKey]:SetValue(v.value, true) end
-                            if v.mode  then Library.Options[keyKey].Mode = v.mode end
+                            -- Set mode first so refreshDisplay shows the correct label
+                            if v.mode and type(v.mode) == "string" then
+                                target.Mode = v.mode
+                            end
+                            -- SetValue with fireCallback=false to suppress side-effects;
+                            -- it calls refreshDisplay internally which picks up new mode.
+                            if v.value then
+                                target:SetValue(v.value, false)
+                            end
                         end)
                         applied["key:" .. keyKey] = true
                     else
@@ -4899,8 +4973,9 @@ do
             end
         end
 
-        -- Suppress user callbacks during the entire restore so that setting
-        -- values doesn't trigger side-effects (teleports, game actions, etc.).
+        -- Suppress user callbacks AND undo history during the entire restore.
+        -- _loadingConfig must be true BEFORE any restoreEntry call, including
+        -- the deferred settings pass.
         Library._loadingConfig = true
 
         -- Pass 1: normal user values
@@ -4908,7 +4983,7 @@ do
 
         -- Pass 2: builtin settings (nx_ keys) — deferred one frame so the
         -- Settings panel callbacks are guaranteed to be wired up.
-        -- Clear the flag after both passes are done.
+        -- _loadingConfig stays true until this pass finishes.
         task.defer(function()
             for k, v in pairs(settingsData) do restoreEntry(k, v) end
             Library._loadingConfig = false
