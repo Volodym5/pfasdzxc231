@@ -377,8 +377,8 @@ do
     local BuiltinThemes = {
         Dark = {
             IsLight  = false,
-            Accent   = Color3.fromRGB(108, 82, 246),   -- refined purple
-            Neutral  = Color3.fromRGB(14, 14, 18),      -- warm near-black
+            Accent   = Color3.fromRGB(108, 82, 246),    -- refined purple
+            Neutral  = Color3.fromRGB(14, 14, 18),       -- warm near-black
             Success  = Color3.fromRGB(34, 197, 94),
             Warning  = Color3.fromRGB(234, 179, 8),
             Danger   = Color3.fromRGB(239, 68, 68),
@@ -386,7 +386,7 @@ do
         },
         Midnight = {
             IsLight  = false,
-            Accent   = Color3.fromRGB(0, 195, 240),     -- cyan
+            Accent   = Color3.fromRGB(0, 195, 240),      -- cyan
             Neutral  = Color3.fromRGB(7, 8, 14),
             Success  = Color3.fromRGB(20, 225, 105),
             Warning  = Color3.fromRGB(255, 200, 30),
@@ -395,7 +395,7 @@ do
         },
         Ember = {
             IsLight  = false,
-            Accent   = Color3.fromRGB(248, 92, 36),     -- warm orange
+            Accent   = Color3.fromRGB(248, 92, 36),      -- warm orange
             Neutral  = Color3.fromRGB(13, 9, 7),
             Success  = Color3.fromRGB(40, 210, 100),
             Warning  = Color3.fromRGB(255, 200, 30),
@@ -404,7 +404,7 @@ do
         },
         Jade = {
             IsLight  = false,
-            Accent   = Color3.fromRGB(52, 211, 153),    -- emerald green
+            Accent   = Color3.fromRGB(52, 211, 153),     -- emerald green
             Neutral  = Color3.fromRGB(10, 14, 12),
             Success  = Color3.fromRGB(52, 211, 153),
             Warning  = Color3.fromRGB(251, 191, 36),
@@ -413,12 +413,77 @@ do
         },
         Rose = {
             IsLight  = false,
-            Accent   = Color3.fromRGB(244, 63, 94),     -- rose/pink
+            Accent   = Color3.fromRGB(244, 63, 94),      -- rose / pink
             Neutral  = Color3.fromRGB(14, 10, 12),
             Success  = Color3.fromRGB(52, 211, 153),
             Warning  = Color3.fromRGB(251, 191, 36),
             Danger   = Color3.fromRGB(248, 113, 113),
             Info     = Color3.fromRGB(96, 165, 250),
+        },
+        Nord = {
+            IsLight  = false,
+            Accent   = Color3.fromRGB(136, 192, 208),    -- nord frost blue
+            Neutral  = Color3.fromRGB(46, 52, 64),
+            Success  = Color3.fromRGB(163, 190, 140),
+            Warning  = Color3.fromRGB(235, 203, 139),
+            Danger   = Color3.fromRGB(191, 97, 106),
+            Info     = Color3.fromRGB(129, 161, 193),
+        },
+        Dracula = {
+            IsLight  = false,
+            Accent   = Color3.fromRGB(189, 147, 249),    -- dracula purple
+            Neutral  = Color3.fromRGB(40, 42, 54),
+            Success  = Color3.fromRGB(80, 250, 123),
+            Warning  = Color3.fromRGB(241, 250, 140),
+            Danger   = Color3.fromRGB(255, 85, 85),
+            Info     = Color3.fromRGB(139, 233, 253),
+        },
+        Catppuccin = {
+            IsLight  = false,
+            Accent   = Color3.fromRGB(203, 166, 247),    -- mauve
+            Neutral  = Color3.fromRGB(30, 30, 46),       -- crust
+            Success  = Color3.fromRGB(166, 227, 161),
+            Warning  = Color3.fromRGB(249, 226, 175),
+            Danger   = Color3.fromRGB(243, 139, 168),
+            Info     = Color3.fromRGB(137, 180, 250),
+        },
+        Amoled = {
+            IsLight  = false,
+            Accent   = Color3.fromRGB(0, 230, 118),      -- neon green on true black
+            Neutral  = Color3.fromRGB(0, 0, 0),
+            Success  = Color3.fromRGB(0, 230, 118),
+            Warning  = Color3.fromRGB(255, 213, 0),
+            Danger   = Color3.fromRGB(255, 45, 85),
+            Info     = Color3.fromRGB(10, 200, 255),
+        },
+        Ocean = {
+            IsLight  = false,
+            Accent   = Color3.fromRGB(100, 210, 255),    -- ocean blue
+            Neutral  = Color3.fromRGB(8, 18, 32),
+            Success  = Color3.fromRGB(60, 220, 160),
+            Warning  = Color3.fromRGB(255, 200, 60),
+            Danger   = Color3.fromRGB(255, 80, 80),
+            Info     = Color3.fromRGB(100, 210, 255),
+        },
+        Light = {
+            IsLight  = true,
+            Accent   = Color3.fromRGB(99, 74, 228),
+            Neutral  = Color3.fromRGB(248, 248, 252),
+            Success  = Color3.fromRGB(22, 163, 74),
+            Warning  = Color3.fromRGB(202, 138, 4),
+            Danger   = Color3.fromRGB(220, 38, 38),
+            Info     = Color3.fromRGB(37, 99, 235),
+        },
+        -- Rainbow is handled specially in SetTheme — this entry just acts as
+        -- a placeholder so it appears in the dropdown.
+        Rainbow = {
+            IsLight  = false,
+            Accent   = Color3.fromRGB(255, 100, 100),
+            Neutral  = Color3.fromRGB(14, 14, 18),
+            Success  = Color3.fromRGB(34, 197, 94),
+            Warning  = Color3.fromRGB(234, 179, 8),
+            Danger   = Color3.fromRGB(239, 68, 68),
+            Info     = Color3.fromRGB(59, 130, 246),
         },
     }
 
@@ -2666,7 +2731,37 @@ LibraryMaid:Connect(UserInputService.WindowFocusReleased, function() Library.IsR
 
 -- ── Theme Management ──────────────────────────────────────────────────────
 
+-- Tracks the Rainbow cycling connection so it can be stopped when switching away
+local _rainbowConn = nil
+local _rainbowHue  = 0
+
 function Library:SetTheme(name, customThemeData, animated)
+    -- Stop any existing rainbow cycle
+    if _rainbowConn then
+        _rainbowConn:Disconnect()
+        _rainbowConn = nil
+    end
+
+    -- Rainbow: cycle accent hue every frame instead of using a fixed color
+    if name == "Rainbow" and not customThemeData then
+        ThemeEngine.ActiveThemeName = "Rainbow"
+        _rainbowConn = RunService.Heartbeat:Connect(function(dt)
+            _rainbowHue = (_rainbowHue + dt * 0.12) % 1  -- full cycle ~8s
+            local accentColor = Color3.fromHSV(_rainbowHue, 0.85, 1)
+            -- Build theme on Dark neutral base with cycling accent
+            local baseTheme = ThemeEngine.BuiltinThemes.Dark
+            local rainbowTheme = {}
+            for k, v in pairs(baseTheme) do rainbowTheme[k] = v end
+            rainbowTheme.Accent = accentColor
+            local scheme = ThemeEngine:Build(rainbowTheme)
+            ThemeEngine.CurrentScheme = scheme
+            Library.Scheme = scheme
+            UpdateRegistry()
+        end)
+        LibraryMaid:Give(_rainbowConn)
+        return
+    end
+
     local themeData = customThemeData or ThemeEngine.BuiltinThemes[name]
     if not themeData then
         warn("NexusUI: Unknown theme:", name)
@@ -2739,6 +2834,9 @@ end
 
 function Library:SafeCallback(fn, ...)
     if typeof(fn) ~= "function" then return end
+    -- Suppress all user callbacks while a config is being loaded so that
+    -- restoring values doesn't trigger side-effects (e.g. teleports, actions).
+    if Library._loadingConfig then return end
     local ok2, err = xpcall(fn, debug.traceback, ...)
     if not ok2 then
         task.defer(error, err)
@@ -4801,13 +4899,19 @@ do
             end
         end
 
+        -- Suppress user callbacks during the entire restore so that setting
+        -- values doesn't trigger side-effects (teleports, game actions, etc.).
+        Library._loadingConfig = true
+
         -- Pass 1: normal user values
         for k, v in pairs(normalData) do restoreEntry(k, v) end
 
         -- Pass 2: builtin settings (nx_ keys) — deferred one frame so the
-        -- Settings panel callbacks are guaranteed to be wired up
+        -- Settings panel callbacks are guaranteed to be wired up.
+        -- Clear the flag after both passes are done.
         task.defer(function()
             for k, v in pairs(settingsData) do restoreEntry(k, v) end
+            Library._loadingConfig = false
         end)
 
         -- Anything that exists in the live UI but wasn't in the config
@@ -6290,92 +6394,156 @@ function Library:CreateWindow(info)
     })
     frostGrad.Parent = frostLayer2
 
-    -- ── Ambient Particle Field ───────────────────────────────────────────
+    -- ── Particle Network Field ──────────────────────────────────────────
     --[[
-        A handful of small, soft, accent-colored dots that drift slowly and
-        pulse behind the menu content while it's open. Purely decorative —
-        ClipsDescendants on mainFrame keeps them confined to the panel.
-
-        Performance: particles use TweenService (GPU/engine-driven, not
-        Lua-Heartbeat) with `:Repeat` via TweenInfo, so the cost is a fixed
-        number of looping tweens rather than anything in AnimEngine's
-        per-frame loop. They're parented/destroyed (not just hidden) when
-        toggled off, so a closed/minimized menu costs nothing.
+        Connected-dots network effect: dots drift around and thin lines are
+        drawn between any two dots closer than CONNECT_DIST px. Line opacity
+        scales with proximity (closer = more opaque). Runs on Heartbeat so
+        positions and lines update every frame. Everything is destroyed (not
+        just hidden) when the menu closes or particles are toggled off.
     ]]
     local particleField = New("Frame", {
         BackgroundTransparency = 1,
         Size             = UDim2.fromScale(1, 1),
         ZIndex           = mainFrame.ZIndex,
+        ClipsDescendants = true,
         Parent           = mainFrame,
     })
 
-    local PARTICLE_COUNT = 14
-    local _particleConns = {}
+    local PARTICLE_COUNT = 40       -- number of dots
+    local CONNECT_DIST   = 120      -- px — max distance to draw a line
+    local DOT_SPEED      = 28       -- px/s base speed
+    local DOT_MIN_SIZE   = 2
+    local DOT_MAX_SIZE   = 4
+    local DOT_ALPHA      = 0.55     -- dot transparency (lower = more visible)
+    local LINE_MAX_ALPHA = 0.72     -- line transparency at closest distance
+
     local _particlesSpawned = false
+    local _heartbeatConn    = nil
+    local _dots             = {}    -- { inst, x, y, vx, vy, size }
+    local _lines            = {}    -- pool of line frames
+
+    -- Line pool: reuse frames instead of creating/destroying every frame
+    local function getLine()
+        for _, l in ipairs(_lines) do
+            if not l._inUse then
+                l._inUse = true
+                l.inst.Visible = true
+                return l
+            end
+        end
+        -- Allocate a new one
+        local inst = New("Frame", {
+            AnchorPoint      = Vector2.new(0, 0.5),
+            BackgroundColor3 = "AccentColor",
+            BorderSizePixel  = 0,
+            ZIndex           = particleField.ZIndex,
+            Parent           = particleField,
+        })
+        local l = { inst = inst, _inUse = true }
+        table.insert(_lines, l)
+        return l
+    end
+
+    local function returnLines()
+        for _, l in ipairs(_lines) do
+            l._inUse = false
+            l.inst.Visible = false
+        end
+    end
 
     local function spawnParticles()
         if _particlesSpawned then return end
         _particlesSpawned = true
 
+        local w = mainFrame.AbsoluteSize.X
+        local h = mainFrame.AbsoluteSize.Y
+
+        -- Create dots
         for i = 1, PARTICLE_COUNT do
-            local size = math.random(3, 8)
-            local dot = New("Frame", {
-                BackgroundColor3 = "AccentColor",
-                BackgroundTransparency = 1, -- fades in below
-                Size     = UDim2.fromOffset(size, size),
-                Position = UDim2.fromScale(math.random(), math.random()),
-                ZIndex   = particleField.ZIndex,
+            local sz  = math.random(DOT_MIN_SIZE, DOT_MAX_SIZE)
+            local spd = DOT_SPEED * (0.6 + math.random() * 0.8)
+            local ang = math.random() * math.pi * 2
+            local inst = New("Frame", {
+                BackgroundColor3       = "AccentColor",
+                BackgroundTransparency = DOT_ALPHA,
+                Size     = UDim2.fromOffset(sz, sz),
+                Position = UDim2.fromOffset(math.random() * w, math.random() * h),
+                ZIndex   = particleField.ZIndex + 1,
                 Parent   = particleField,
             })
-            New("UICorner", { CornerRadius = UDim.new(1, 0), Parent = dot })
-
-            local baseTransparency = 0.82 + math.random() * 0.12 -- ~0.82–0.94, very subtle
-            local driftDist  = math.random(18, 48)
-            local driftAngle = math.random() * math.pi * 2
-            local offset     = Vector2.new(math.cos(driftAngle), math.sin(driftAngle)) * driftDist
-            local driftTime  = 4 + math.random() * 4   -- 4–8s one-way
-            local pulseTime  = 1.5 + math.random() * 2  -- 1.5–3.5s
-
-            -- Fade in from invisible
-            TweenService:Create(dot, TweenInfo.new(0.6 + math.random() * 0.6, Enum.EasingStyle.Quad),
-                { BackgroundTransparency = baseTransparency }):Play()
-
-            -- Slow positional drift, ping-ponging forever
-            local startPos = dot.Position
-            local endPos   = UDim2.new(
-                startPos.X.Scale, startPos.X.Offset + offset.X,
-                startPos.Y.Scale, startPos.Y.Offset + offset.Y
-            )
-            local driftInfo = TweenInfo.new(driftTime, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true)
-            local driftTween = TweenService:Create(dot, driftInfo, { Position = endPos })
-            driftTween:Play()
-
-            -- Gentle opacity pulse, ping-ponging forever
-            local pulseInfo = TweenInfo.new(pulseTime, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true)
-            local pulseTween = TweenService:Create(dot, pulseInfo, {
-                BackgroundTransparency = math.min(0.97, baseTransparency + 0.08),
-            })
-            -- Stagger pulse start so particles don't breathe in sync
-            task.delay(math.random() * pulseTime, function()
-                if dot.Parent then pulseTween:Play() end
-            end)
-
-            table.insert(_particleConns, dot)
-            table.insert(_particleConns, driftTween)
-            table.insert(_particleConns, pulseTween)
+            New("UICorner", { CornerRadius = UDim.new(1, 0), Parent = inst })
+            _dots[i] = {
+                inst = inst,
+                x    = math.random() * w,
+                y    = math.random() * h,
+                vx   = math.cos(ang) * spd,
+                vy   = math.sin(ang) * spd,
+                size = sz,
+            }
         end
+
+        -- Heartbeat: move dots + redraw lines every frame
+        _heartbeatConn = RunService.Heartbeat:Connect(function(dt)
+            if not mainFrame or not mainFrame.Parent then return end
+
+            local fw = mainFrame.AbsoluteSize.X
+            local fh = mainFrame.AbsoluteSize.Y
+            if fw < 10 or fh < 10 then return end
+
+            -- Move dots, bounce off edges
+            for _, d in ipairs(_dots) do
+                d.x = d.x + d.vx * dt
+                d.y = d.y + d.vy * dt
+                -- Bounce
+                if d.x < 0       then d.x = 0;        d.vx = math.abs(d.vx)  end
+                if d.x > fw      then d.x = fw;        d.vx = -math.abs(d.vx) end
+                if d.y < 0       then d.y = 0;         d.vy = math.abs(d.vy)  end
+                if d.y > fh      then d.y = fh;        d.vy = -math.abs(d.vy) end
+                -- Apply position
+                d.inst.Position = UDim2.fromOffset(d.x - d.size * 0.5, d.y - d.size * 0.5)
+            end
+
+            -- Draw lines between close pairs
+            returnLines()
+            local n = #_dots
+            for i = 1, n - 1 do
+                local a = _dots[i]
+                for j = i + 1, n do
+                    local b  = _dots[j]
+                    local dx = b.x - a.x
+                    local dy = b.y - a.y
+                    local dist = math.sqrt(dx * dx + dy * dy)
+                    if dist < CONNECT_DIST then
+                        local alpha = LINE_MAX_ALPHA + (1 - LINE_MAX_ALPHA) * (dist / CONNECT_DIST)
+                        local l = getLine()
+                        local angle = math.deg(math.atan2(dy, dx))
+                        l.inst.Position            = UDim2.fromOffset(a.x, a.y)
+                        l.inst.Size                = UDim2.fromOffset(dist, 1)
+                        l.inst.Rotation            = angle
+                        l.inst.BackgroundTransparency = alpha
+                    end
+                end
+            end
+        end)
+
+        -- clearParticles handles disconnect; also register with maid for safety
+        windowMaid:Give(function() if _heartbeatConn then _heartbeatConn:Disconnect() end end)
     end
 
     local function clearParticles()
-        for _, obj in ipairs(_particleConns) do
-            if typeof(obj) == "Instance" then
-                if obj:IsA("Tween") then obj:Cancel() end
-                obj:Destroy()
-            elseif obj.Cancel then
-                pcall(function() obj:Cancel() end)
-            end
+        if _heartbeatConn then
+            _heartbeatConn:Disconnect()
+            _heartbeatConn = nil
         end
-        _particleConns = {}
+        for _, d in ipairs(_dots) do
+            if d.inst and d.inst.Parent then d.inst:Destroy() end
+        end
+        _dots = {}
+        for _, l in ipairs(_lines) do
+            if l.inst and l.inst.Parent then l.inst:Destroy() end
+        end
+        _lines = {}
         _particlesSpawned = false
     end
 
@@ -7804,10 +7972,19 @@ function Library:CreateWindow(info)
     -- Register default commands
     CommandPalette.Register({ name = "Toggle Window",       category = "UI",    action = function() Window:Toggle() end })
     CommandPalette.Register({ name = "Toggle Debug Overlay",category = "Debug", action = function() DebugOverlay.Toggle() end })
-    CommandPalette.Register({ name = "Toggle Light Mode",   category = "Theme", action = function() Library:ToggleLightMode(true) end })
-    CommandPalette.Register({ name = "Reset Theme to Dark", category = "Theme", action = function() Library:SetTheme("Dark", nil, true) end })
-    CommandPalette.Register({ name = "Theme: Midnight",     category = "Theme", action = function() Library:SetTheme("Midnight", nil, true) end })
-    CommandPalette.Register({ name = "Theme: Ember",        category = "Theme", action = function() Library:SetTheme("Ember", nil, true) end })
+    CommandPalette.Register({ name = "Toggle Light Mode",    category = "Theme", action = function() Library:ToggleLightMode(true) end })
+    CommandPalette.Register({ name = "Theme: Dark",          category = "Theme", action = function() Library:SetTheme("Dark",       nil, true) end })
+    CommandPalette.Register({ name = "Theme: Midnight",      category = "Theme", action = function() Library:SetTheme("Midnight",   nil, true) end })
+    CommandPalette.Register({ name = "Theme: Ember",         category = "Theme", action = function() Library:SetTheme("Ember",      nil, true) end })
+    CommandPalette.Register({ name = "Theme: Jade",          category = "Theme", action = function() Library:SetTheme("Jade",       nil, true) end })
+    CommandPalette.Register({ name = "Theme: Rose",          category = "Theme", action = function() Library:SetTheme("Rose",       nil, true) end })
+    CommandPalette.Register({ name = "Theme: Nord",          category = "Theme", action = function() Library:SetTheme("Nord",       nil, true) end })
+    CommandPalette.Register({ name = "Theme: Dracula",       category = "Theme", action = function() Library:SetTheme("Dracula",    nil, true) end })
+    CommandPalette.Register({ name = "Theme: Catppuccin",    category = "Theme", action = function() Library:SetTheme("Catppuccin", nil, true) end })
+    CommandPalette.Register({ name = "Theme: Amoled",        category = "Theme", action = function() Library:SetTheme("Amoled",     nil, true) end })
+    CommandPalette.Register({ name = "Theme: Ocean",         category = "Theme", action = function() Library:SetTheme("Ocean",      nil, true) end })
+    CommandPalette.Register({ name = "Theme: Light",         category = "Theme", action = function() Library:SetTheme("Light",      nil, true) end })
+    CommandPalette.Register({ name = "Theme: Rainbow",       category = "Theme", action = function() Library:SetTheme("Rainbow") end })
 
     -- Settings panel is always created so the gear button is always present.
     -- PopulateBuiltinSettings (Appearance / Keybinds / Configs / Misc) runs
