@@ -14,7 +14,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
 
 -- Load your UI library
-local UI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Volodym5/pfasdzxc231/main/lib/source.lua"))()
+local UI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Volodym5/pfasdzxc131/main/lib/source.lua"))()
 
 -- ========================================================
 -- GLOBAL SETTINGS
@@ -73,7 +73,8 @@ local config = {
         AutoShoot = {
             Enabled = false,
             Delay = 0.02,
-            SpawnProtectionTime = 1.65
+            SpawnProtectionTime = 1.65,
+            TieToSilentAim = true -- When true, AutoShoot uses Silent Aim's exact target
         }
     },
     
@@ -486,23 +487,64 @@ local function UpdateSilentFOVTracking()
 end
 
 -- ========================================================
--- AUTO SHOOT (RAGE)
+-- AUTO SHOOT (RAGE) - WITH TIE TO SILENT AIM
 -- ========================================================
 local function HandleAutoShoot()
     if not config.Rage.AutoShoot.Enabled then return end
     if state.autoShootActive then return end
     
-    local target, targetChar = FindTargetRage(config.Rage.SilentAim.FOV, "Nearest", Global.Rage.VisCheck, Global.Rage.TeamCheck, config.Rage.SilentAim.DynamicFOV, true, IsSpawnProtectedForShoot)
-    
-    if target then
-        state.autoShootActive = true
+    if config.Rage.AutoShoot.TieToSilentAim then
+        -- Use Silent Aim's exact target if available and still valid
+        if state.silentTarget and state.silentTarget.Parent then
+            local char = state.silentTarget.Parent
+            local hum = char:FindFirstChildOfClass("Humanoid")
+            local player = Players:GetPlayerFromCharacter(char)
+            
+            -- Verify target is still valid
+            if hum and hum.Health > 0 then
+                if not player or not IsSpawnProtectedForShoot(player) then
+                    if IsPartVisible(state.silentTarget, char, Global.Rage.VisCheck) then
+                        state.autoShootActive = true
+                        
+                        VIM:SendMouseButtonEvent(0, 0, 0, true, game, 0)
+                        task.wait(0.02)
+                        VIM:SendMouseButtonEvent(0, 0, 0, false, game, 0)
+                        
+                        task.wait(config.Rage.AutoShoot.Delay)
+                        state.autoShootActive = false
+                        return
+                    end
+                end
+            end
+        end
         
-        VIM:SendMouseButtonEvent(0, 0, 0, true, game, 0)
-        task.wait(0.02)
-        VIM:SendMouseButtonEvent(0, 0, 0, false, game, 0)
+        -- Fallback: Silent Aim target not available, find our own
+        local target, targetChar = FindTargetRage(config.Rage.SilentAim.FOV, "Nearest", Global.Rage.VisCheck, Global.Rage.TeamCheck, config.Rage.SilentAim.DynamicFOV, true, IsSpawnProtectedForShoot)
         
-        task.wait(config.Rage.AutoShoot.Delay)
-        state.autoShootActive = false
+        if target then
+            state.autoShootActive = true
+            
+            VIM:SendMouseButtonEvent(0, 0, 0, true, game, 0)
+            task.wait(0.02)
+            VIM:SendMouseButtonEvent(0, 0, 0, false, game, 0)
+            
+            task.wait(config.Rage.AutoShoot.Delay)
+            state.autoShootActive = false
+        end
+    else
+        -- Independent mode
+        local target, targetChar = FindTargetRage(config.Rage.SilentAim.FOV, "Nearest", Global.Rage.VisCheck, Global.Rage.TeamCheck, config.Rage.SilentAim.DynamicFOV, true, IsSpawnProtectedForShoot)
+        
+        if target then
+            state.autoShootActive = true
+            
+            VIM:SendMouseButtonEvent(0, 0, 0, true, game, 0)
+            task.wait(0.02)
+            VIM:SendMouseButtonEvent(0, 0, 0, false, game, 0)
+            
+            task.wait(config.Rage.AutoShoot.Delay)
+            state.autoShootActive = false
+        end
     end
 end
 
@@ -619,7 +661,7 @@ local function ProcessLegitAimbot()
 end
 
 -- ========================================================
--- SILENT AIM
+-- SILENT AIM - STORES TARGET FOR AUTOSHOOT TIE-IN
 -- ========================================================
 local function SetupSilentAim()
     local s, gunMod = pcall(function()
@@ -643,6 +685,7 @@ local function SetupSilentAim()
                 if math.random(1, 100) <= config.Rage.SilentAim.HitChance then
                     local tgt = FindTargetRage(config.Rage.SilentAim.FOV, config.Rage.SilentAim.HitPart, Global.Rage.VisCheck, Global.Rage.TeamCheck, config.Rage.SilentAim.DynamicFOV, false, nil)
                     if tgt and WillStillBeVisible(tgt, tgt.Parent) then
+                        -- Store for AutoShoot tie-in
                         state.silentTarget = tgt
                         args[5] = tgt.Position
                         args[6] = tgt
@@ -756,7 +799,7 @@ end
 -- ========================================================
 local Window = UI:CreateWindow({
     Title          = "nexus.gg",
-    Size           = UDim2.fromOffset(520, 440),
+    Size           = UDim2.fromOffset(520, 460),
     Center         = true,
     Resizable      = true,
     ToggleKeybind  = Enum.KeyCode.RightShift,
@@ -919,6 +962,11 @@ AutoShootBox:AddToggle("AutoShootEnabled", {
     Text     = "Enabled",
     Default  = config.Rage.AutoShoot.Enabled,
     Callback = function(v) config.Rage.AutoShoot.Enabled = v end,
+})
+AutoShootBox:AddToggle("AutoShootTie", {
+    Text     = "Tie to Silent Aim",
+    Default  = config.Rage.AutoShoot.TieToSilentAim,
+    Callback = function(v) config.Rage.AutoShoot.TieToSilentAim = v end,
 })
 AutoShootBox:AddSlider("AutoShootDelay", {
     Text     = "Delay",
