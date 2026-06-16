@@ -13,6 +13,7 @@ local player = game.Players.LocalPlayer
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local Networking = require(game.ReplicatedStorage.SharedModules.Networking)
+local CollectionService = game:GetService("CollectionService")
 
 local fruitNames = {
     "Carrot", "Strawberry", "Blueberry", "Tulip", "Tomato", "Apple",
@@ -65,10 +66,15 @@ local ignoredSeeds = {}
 
 local antiCactusEnabled = false
 local noErrorSoundEnabled = false
+local antiGhostPepperEnabled = false
+local ghostPepperParts = {}
 
 local walkSpeedEnabled = false
 local walkSpeedValue = 40
 local walkSpeedConnection = nil
+local jumpPowerEnabled = false
+local jumpPowerValue = 50
+local defaultJumpPower = 50
 
 local function startWalkSpeed()
     if walkSpeedConnection then return end
@@ -89,6 +95,22 @@ local function stopWalkSpeed()
         if humanoid then humanoid.WalkSpeed = 16 end
     end
 end
+
+local function updateJumpPower()
+    local char = player.Character
+    if char then
+        local humanoid = char:FindFirstChild("Humanoid")
+        if humanoid then
+            humanoid.UseJumpPower = true
+            humanoid.JumpPower = jumpPowerEnabled and jumpPowerValue or defaultJumpPower
+        end
+    end
+end
+
+player.CharacterAdded:Connect(function()
+    task.wait(0.1)
+    updateJumpPower()
+end)
 
 local flyEnabled = false
 local flySpeed = 100
@@ -330,6 +352,35 @@ game.DescendantAdded:Connect(function(obj)
     end
 end)
 
+-- Anti Ghost Pepper (cached)
+local function scanGhostPeppers()
+    for _, obj in ipairs(CollectionService:GetTagged("GhostPepper")) do
+        ghostPepperParts[obj] = true
+    end
+end
+
+workspace.DescendantAdded:Connect(function(obj)
+    if obj:IsA("BasePart") and CollectionService:HasTag(obj, "GhostPepper") then
+        ghostPepperParts[obj] = true
+    end
+end)
+
+workspace.DescendantRemoving:Connect(function(obj)
+    ghostPepperParts[obj] = nil
+end)
+
+scanGhostPeppers()
+
+local function processGhostPeppers()
+    for part in pairs(ghostPepperParts) do
+        if part.Parent then
+            pcall(function() part:RemoveTag("GhostPepper") end)
+        else
+            ghostPepperParts[part] = nil
+        end
+    end
+end
+
 RunService.Heartbeat:Connect(function()
     local now = tick()
     if harvestEnabled and now - lastHarvest > harvestDelay then
@@ -346,6 +397,9 @@ RunService.Heartbeat:Connect(function()
     end
     if autoBuyGearsEnabled and now - lastAutoBuyGear > autoBuyDelay then
         lastAutoBuyGear = now; doAutoBuyGears()
+    end
+    if antiGhostPepperEnabled then
+        processGhostPeppers()
     end
     if antiCactusEnabled then
         local char = player.Character
@@ -400,6 +454,7 @@ StealBox:AddDropdown("IgnoreList", { Text = "Ignore List", Values = fruitNames, 
 
 local AntiBox = MainTab:AddGroupbox({ Name = "Anti", Side = 2 })
 AntiBox:AddToggle("AntiCactus", { Text = "Anti Cactus", Default = false, Callback = function(value) antiCactusEnabled = value end })
+AntiBox:AddToggle("AntiGhostPepper", { Text = "Anti Ghost Pepper", Default = false, Callback = function(value) antiGhostPepperEnabled = value end })
 AntiBox:AddToggle("NoErrorSound", { Text = "No Error Sound", Default = false, Callback = function(value) noErrorSoundEnabled = value end })
 
 -- Auto Buy Tab
@@ -420,6 +475,8 @@ local MovementBox = PlayerTab:AddGroupbox({ Name = "Movement", Side = 1 })
 MovementBox:AddToggle("WalkSpeed", { Text = "WalkSpeed", Default = false, Callback = function(value) walkSpeedEnabled = value; if value then startWalkSpeed() else stopWalkSpeed() end end })
 MovementBox:AddSlider("WalkSpeedValue", { Text = "Walk Speed", Default = 24, Min = 16, Max = 200, Rounding = 0, Callback = function(value) walkSpeedValue = value end })
 MovementBox:AddKeyPicker("WalkSpeedKey", { Text = "WalkSpeed", Default = "V", Mode = "Toggle", Callback = function() walkSpeedEnabled = not walkSpeedEnabled; UI.Toggles.WalkSpeed:SetValue(walkSpeedEnabled); if walkSpeedEnabled then startWalkSpeed() else stopWalkSpeed() end end })
+MovementBox:AddToggle("JumpPower", { Text = "Jump Power", Default = false, Callback = function(value) jumpPowerEnabled = value; updateJumpPower() end })
+MovementBox:AddSlider("JumpPowerValue", { Text = "Jump Height", Default = 50, Min = 50, Max = 500, Rounding = 0, Callback = function(value) jumpPowerValue = value; updateJumpPower() end })
 MovementBox:AddToggle("Fly", { Text = "Fly", Default = false, Callback = function(value) flyEnabled = value; if value then startFly() else stopFly() end end })
 MovementBox:AddSlider("FlySpeed", { Text = "Fly Speed", Default = 50, Min = 10, Max = 200, Rounding = 0, Callback = function(value) flySpeed = value end })
 MovementBox:AddKeyPicker("FlyKey", { Text = "Fly", Default = "B", Mode = "Toggle", Callback = function() flyEnabled = not flyEnabled; UI.Toggles.Fly:SetValue(flyEnabled); if flyEnabled then startFly() else stopFly() end end })
