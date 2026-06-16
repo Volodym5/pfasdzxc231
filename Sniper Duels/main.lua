@@ -12,6 +12,7 @@ local VIM = game:GetService("VirtualInputManager")
 local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
+local Stats = game:GetService("Stats")
 
 -- Load UI library
 local UI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Volodym5/pfasdzxc231/main/lib/source.lua"))()
@@ -25,7 +26,6 @@ local Global = {
         TeamCheck = false
     },
     Rage = {
-        VisCheck = true,
         TeamCheck = false
     },
     ESP = {
@@ -42,9 +42,19 @@ local config = {
     },
     
     Legit = {
+        SilentAim = {
+            Enabled = false,
+            FOV = 212,
+            HitPart = "Nearest",
+            HitChance = 100,
+            DynamicFOV = true,
+            FOVFollowTime = 3.0,
+            FOVFollowEnabled = true,
+            FOVSpawnDelay = 0.8
+        },
         Aimbot = {
             Enabled = false,
-            FOV = 120,
+            FOV = 333,
             Smoothness = 0.6,
             Humanize = true,
             AimDelay = 0.115,
@@ -60,22 +70,16 @@ local config = {
     },
     
     Rage = {
-        SilentAim = {
-            Enabled = false,
-            FOV = 100,
-            HitPart = "Nearest",
-            HitChance = 100,
-            DynamicFOV = true,
-            FOVFollowTime = 3.0,
-            FOVFollowEnabled = true,
-            FOVSpawnDelay = 0.8
-        },
-        AutoShoot = {
-            Enabled = false,
-            Delay = 0.02,
-            SpawnProtectionTime = 1.65,
-            TieToSilentAim = true
-        }
+        Enabled = false,
+        FOV = 300,
+        HitPart = "Head",
+        DynamicFOV = true,
+        ShootDelay = 0.01,
+        SpawnProtectionTime = 2.5,
+        AutoShoot = true,
+        HitboxMultiplier = 1.2,
+        DynamicPrediction = true,
+        PingUpdateInterval = 0.1
     },
     
     FOV = {
@@ -86,7 +90,11 @@ local config = {
         Thickness = 1.5
     },
     
-    -- Movement settings
+    Visuals = {
+        Trajectories = true,
+        TrajectoryTime = 2
+    },
+    
     Movement = {
         WalkSpeed = {
             Enabled = false,
@@ -97,8 +105,13 @@ local config = {
         },
         Gravity = {
             Enabled = false,
-            Value = 0.5 -- 50% gravity
+            Value = 0.5
         }
+    },
+    
+    Debug = {
+        Enabled = false,
+        NotifyKill = true
     }
 }
 
@@ -110,13 +123,17 @@ local state = {
     isAiming = false,
     highlightCache = {},
     aimStartTime = 0,
-    autoShootActive = false,
+    rageActive = false,
+    rageLastFire = 0,
     silentFovTrackTarget = nil,
     silentFovTrackPart = nil,
     silentFovTrackTime = 0,
     fovTrackScreenPos = nil,
     spawnTimes = {},
     originalGravity = Workspace.Gravity,
+    currentPing = 0,
+    dynamicPrediction = 0.05,
+    lastPingUpdate = 0,
     humanizer = {
         lastTarget = nil,
         lastSwitch = 0,
@@ -125,8 +142,54 @@ local state = {
         microAdjustments = {},
         lastAdjustTime = 0,
         aimSmoothness = 0
-    }
+    },
+    debugShotCount = 0,
+    debugLastShot = 0,
+    trajectoryLines = {}
 }
+
+local MAX_TRAJECTORIES = 10
+
+-- ========================================================
+-- TRAJECTORY FUNCTIONS
+-- ========================================================
+local function CreateTrajectory(from, to, color)
+    local line = Drawing.new("Line")
+    line.From = Vector2.new(from.X, from.Y)
+    line.To = Vector2.new(to.X, to.Y)
+    line.Color = color or Color3.fromRGB(255, 255, 0)
+    line.Thickness = 2
+    line.Transparency = 0.8
+    line.Visible = true
+    
+    table.insert(state.trajectoryLines, {
+        line = line,
+        created = tick(),
+        from = from,
+        to = to
+    })
+    
+    while #state.trajectoryLines > MAX_TRAJECTORIES do
+        local old = table.remove(state.trajectoryLines, 1)
+        pcall(function() old.line:Remove() end)
+    end
+end
+
+local function UpdateTrajectories()
+    local now = tick()
+    for i = #state.trajectoryLines, 1, -1 do
+        local traj = state.trajectoryLines[i]
+        local age = now - traj.created
+        
+        if age > config.Visuals.TrajectoryTime then
+            pcall(function() traj.line:Remove() end)
+            table.remove(state.trajectoryLines, i)
+        else
+            traj.line.Transparency = 0.8 + (age / config.Visuals.TrajectoryTime) * 0.2
+            traj.line.Thickness = 2 - (age / config.Visuals.TrajectoryTime)
+        end
+    end
+end
 
 -- ========================================================
 -- SPAWN PROTECTION TRACKING
@@ -162,16 +225,39 @@ Players.PlayerAdded:Connect(function(player)
     end
 end)
 
-local function IsSpawnProtectedForShoot(player)
+local function IsSpawnProtected(player)
     local spawnTime = state.spawnTimes[player]
     if not spawnTime then return false end
-    return (tick() - spawnTime) < config.Rage.AutoShoot.SpawnProtectionTime
+    return (tick() - spawnTime) < config.Rage.SpawnProtectionTime
 end
 
 local function IsSpawnProtectedForFOV(player)
     local spawnTime = state.spawnTimes[player]
     if not spawnTime then return false end
-    return (tick() - spawnTime) < config.Rage.SilentAim.FOVSpawnDelay
+    return (tick() - spawnTime) < config.Legit.SilentAim.FOVSpawnDelay
+end
+
+-- ========================================================
+-- DYNAMIC PING TRACKING
+-- ========================================================
+local function UpdatePing()
+    local now = tick()
+    if now - state.lastPingUpdate < config.Rage.PingUpdateInterval then return end
+    state.lastPingUpdate = now
+    
+    pcall(function()
+        local perfStats = Stats:FindFirstChild("PerformanceStats")
+        if perfStats then
+            local ping = perfStats:FindFirstChild("Ping")
+            if ping then
+                state.currentPing = ping:GetValue()
+            end
+        end
+    end)
+    
+    if config.Rage.DynamicPrediction then
+        state.dynamicPrediction = math.clamp((state.currentPing / 1000) * 1.2, 0.03, 0.2)
+    end
 end
 
 -- ========================================================
@@ -243,50 +329,53 @@ end
 local rayParams = RaycastParams.new()
 rayParams.IgnoreWater = true
 
-local function RaycastVisible(origin, target, ignoreChar)
-    local ignoreList = {ignoreChar}
-    if LocalPlayer.Character then table.insert(ignoreList, LocalPlayer.Character) end
-    for _, glass in ipairs(glassParts) do table.insert(ignoreList, glass) end
-    
-    rayParams.FilterType = Enum.RaycastFilterType.Exclude
-    rayParams.FilterDescendantsInstances = ignoreList
-    
-    local result = Workspace:Raycast(origin, target - origin, rayParams)
-    return not result or result.Instance:IsDescendantOf(ignoreChar)
-end
-
-local function IsPartVisible(part, character, visCheck)
-    if not visCheck then return true end
-    UpdateGlassCache()
-    return RaycastVisible(Camera.CFrame.Position, part.Position, character)
-end
-
-local function WillStillBeVisible(part, character)
-    local PREDICT_TIME = 0.125
-    local rootPart = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-    local targetVel = part.AssemblyLinearVelocity
-    local predictedTargetPos = part.Position + targetVel * PREDICT_TIME
-    local predictedCameraPos = Camera.CFrame.Position
-    if rootPart then
-        local rootVel = rootPart.AssemblyLinearVelocity
-        local flatVel = Vector3.new(rootVel.X, 0, rootVel.Z)
-        predictedCameraPos = Camera.CFrame.Position + flatVel * PREDICT_TIME
-    end
-    local direction = predictedTargetPos - predictedCameraPos
-    local distance = direction.Magnitude
-    if distance < 0.5 then return true end
+local function IsPositionVisible(position, character)
     UpdateGlassCache()
     local ignoreList = {character}
     if LocalPlayer.Character then table.insert(ignoreList, LocalPlayer.Character) end
     for _, glass in ipairs(glassParts) do table.insert(ignoreList, glass) end
+    
     rayParams.FilterType = Enum.RaycastFilterType.Exclude
     rayParams.FilterDescendantsInstances = ignoreList
-    local result = Workspace:Raycast(predictedCameraPos, direction, rayParams)
-    if not result or result.Instance:IsDescendantOf(character) then return true end
-    local currentDir = part.Position - Camera.CFrame.Position
-    local currentResult = Workspace:Raycast(Camera.CFrame.Position, currentDir, rayParams)
-    if not currentResult or currentResult.Instance:IsDescendantOf(character) then return true end
-    return false
+    
+    local direction = position - Camera.CFrame.Position
+    local result = Workspace:Raycast(Camera.CFrame.Position, direction, rayParams)
+    return not result or result.Instance:IsDescendantOf(character)
+end
+
+local function IsPartVisible(part, character, visCheck)
+    if not visCheck then return true end
+    return IsPositionVisible(part.Position, character)
+end
+
+-- ========================================================
+-- FOOLPROOF PREDICTION FOR SILENT AIM
+-- ========================================================
+local function GetPredictedPosition(part, character)
+    local hrp = character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return part.Position end
+    
+    local currentPos = part.Position
+    local velocity = hrp.AssemblyLinearVelocity
+    
+    local currentVisible = IsPositionVisible(currentPos, character)
+    
+    if velocity.Magnitude < 2 then
+        return currentVisible and currentPos or nil
+    end
+    
+    local predictionTime = math.clamp(state.currentPing / 1000 * 1.2, 0.03, 0.2)
+    local predictedPos = currentPos + (velocity * predictionTime)
+    
+    if IsPositionVisible(predictedPos, character) then
+        return predictedPos
+    end
+    
+    if currentVisible then
+        return currentPos
+    end
+    
+    return nil
 end
 
 -- ========================================================
@@ -355,36 +444,45 @@ local function FindTargetLegit(baseFOV, targetMode, visCheck, teamCheck, useDyna
 end
 
 -- ========================================================
--- FIND TARGET (Rage)
+-- FIND BEST RAGE TARGET (VISIBLE ONLY, WITH HITBOX)
 -- ========================================================
-local function FindTargetRage(baseFOV, targetMode, visCheck, teamCheck, useDynamicFOV, ignoreSpawnProtected, spawnCheckFunc)
+local function FindBestRageTarget(baseFOV, targetMode, teamCheck, useDynamicFOV)
     local fov = useDynamicFOV and GetDynamicFOV(baseFOV) or baseFOV
     local best, bestDist = nil, fov
-    local bestChar = nil
+    local bestPlayer = nil
+    local bestPart = nil
     local center = Camera.ViewportSize / 2
+    local hitboxMult = config.Rage.HitboxMultiplier
     
     for _, player in ipairs(Players:GetPlayers()) do
         if player == LocalPlayer then continue end
         if not IsEnemy(player, teamCheck) then continue end
-        if ignoreSpawnProtected and spawnCheckFunc and spawnCheckFunc(player) then continue end
+        if IsSpawnProtected(player) then continue end
         
         local char = player.Character
         if not char then continue end
         local hum = char:FindFirstChildOfClass("Humanoid")
         if not hum or hum.Health <= 0 then continue end
         
-        for _, partName in ipairs(hitParts) do
+        local partsToCheck = {"Head", "UpperTorso", "LowerTorso", "HumanoidRootPart"}
+        
+        for _, partName in ipairs(partsToCheck) do
             if IsValidHitPart(partName, targetMode) then
                 local part = char:FindFirstChild(partName)
-                if part then
-                    if not IsPartVisible(part, char, visCheck) then continue end
-                    local sp, vis = Camera:WorldToViewportPoint(part.Position)
-                    if vis then
-                        local d = (Vector2.new(sp.X, sp.Y) - center).Magnitude
-                        if d < bestDist then
-                            bestDist = d
-                            best = part
-                            bestChar = char
+                if part and IsPartVisible(part, char, true) then
+                    local predictedPos = GetPredictedPosition(part, char)
+                    if predictedPos then
+                        local sp, vis = Camera:WorldToViewportPoint(predictedPos)
+                        if vis then
+                            local d = (Vector2.new(sp.X, sp.Y) - center).Magnitude / hitboxMult
+                            if partName == "Head" then
+                                d = d * 0.7
+                            end
+                            if d < bestDist then
+                                bestDist = d
+                                bestPart = part
+                                bestPlayer = player
+                            end
                         end
                     end
                 end
@@ -392,14 +490,7 @@ local function FindTargetRage(baseFOV, targetMode, visCheck, teamCheck, useDynam
         end
     end
     
-    if best and best.Name == "Head" and bestChar then
-        if math.random(1, 100) <= 10 then
-            local torso = bestChar:FindFirstChild("UpperTorso") or bestChar:FindFirstChild("LowerTorso")
-            if torso then best = torso end
-        end
-    end
-    
-    return best, bestChar
+    return bestPart, bestPlayer
 end
 
 -- ========================================================
@@ -462,7 +553,7 @@ end
 -- UPDATE SILENT AIM FOV TRACKING
 -- ========================================================
 local function UpdateSilentFOVTracking()
-    local part, char = FindTargetRage(config.Rage.SilentAim.FOV, config.Rage.SilentAim.HitPart, Global.Rage.VisCheck, Global.Rage.TeamCheck, config.Rage.SilentAim.DynamicFOV, true, IsSpawnProtectedForFOV)
+    local part, char = FindTargetLegit(config.Legit.SilentAim.FOV, config.Legit.SilentAim.HitPart, Global.Legit.VisCheck, Global.Legit.TeamCheck, config.Legit.SilentAim.DynamicFOV)
     
     if part and char then
         state.silentFovTrackTarget = char
@@ -476,8 +567,8 @@ local function UpdateSilentFOVTracking()
     elseif state.silentFovTrackTarget then
         local hum = state.silentFovTrackTarget:FindFirstChildOfClass("Humanoid")
         local isDead = not hum or hum.Health <= 0
-        local isBehindWall = state.silentFovTrackPart and not IsPartVisible(state.silentFovTrackPart, state.silentFovTrackTarget, Global.Rage.VisCheck)
-        local timeExceeded = (tick() - state.silentFovTrackTime) > config.Rage.SilentAim.FOVFollowTime
+        local isBehindWall = state.silentFovTrackPart and not IsPartVisible(state.silentFovTrackPart, state.silentFovTrackTarget, Global.Legit.VisCheck)
+        local timeExceeded = (tick() - state.silentFovTrackTime) > config.Legit.SilentAim.FOVFollowTime
         
         if isDead or isBehindWall or timeExceeded then
             state.silentFovTrackTarget = nil
@@ -494,7 +585,7 @@ local function UpdateSilentFOVTracking()
         end
     end
     
-    if not config.Rage.SilentAim.FOVFollowEnabled then
+    if not config.Legit.SilentAim.FOVFollowEnabled then
         state.silentFovTrackTarget = nil
         state.silentFovTrackPart = nil
         state.silentFovTrackTime = 0
@@ -503,53 +594,44 @@ local function UpdateSilentFOVTracking()
 end
 
 -- ========================================================
--- AUTO SHOOT (RAGE) - WITH TIE TO SILENT AIM
+-- RAGEBOT
 -- ========================================================
-local function HandleAutoShoot()
-    if not config.Rage.AutoShoot.Enabled then return end
-    if state.autoShootActive then return end
+local function HandleRagebot(Window)
+    if not config.Rage.Enabled then
+        state.rageActive = false
+        state.silentTarget = nil
+        return
+    end
     
-    if config.Rage.AutoShoot.TieToSilentAim then
-        if state.silentTarget and state.silentTarget.Parent then
-            local char = state.silentTarget.Parent
-            local hum = char:FindFirstChildOfClass("Humanoid")
-            local player = Players:GetPlayerFromCharacter(char)
+    state.rageActive = true
+    local now = tick()
+    
+    UpdatePing()
+    
+    local bestPart, bestPlayer = FindBestRageTarget(config.Rage.FOV, config.Rage.HitPart, Global.Rage.TeamCheck, config.Rage.DynamicFOV)
+    
+    if not bestPart or not bestPlayer then
+        state.silentTarget = nil
+        return
+    end
+    
+    state.silentTarget = bestPart
+    
+    if config.Rage.AutoShoot then
+        if now - state.rageLastFire > config.Rage.ShootDelay then
+            state.rageLastFire = now
+            state.debugShotCount = state.debugShotCount + 1
             
-            if hum and hum.Health > 0 then
-                if not player or not IsSpawnProtectedForShoot(player) then
-                    if IsPartVisible(state.silentTarget, char, Global.Rage.VisCheck) then
-                        state.autoShootActive = true
-                        VIM:SendMouseButtonEvent(0, 0, 0, true, game, 0)
-                        task.wait(0.02)
-                        VIM:SendMouseButtonEvent(0, 0, 0, false, game, 0)
-                        task.wait(config.Rage.AutoShoot.Delay)
-                        state.autoShootActive = false
-                        return
-                    end
-                end
+            if config.Debug.Enabled and config.Debug.NotifyKill and now - state.debugLastShot > 0.5 then
+                state.debugLastShot = now
+                pcall(function()
+                    Window:Notify(string.format("💀 Killing %s", bestPlayer.Name), 1)
+                end)
             end
-        end
-        
-        local target, targetChar = FindTargetRage(config.Rage.SilentAim.FOV, "Nearest", Global.Rage.VisCheck, Global.Rage.TeamCheck, config.Rage.SilentAim.DynamicFOV, true, IsSpawnProtectedForShoot)
-        
-        if target then
-            state.autoShootActive = true
+            
             VIM:SendMouseButtonEvent(0, 0, 0, true, game, 0)
-            task.wait(0.02)
+            task.wait(0.01)
             VIM:SendMouseButtonEvent(0, 0, 0, false, game, 0)
-            task.wait(config.Rage.AutoShoot.Delay)
-            state.autoShootActive = false
-        end
-    else
-        local target, targetChar = FindTargetRage(config.Rage.SilentAim.FOV, "Nearest", Global.Rage.VisCheck, Global.Rage.TeamCheck, config.Rage.SilentAim.DynamicFOV, true, IsSpawnProtectedForShoot)
-        
-        if target then
-            state.autoShootActive = true
-            VIM:SendMouseButtonEvent(0, 0, 0, true, game, 0)
-            task.wait(0.02)
-            VIM:SendMouseButtonEvent(0, 0, 0, false, game, 0)
-            task.wait(config.Rage.AutoShoot.Delay)
-            state.autoShootActive = false
         end
     end
 end
@@ -667,7 +749,7 @@ local function ProcessLegitAimbot()
 end
 
 -- ========================================================
--- SILENT AIM
+-- SILENT AIM HOOK (WITH TRAJECTORIES)
 -- ========================================================
 local function SetupSilentAim()
     local s, gunMod = pcall(function()
@@ -687,13 +769,57 @@ local function SetupSilentAim()
     s = pcall(function()
         orig = hookfunction(fireFunc, newcclosure(function(...)
             local args = {...}
-            if config.Rage.SilentAim.Enabled then
-                if math.random(1, 100) <= config.Rage.SilentAim.HitChance then
-                    local tgt = FindTargetRage(config.Rage.SilentAim.FOV, config.Rage.SilentAim.HitPart, Global.Rage.VisCheck, Global.Rage.TeamCheck, config.Rage.SilentAim.DynamicFOV, false, nil)
-                    if tgt and WillStillBeVisible(tgt, tgt.Parent) then
+            
+            -- Ragebot
+            if config.Rage.Enabled and state.silentTarget then
+                local tgt = state.silentTarget
+                if tgt and tgt.Parent then
+                    local char = tgt.Parent
+                    local hum = char:FindFirstChildOfClass("Humanoid")
+                    if hum and hum.Health > 0 then
+                        local predictedPos = GetPredictedPosition(tgt, char)
+                        if predictedPos then
+                            args[5] = predictedPos
+                            args[6] = tgt
+                            
+                            if config.Visuals.Trajectories then
+                                local screenFrom, _ = Camera:WorldToViewportPoint(Camera.CFrame.Position)
+                                local screenTo, _ = Camera:WorldToViewportPoint(predictedPos)
+                                if screenFrom and screenTo then
+                                    CreateTrajectory(
+                                        Vector2.new(screenFrom.X, screenFrom.Y),
+                                        Vector2.new(screenTo.X, screenTo.Y),
+                                        Color3.fromRGB(255, 0, 0)
+                                    )
+                                end
+                            end
+                            
+                            return orig(unpack(args))
+                        end
+                    end
+                end
+            end
+            
+            -- Legit Silent Aim
+            if config.Legit.SilentAim.Enabled and not config.Rage.Enabled then
+                if math.random(1, 100) <= config.Legit.SilentAim.HitChance then
+                    local tgt = FindTargetLegit(config.Legit.SilentAim.FOV, config.Legit.SilentAim.HitPart, Global.Legit.VisCheck, Global.Legit.TeamCheck, config.Legit.SilentAim.DynamicFOV)
+                    if tgt then
                         state.silentTarget = tgt
                         args[5] = tgt.Position
                         args[6] = tgt
+                        
+                        if config.Visuals.Trajectories then
+                            local screenFrom, _ = Camera:WorldToViewportPoint(Camera.CFrame.Position)
+                            local screenTo, _ = Camera:WorldToViewportPoint(tgt.Position)
+                            if screenFrom and screenTo then
+                                CreateTrajectory(
+                                    Vector2.new(screenFrom.X, screenFrom.Y),
+                                    Vector2.new(screenTo.X, screenTo.Y),
+                                    Color3.fromRGB(255, 255, 0)
+                                )
+                            end
+                        end
                     else
                         state.silentTarget = nil
                     end
@@ -701,6 +827,7 @@ local function SetupSilentAim()
                     state.silentTarget = nil
                 end
             end
+            
             return orig(unpack(args))
         end))
     end)
@@ -773,7 +900,7 @@ silentFovCircle.Visible = false
 local function UpdateFOVCircles()
     local center = Camera.ViewportSize / 2
     
-    if config.FOV.Show and config.Legit.Aimbot.Enabled then
+    if config.FOV.Show and config.Legit.Aimbot.Enabled and not config.Rage.Enabled then
         fovCircle.Visible = true
         fovCircle.Radius = config.Legit.Aimbot.DynamicFOV and GetDynamicFOV(config.Legit.Aimbot.FOV) or config.Legit.Aimbot.FOV
         fovCircle.Color = config.FOV.Color
@@ -783,13 +910,13 @@ local function UpdateFOVCircles()
         fovCircle.Visible = false
     end
     
-    if config.FOV.Show and config.Rage.SilentAim.Enabled then
+    if config.FOV.Show and config.Legit.SilentAim.Enabled and not config.Rage.Enabled then
         silentFovCircle.Visible = true
-        silentFovCircle.Radius = config.Rage.SilentAim.DynamicFOV and GetDynamicFOV(config.Rage.SilentAim.FOV) or config.Rage.SilentAim.FOV
+        silentFovCircle.Radius = config.Legit.SilentAim.DynamicFOV and GetDynamicFOV(config.Legit.SilentAim.FOV) or config.Legit.SilentAim.FOV
         silentFovCircle.Color = config.FOV.SilentColor
         silentFovCircle.Transparency = 0.5
         
-        if config.Rage.SilentAim.FOVFollowEnabled and state.fovTrackScreenPos then
+        if config.Legit.SilentAim.FOVFollowEnabled and state.fovTrackScreenPos then
             silentFovCircle.Position = state.fovTrackScreenPos
         else
             silentFovCircle.Position = center
@@ -864,7 +991,7 @@ end)
 -- ========================================================
 local Window = UI:CreateWindow({
     Title          = "nexus.gg",
-    Size           = UDim2.fromOffset(520, 500),
+    Size           = UDim2.fromOffset(520, 540),
     Center         = true,
     Resizable      = true,
     ToggleKeybind  = Enum.KeyCode.RightShift,
@@ -874,7 +1001,7 @@ local Window = UI:CreateWindow({
 -- ========================================================
 -- LEGIT TAB
 -- ========================================================
-local LegitTab = Window:AddTab("Legit")
+local LegitTab = Window:AddTab("🎯 Legit")
 
 local LegitGlobalBox = LegitTab:AddGroupbox({ Name = "Global", Side = 2 })
 LegitGlobalBox:AddToggle("LegitVisCheck", {
@@ -888,7 +1015,54 @@ LegitGlobalBox:AddToggle("LegitTeamCheck", {
     Callback = function(v) Global.Legit.TeamCheck = v end,
 })
 
-local LegitAimbotBox = LegitTab:AddGroupbox({ Name = "Aimbot", Side = 1 })
+local LegitSilentAimBox = LegitTab:AddGroupbox({ Name = "Silent Aim", Side = 1 })
+LegitSilentAimBox:AddToggle("LegitSilentAimEnabled", {
+    Text     = "Enabled",
+    Default  = config.Legit.SilentAim.Enabled,
+    Callback = function(v) config.Legit.SilentAim.Enabled = v end,
+})
+LegitSilentAimBox:AddDropdown("LegitSilentAimTarget", {
+    Text     = "Target",
+    Values   = { "Nearest", "Head", "Torso" },
+    Default  = config.Legit.SilentAim.HitPart,
+    Callback = function(v) config.Legit.SilentAim.HitPart = v end,
+})
+LegitSilentAimBox:AddSlider("LegitSilentAimFOV", {
+    Text     = "FOV",
+    Default  = 212,
+    Min      = 10,
+    Max      = 1000,
+    Rounding = 0,
+    Callback = function(v) config.Legit.SilentAim.FOV = v end,
+})
+LegitSilentAimBox:AddSlider("LegitSilentAimHitChance", {
+    Text     = "Hit Chance",
+    Default  = config.Legit.SilentAim.HitChance,
+    Min      = 0,
+    Max      = 100,
+    Rounding = 0,
+    Callback = function(v) config.Legit.SilentAim.HitChance = v end,
+})
+LegitSilentAimBox:AddToggle("LegitSilentAimDynamicFOV", {
+    Text     = "Dynamic FOV",
+    Default  = config.Legit.SilentAim.DynamicFOV,
+    Callback = function(v) config.Legit.SilentAim.DynamicFOV = v end,
+})
+LegitSilentAimBox:AddToggle("LegitSilentAimFOVFollow", {
+    Text     = "FOV Follow Target",
+    Default  = config.Legit.SilentAim.FOVFollowEnabled,
+    Callback = function(v) config.Legit.SilentAim.FOVFollowEnabled = v end,
+})
+LegitSilentAimBox:AddSlider("LegitSilentAimFollowTime", {
+    Text     = "Follow Time",
+    Default  = config.Legit.SilentAim.FOVFollowTime,
+    Min      = 0.5,
+    Max      = 5.0,
+    Rounding = 1,
+    Callback = function(v) config.Legit.SilentAim.FOVFollowTime = v end,
+})
+
+local LegitAimbotBox = LegitTab:AddGroupbox({ Name = "Aimbot", Side = 2 })
 LegitAimbotBox:AddToggle("AimbotEnabled", {
     Text     = "Enabled",
     Default  = config.Legit.Aimbot.Enabled,
@@ -902,7 +1076,7 @@ LegitAimbotBox:AddDropdown("AimbotTarget", {
 })
 LegitAimbotBox:AddSlider("AimbotFOV", {
     Text     = "FOV",
-    Default  = config.Legit.Aimbot.FOV,
+    Default  = 333,
     Min      = 10,
     Max      = 720,
     Rounding = 0,
@@ -953,107 +1127,100 @@ TriggerbotBox:AddSlider("TriggerbotHitbox", {
 -- ========================================================
 -- RAGE TAB
 -- ========================================================
-local RageTab = Window:AddTab("Rage")
+local RageTab = Window:AddTab("💀 Rage")
 
-local RageGlobalBox = RageTab:AddGroupbox({ Name = "Global", Side = 2 })
-RageGlobalBox:AddToggle("RageVisCheck", {
-    Text     = "Visible Only",
-    Default  = Global.Rage.VisCheck,
-    Callback = function(v) Global.Rage.VisCheck = v end,
+local RageMainBox = RageTab:AddGroupbox({ Name = "Ragebot", Side = 1 })
+RageMainBox:AddToggle("RageEnabled", {
+    Text     = "Enabled",
+    Default  = config.Rage.Enabled,
+    Callback = function(v) config.Rage.Enabled = v end,
 })
-RageGlobalBox:AddToggle("RageTeamCheck", {
+RageMainBox:AddToggle("RageTeamCheck", {
     Text     = "Team Check",
     Default  = Global.Rage.TeamCheck,
     Callback = function(v) Global.Rage.TeamCheck = v end,
 })
-
-local SilentAimBox = RageTab:AddGroupbox({ Name = "Silent Aim", Side = 1 })
-SilentAimBox:AddToggle("SilentAimEnabled", {
-    Text     = "Enabled",
-    Default  = config.Rage.SilentAim.Enabled,
-    Callback = function(v) config.Rage.SilentAim.Enabled = v end,
-})
-SilentAimBox:AddDropdown("SilentAimTarget", {
+RageMainBox:AddDropdown("RageTarget", {
     Text     = "Target",
-    Values   = { "Nearest", "Head", "Torso" },
-    Default  = config.Rage.SilentAim.HitPart,
-    Callback = function(v) config.Rage.SilentAim.HitPart = v end,
+    Values   = { "Head", "Nearest", "Torso" },
+    Default  = config.Rage.HitPart,
+    Callback = function(v) config.Rage.HitPart = v end,
 })
-SilentAimBox:AddSlider("SilentAimFOV", {
+RageMainBox:AddSlider("RageFOV", {
     Text     = "FOV",
-    Default  = config.Rage.SilentAim.FOV,
+    Default  = config.Rage.FOV,
     Min      = 10,
     Max      = 1000,
     Rounding = 0,
-    Callback = function(v) config.Rage.SilentAim.FOV = v end,
+    Callback = function(v) config.Rage.FOV = v end,
 })
-SilentAimBox:AddSlider("SilentAimHitChance", {
-    Text     = "Hit Chance",
-    Default  = config.Rage.SilentAim.HitChance,
-    Min      = 0,
-    Max      = 100,
-    Rounding = 0,
-    Callback = function(v) config.Rage.SilentAim.HitChance = v end,
-})
-SilentAimBox:AddToggle("SilentAimDynamicFOV", {
+RageMainBox:AddToggle("RageDynamicFOV", {
     Text     = "Dynamic FOV",
-    Default  = config.Rage.SilentAim.DynamicFOV,
-    Callback = function(v) config.Rage.SilentAim.DynamicFOV = v end,
+    Default  = config.Rage.DynamicFOV,
+    Callback = function(v) config.Rage.DynamicFOV = v end,
 })
-SilentAimBox:AddToggle("SilentAimFOVFollow", {
-    Text     = "FOV Follow Target",
-    Default  = config.Rage.SilentAim.FOVFollowEnabled,
-    Callback = function(v) config.Rage.SilentAim.FOVFollowEnabled = v end,
+RageMainBox:AddToggle("RageAutoShoot", {
+    Text     = "Auto Shoot",
+    Default  = config.Rage.AutoShoot,
+    Callback = function(v) config.Rage.AutoShoot = v end,
 })
-SilentAimBox:AddSlider("SilentAimFollowTime", {
-    Text     = "Follow Time",
-    Default  = config.Rage.SilentAim.FOVFollowTime,
-    Min      = 0.5,
-    Max      = 5.0,
-    Rounding = 1,
-    Callback = function(v) config.Rage.SilentAim.FOVFollowTime = v end,
-})
-SilentAimBox:AddSlider("SilentAimFOVSpawnDelay", {
-    Text     = "FOV Spawn Delay",
-    Default  = config.Rage.SilentAim.FOVSpawnDelay,
-    Min      = 0,
-    Max      = 3,
-    Rounding = 1,
-    Callback = function(v) config.Rage.SilentAim.FOVSpawnDelay = v end,
-})
-
-local AutoShootBox = RageTab:AddGroupbox({ Name = "Auto Shoot", Side = 2 })
-AutoShootBox:AddToggle("AutoShootEnabled", {
-    Text     = "Enabled",
-    Default  = config.Rage.AutoShoot.Enabled,
-    Callback = function(v) config.Rage.AutoShoot.Enabled = v end,
-})
-AutoShootBox:AddToggle("AutoShootTie", {
-    Text     = "Tie to Silent Aim",
-    Default  = config.Rage.AutoShoot.TieToSilentAim,
-    Callback = function(v) config.Rage.AutoShoot.TieToSilentAim = v end,
-})
-AutoShootBox:AddSlider("AutoShootDelay", {
-    Text     = "Delay",
-    Default  = config.Rage.AutoShoot.Delay * 1000,
+RageMainBox:AddSlider("RageShootDelay", {
+    Text     = "Fire Rate (ms)",
+    Default  = config.Rage.ShootDelay * 1000,
     Min      = 0,
     Max      = 500,
     Rounding = 0,
-    Callback = function(v) config.Rage.AutoShoot.Delay = v / 1000 end,
+    Callback = function(v) config.Rage.ShootDelay = v / 1000 end,
 })
-AutoShootBox:AddSlider("AutoShootSpawnProtect", {
-    Text     = "Spawn Protect",
-    Default  = config.Rage.AutoShoot.SpawnProtectionTime,
+RageMainBox:AddSlider("RageHitboxMultiplier", {
+    Text     = "Hitbox Size",
+    Default  = config.Rage.HitboxMultiplier,
+    Min      = 1.0,
+    Max      = 3.0,
+    Rounding = 1,
+    Callback = function(v) config.Rage.HitboxMultiplier = v end,
+})
+RageMainBox:AddSlider("RageSpawnProtect", {
+    Text     = "Spawn Protect (s)",
+    Default  = config.Rage.SpawnProtectionTime,
     Min      = 0,
     Max      = 5,
-    Rounding = 2,
-    Callback = function(v) config.Rage.AutoShoot.SpawnProtectionTime = v end,
+    Rounding = 1,
+    Callback = function(v) config.Rage.SpawnProtectionTime = v end,
 })
+RageMainBox:AddToggle("RageDynamicPrediction", {
+    Text     = "Dynamic Prediction",
+    Default  = config.Rage.DynamicPrediction,
+    Callback = function(v) config.Rage.DynamicPrediction = v end,
+})
+
+local RageInfoBox = RageTab:AddGroupbox({ Name = "Info", Side = 2 })
+local pingLabel = RageInfoBox:AddLabel({ Text = "Ping: --" })
+local predictionLabel = RageInfoBox:AddLabel({ Text = "Prediction: --ms" })
+local targetLabel = RageInfoBox:AddLabel({ Text = "Target: None" })
+local shotLabel = RageInfoBox:AddLabel({ Text = "Shots: 0" })
+
+task.spawn(function()
+    while true do
+        task.wait(0.2)
+        if config.Rage.Enabled then
+            pingLabel:SetText(string.format("Ping: %dms", state.currentPing))
+            predictionLabel:SetText(string.format("Prediction: %.0fms", state.dynamicPrediction * 1000))
+            shotLabel:SetText(string.format("Shots: %d", state.debugShotCount))
+            if state.silentTarget and state.silentTarget.Parent then
+                local player = Players:GetPlayerFromCharacter(state.silentTarget.Parent)
+                targetLabel:SetText(string.format("Target: %s", player and player.Name or "?"))
+            else
+                targetLabel:SetText("Target: None")
+            end
+        end
+    end
+end)
 
 -- ========================================================
 -- MOVEMENT TAB
 -- ========================================================
-local MovementTab = Window:AddTab("Movement")
+local MovementTab = Window:AddTab("🏃 Movement")
 
 local WalkSpeedBox = MovementTab:AddGroupbox({ Name = "Walk Speed", Side = 1 })
 WalkSpeedBox:AddToggle("WalkSpeedEnabled", {
@@ -1093,9 +1260,26 @@ GravityBox:AddSlider("GravityValue", {
 })
 
 -- ========================================================
+-- DEBUG TAB
+-- ========================================================
+local DebugTab = Window:AddTab("🔍 Debug")
+
+local DebugMainBox = DebugTab:AddGroupbox({ Name = "Notifications", Side = 1 })
+DebugMainBox:AddToggle("DebugEnabled", {
+    Text     = "Enabled",
+    Default  = config.Debug.Enabled,
+    Callback = function(v) config.Debug.Enabled = v end,
+})
+DebugMainBox:AddToggle("DebugNotifyKill", {
+    Text     = "Kill Notifications",
+    Default  = config.Debug.NotifyKill,
+    Callback = function(v) config.Debug.NotifyKill = v end,
+})
+
+-- ========================================================
 -- VISUALS TAB
 -- ========================================================
-local VisualsTab = Window:AddTab("Visuals")
+local VisualsTab = Window:AddTab("👁️ Visuals")
 
 local ESPBox = VisualsTab:AddGroupbox({ Name = "ESP", Side = 1 })
 ESPBox:AddToggle("ESPEnabled", {
@@ -1116,6 +1300,21 @@ FOVBox:AddToggle("FOVShow", {
     Callback = function(v) config.FOV.Show = v end,
 })
 
+local TrajectoryBox = VisualsTab:AddGroupbox({ Name = "Trajectories", Side = 1 })
+TrajectoryBox:AddToggle("TrajectoryEnabled", {
+    Text     = "Show Trajectories",
+    Default  = config.Visuals.Trajectories,
+    Callback = function(v) config.Visuals.Trajectories = v end,
+})
+TrajectoryBox:AddSlider("TrajectoryTime", {
+    Text     = "Fade Time (s)",
+    Default  = config.Visuals.TrajectoryTime,
+    Min      = 0.5,
+    Max      = 5,
+    Rounding = 1,
+    Callback = function(v) config.Visuals.TrajectoryTime = v end,
+})
+
 -- ========================================================
 -- RENDER LOOP
 -- ========================================================
@@ -1125,9 +1324,10 @@ RunService.RenderStepped:Connect(function()
         if not state.isAiming then state.aimStartTime = 0 end
         UpdateSilentFOVTracking()
         UpdateFOVCircles()
+        UpdateTrajectories()
         ProcessLegitAimbot()
         HandleTriggerbot()
-        HandleAutoShoot()
+        HandleRagebot(Window)
         UpdateESP()
     end)
 end)
