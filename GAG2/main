@@ -54,8 +54,6 @@ local autoBuySeeds = {}
 local autoBuyGears = {}
 local buySeedIndex = 0
 local buyGearIndex = 0
-local lastHarvest = 0
-local harvestDelay = 0.15
 local lastSell = 0
 local sellDelay = 2
 local lastSeedPack = 0
@@ -64,6 +62,14 @@ local lastAutoBuySeed = 0
 local lastAutoBuyGear = 0
 local autoBuyDelay = 0.07
 local ignoredSeeds = {}
+
+-- Harvest - scan every 4s, collect every 0.05s
+local harvestCache = {}
+local lastHarvestScan = 0
+local harvestScanDelay = 4
+local harvestIndex = 0
+local harvestCollectDelay = 0.05
+local lastHarvestCollect = 0
 
 local antiCactusEnabled = false
 local noErrorSoundEnabled = false
@@ -214,14 +220,10 @@ local function collectSeedPack()
     end
 end
 
--- Optimized harvest - only scans our plot
-local function doHarvest()
-    local char = player.Character
-    if not char then return end
-    local root = char:FindFirstChild("HumanoidRootPart")
-    if not root then return end
+-- Scan for harvestable fruits on our plot
+local function scanHarvest()
+    table.clear(harvestCache)
     local myUserId = player.UserId
-    
     for _, plot in ipairs(workspace.Gardens:GetChildren()) do
         local ownerId = plot:GetAttribute("OwnerUserId")
         if ownerId == myUserId then
@@ -232,12 +234,10 @@ local function doHarvest()
                     if fruits then
                         for _, fruit in ipairs(fruits:GetChildren()) do
                             local hp = fruit:FindFirstChild("HarvestPart")
-                            if hp then
+                            if hp and hp:IsA("BasePart") then
                                 local prompt = hp:FindFirstChildOfClass("ProximityPrompt")
                                 if prompt and prompt.ActionText == "Harvest" then
-                                    fireproximityprompt(prompt)
-                                    firetouchinterest(root, hp, 0)
-                                    firetouchinterest(root, hp, 1)
+                                    table.insert(harvestCache, {part = hp, prompt = prompt})
                                 end
                             end
                         end
@@ -246,6 +246,29 @@ local function doHarvest()
             end
             break
         end
+    end
+    harvestIndex = 0
+end
+
+-- Collect one fruit from cache
+local function doHarvest()
+    local char = player.Character
+    if not char then return end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+    
+    if #harvestCache == 0 then return end
+    
+    harvestIndex = harvestIndex + 1
+    if harvestIndex > #harvestCache then
+        harvestIndex = 1
+    end
+    
+    local target = harvestCache[harvestIndex]
+    if target.part and target.part.Parent then
+        fireproximityprompt(target.prompt)
+        firetouchinterest(root, target.part, 0)
+        firetouchinterest(root, target.part, 1)
     end
 end
 
@@ -324,7 +347,6 @@ local function doStealCycle()
             if root then root.CFrame = CFrame.new(plotData.position) end
         end
         
-        -- Find the actual plot model
         local plot = workspace.Gardens:FindFirstChild("Plot" .. plotData.plotNum)
         if plot then
             local endTime = tick() + 2
@@ -453,9 +475,19 @@ end
 
 RunService.Heartbeat:Connect(function()
     local now = tick()
-    if harvestEnabled and now - lastHarvest > harvestDelay then
-        lastHarvest = now; doHarvest()
+    
+    -- Harvest: scan every 4s, collect every 0.05s
+    if harvestEnabled then
+        if now - lastHarvestScan > harvestScanDelay then
+            lastHarvestScan = now
+            scanHarvest()
+        end
+        if now - lastHarvestCollect > harvestCollectDelay then
+            lastHarvestCollect = now
+            doHarvest()
+        end
     end
+    
     if sellEnabled and now - lastSell > sellDelay then
         lastSell = now; doSell()
     end
