@@ -74,7 +74,7 @@ local config = {
             Enabled = false,
             Delay = 0.02,
             SpawnProtectionTime = 1.65,
-            TieToSilentAim = true -- When true, AutoShoot uses Silent Aim's exact target
+            TieToSilentAim = true
         }
     },
     
