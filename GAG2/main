@@ -55,8 +55,8 @@ local autoBuyGears = {}
 local buySeedIndex = 0
 local buyGearIndex = 0
 local lastHarvest = 0
+local harvestDelay = 0.3
 local lastSell = 0
-local harvestDelay = 0.08
 local sellDelay = 2
 local lastSeedPack = 0
 local seedPackDelay = 0.005
@@ -214,19 +214,37 @@ local function collectSeedPack()
     end
 end
 
+-- Optimized harvest - only scans our plot
 local function doHarvest()
     local char = player.Character
     if not char then return end
     local root = char:FindFirstChild("HumanoidRootPart")
     if not root then return end
-    for _, obj in ipairs(workspace:GetDescendants()) do
-        if obj.Name == "HarvestPart" and obj:IsA("BasePart") and obj.Parent then
-            local prompt = obj:FindFirstChildOfClass("ProximityPrompt")
-            if prompt and prompt.ActionText == "Harvest" then
-                fireproximityprompt(prompt)
-                firetouchinterest(root, obj, 0)
-                firetouchinterest(root, obj, 1)
+    local myUserId = player.UserId
+    
+    for _, plot in ipairs(workspace.Gardens:GetChildren()) do
+        local ownerId = plot:GetAttribute("OwnerUserId")
+        if ownerId == myUserId then
+            local plants = plot:FindFirstChild("Plants")
+            if plants then
+                for _, plant in ipairs(plants:GetChildren()) do
+                    local fruits = plant:FindFirstChild("Fruits")
+                    if fruits then
+                        for _, fruit in ipairs(fruits:GetChildren()) do
+                            local hp = fruit:FindFirstChild("HarvestPart")
+                            if hp then
+                                local prompt = hp:FindFirstChildOfClass("ProximityPrompt")
+                                if prompt and prompt.ActionText == "Harvest" then
+                                    fireproximityprompt(prompt)
+                                    firetouchinterest(root, hp, 0)
+                                    firetouchinterest(root, hp, 1)
+                                end
+                            end
+                        end
+                    end
+                end
             end
+            break
         end
     end
 end
@@ -255,36 +273,30 @@ local function getUnlockedPlots()
     return plots
 end
 
-local function collectFruitsOnPlot(plotNum)
+local function collectFruitsOnPlot(plot)
     local char = player.Character
     if not char then return end
     local root = char:FindFirstChild("HumanoidRootPart")
     if not root then return end
-    local myUserId = player.UserId
-    for _, obj in ipairs(workspace:GetDescendants()) do
-        if obj.Name == "HarvestPart" and obj:IsA("BasePart") and obj.Parent then
-            local prompt = obj:FindFirstChildOfClass("ProximityPrompt")
-            if prompt and prompt.ActionText == "Steal" then
-                local fruitModel = obj.Parent
-                local plantModel = fruitModel.Parent and fruitModel.Parent.Parent
-                if plantModel then
-                    local userId = plantModel:GetAttribute("UserId")
-                    local seedName = plantModel:GetAttribute("SeedName")
-                    if userId and userId ~= myUserId then
-                        if not seedName or not ignoredSeeds[seedName] then
-                            local current = obj
-                            local fruitPlotNum = nil
-                            while current do
-                                if current.Name:find("^Plot%d+$") then
-                                    fruitPlotNum = tonumber(current.Name:match("%d+$"))
-                                    break
-                                end
-                                current = current.Parent
-                            end
-                            if fruitPlotNum == plotNum then
+    
+    local plants = plot:FindFirstChild("Plants")
+    if not plants then return end
+    
+    for _, plant in ipairs(plants:GetChildren()) do
+        local userId = plant:GetAttribute("UserId")
+        if userId and userId ~= player.UserId then
+            local seedName = plant:GetAttribute("SeedName")
+            if not seedName or not ignoredSeeds[seedName] then
+                local fruits = plant:FindFirstChild("Fruits")
+                if fruits then
+                    for _, fruit in ipairs(fruits:GetChildren()) do
+                        local hp = fruit:FindFirstChild("HarvestPart")
+                        if hp then
+                            local prompt = hp:FindFirstChildOfClass("ProximityPrompt")
+                            if prompt and prompt.ActionText == "Steal" then
                                 fireproximityprompt(prompt)
-                                firetouchinterest(root, obj, 0)
-                                firetouchinterest(root, obj, 1)
+                                firetouchinterest(root, hp, 0)
+                                firetouchinterest(root, hp, 1)
                                 if prompt.HoldDuration > 0 then
                                     fireproximityprompt(prompt)
                                 end
@@ -304,17 +316,22 @@ local function doStealCycle()
         local j = math.random(1, i)
         plots[i], plots[j] = plots[j], plots[i]
     end
-    for _, plot in ipairs(plots) do
+    for _, plotData in ipairs(plots) do
         if not stealEnabled then break end
         local char = player.Character
         if char then
             local root = char:FindFirstChild("HumanoidRootPart")
-            if root then root.CFrame = CFrame.new(plot.position) end
+            if root then root.CFrame = CFrame.new(plotData.position) end
         end
-        local endTime = tick() + 2
-        while tick() < endTime and stealEnabled do
-            collectFruitsOnPlot(plot.plotNum)
-            task.wait(0.1)
+        
+        -- Find the actual plot model
+        local plot = workspace.Gardens:FindFirstChild("Plot" .. plotData.plotNum)
+        if plot then
+            local endTime = tick() + 2
+            while tick() < endTime and stealEnabled do
+                collectFruitsOnPlot(plot)
+                task.wait(0.1)
+            end
         end
     end
     if stealEnabled then goHome() end
