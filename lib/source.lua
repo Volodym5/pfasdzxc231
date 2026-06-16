@@ -5,7 +5,7 @@
     ── 1. STARTUP ──────────────────────────────────────────────────────────────
     Load the library and create a window. All components hang off the window.
 
-        local UI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Volodym5/pfasdzxc231/main/lib/source.lua"))()
+        local UI = loadstring(game:HttpGet("YOUR_RAW_URL"))()
 
         local Window = UI:CreateWindow({
             Title           = "My Menu",          -- window title
@@ -2834,9 +2834,16 @@ end
 
 function Library:SafeCallback(fn, ...)
     if typeof(fn) ~= "function" then return end
-    -- Suppress all user callbacks while a config is being loaded so that
-    -- restoring values doesn't trigger side-effects (e.g. teleports, actions).
-    if Library._loadingConfig then return end
+    -- NOTE: this used to also no-op while Library._loadingConfig was true,
+    -- which silently dropped EVERY Toggle/Slider/Dropdown/ColorPicker/KeyPicker
+    -- callback during config restore (startup autoload + manual Load Config).
+    -- That's wrong — restoring a config is exactly when those callbacks need
+    -- to run (e.g. Callback = function(value) testEnabled = value end), since
+    -- that's what actually applies the saved value to the script. Visual
+    -- elements update via :SetValue regardless, but nothing else happens
+    -- unless the callback fires. _loadingConfig is still used elsewhere
+    -- (UndoManager) to avoid polluting undo history during a restore — that's
+    -- fine, it should NOT also suppress callbacks.
     local ok2, err = xpcall(fn, debug.traceback, ...)
     if not ok2 then
         task.defer(error, err)
