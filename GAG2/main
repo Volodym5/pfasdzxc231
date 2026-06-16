@@ -57,18 +57,18 @@ local buyGearIndex = 0
 local lastSell = 0
 local sellDelay = 2
 local lastSeedPack = 0
-local seedPackDelay = 0.001
+local seedPackDelay = 0.005
 local lastAutoBuySeed = 0
 local lastAutoBuyGear = 0
 local autoBuyDelay = 0.07
 local ignoredSeeds = {}
 
--- Harvest - scan every 4s, collect every 0.05s
+-- Harvest - scan every 4s, collect every 0.15s
 local harvestCache = {}
 local lastHarvestScan = 0
 local harvestScanDelay = 4
 local harvestIndex = 0
-local harvestCollectDelay = 0.2
+local harvestCollectDelay = 0.15
 local lastHarvestCollect = 0
 
 local antiCactusEnabled = false
@@ -250,7 +250,7 @@ local function scanHarvest()
     harvestIndex = 0
 end
 
--- Collect one fruit from cache
+-- Collect one fruit from cache (spam within the delay window)
 local function doHarvest()
     local char = player.Character
     if not char then return end
@@ -266,9 +266,13 @@ local function doHarvest()
     
     local target = harvestCache[harvestIndex]
     if target.part and target.part.Parent then
-        fireproximityprompt(target.prompt)
-        firetouchinterest(root, target.part, 0)
-        firetouchinterest(root, target.part, 1)
+        -- Spam fire 5 times quickly for hold-duration fruits
+        for _ = 1, 5 do
+            fireproximityprompt(target.prompt)
+            firetouchinterest(root, target.part, 0)
+            firetouchinterest(root, target.part, 1)
+            task.wait(0.03)
+        end
     end
 end
 
@@ -476,7 +480,7 @@ end
 RunService.Heartbeat:Connect(function()
     local now = tick()
     
-    -- Harvest: scan every 4s, collect every 0.05s
+    -- Harvest: scan every 4s, collect every 0.15s
     if harvestEnabled then
         if now - lastHarvestScan > harvestScanDelay then
             lastHarvestScan = now
