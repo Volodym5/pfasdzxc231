@@ -392,8 +392,6 @@ local function doStealCycle()
         plots[i], plots[j] = plots[j], plots[i]
     end
     
-    freezeCharacter()
-    
     for _, plotData in ipairs(plots) do
         if not stealEnabled then break end
         
@@ -404,14 +402,21 @@ local function doStealCycle()
         local root = char and char:FindFirstChild("HumanoidRootPart")
         if not root then break end
         
+        -- Unfreeze for teleport
+        unfreezeCharacter()
+        task.wait(0.05)
+        
         -- Teleport to plot
         root.CFrame = CFrame.new(plotData.position)
         root.AssemblyLinearVelocity = Vector3.zero
+        task.wait(0.1)
         
-        -- Sit there for 15 seconds constantly trying to steal
-        local endTime = tick() + 15
+        -- Freeze at their plot
+        freezeCharacter()
+        
+        -- Sit there for 10 seconds constantly trying to steal
+        local endTime = tick() + 10
         while tick() < endTime and stealEnabled do
-            -- Check if plot became locked
             if not isPlotUnlocked(plotData.plotNum) then
                 break
             end
@@ -420,16 +425,11 @@ local function doStealCycle()
         end
     end
     
+    -- Unfreeze and go home
+    unfreezeCharacter()
+    task.wait(0.05)
     if stealEnabled then
-        local homePos = getMyPlotMidpoint()
-        if homePos then
-            local char = player.Character
-            local root = char and char:FindFirstChild("HumanoidRootPart")
-            if root then
-                root.CFrame = CFrame.new(homePos + Vector3.new(0, 3, 0))
-                root.AssemblyLinearVelocity = Vector3.zero
-            end
-        end
+        goHome()
     end
 end
 
