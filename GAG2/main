@@ -57,10 +57,10 @@ local buyGearIndex = 0
 local lastSell = 0
 local sellDelay = 2
 local lastSeedPack = 0
-local seedPackDelay = 0.005
+local seedPackDelay = 0.0002
 local lastAutoBuySeed = 0
 local lastAutoBuyGear = 0
-local autoBuyDelay = 0.07
+local autoBuyDelay = 0.05
 local ignoredSeeds = {}
 
 -- Harvest - scan every 4s, collect every 0.1s
@@ -68,7 +68,7 @@ local harvestCache = {}
 local lastHarvestScan = 0
 local harvestScanDelay = 4
 local harvestIndex = 0
-local harvestCollectDelay = 0.1
+local harvestCollectDelay = 0.18
 local lastHarvestCollect = 0
 
 local antiCactusEnabled = false
@@ -392,28 +392,31 @@ local function doStealCycle()
         plots[i], plots[j] = plots[j], plots[i]
     end
     
-    -- Freeze for entire steal session
     freezeCharacter()
     
     for _, plotData in ipairs(plots) do
         if not stealEnabled then break end
         
         local plot = workspace.Gardens:FindFirstChild("Plot" .. plotData.plotNum)
-        if plot and plotHasStealableFruits(plot) then
-            local char = player.Character
-            local root = char and char:FindFirstChild("HumanoidRootPart")
-            if not root then break end
-            
-            -- Direct teleport since we're frozen
-            root.CFrame = CFrame.new(plotData.position)
-            root.AssemblyLinearVelocity = Vector3.zero
-            
-            -- Collect for 2 seconds
-            local endTime = tick() + 2
-            while tick() < endTime and stealEnabled do
-                collectFruitsOnPlot(plot)
-                task.wait(0.05)
+        if not plot then continue end
+        
+        local char = player.Character
+        local root = char and char:FindFirstChild("HumanoidRootPart")
+        if not root then break end
+        
+        -- Teleport to plot
+        root.CFrame = CFrame.new(plotData.position)
+        root.AssemblyLinearVelocity = Vector3.zero
+        
+        -- Sit there for 15 seconds constantly trying to steal
+        local endTime = tick() + 15
+        while tick() < endTime and stealEnabled do
+            -- Check if plot became locked
+            if not isPlotUnlocked(plotData.plotNum) then
+                break
             end
+            collectFruitsOnPlot(plot)
+            task.wait(0.1)
         end
     end
     
