@@ -66,9 +66,9 @@ local ignoredSeeds = {}
 -- Harvest - scan every 4s, collect every 0.1s
 local harvestCache = {}
 local lastHarvestScan = 0
-local harvestScanDelay = 4
+local harvestScanDelay = 2
 local harvestIndex = 0
-local harvestCollectDelay = 0.1
+local harvestCollectDelay = 0.18
 local lastHarvestCollect = 0
 
 local antiCactusEnabled = false
@@ -220,36 +220,17 @@ local function collectSeedPack()
     end
 end
 
--- Scan for harvestable fruits (handles regular plants + bamboo/mushrooms)
+-- Scan for harvestable fruits - just get all HarvestParts in our plot
 local function scanHarvest()
     table.clear(harvestCache)
-    local myUserId = player.UserId
     for _, plot in ipairs(workspace.Gardens:GetChildren()) do
-        local ownerId = plot:GetAttribute("OwnerUserId")
-        if ownerId == myUserId then
-            local plants = plot:FindFirstChild("Plants")
-            if plants then
-                for _, plant in ipairs(plants:GetChildren()) do
-                    -- Regular fruits (in Fruits folder)
-                    local fruits = plant:FindFirstChild("Fruits")
-                    if fruits then
-                        for _, fruit in ipairs(fruits:GetChildren()) do
-                            local hp = fruit:FindFirstChild("HarvestPart")
-                            if hp and hp:IsA("BasePart") then
-                                local prompt = hp:FindFirstChildOfClass("ProximityPrompt")
-                                if prompt and prompt.ActionText == "Harvest" then
-                                    table.insert(harvestCache, {part = hp, prompt = prompt})
-                                end
-                            end
-                        end
-                    end
-                    -- Bamboo/mushrooms (HarvestPart directly in plant)
-                    local hp = plant:FindFirstChild("HarvestPart")
-                    if hp and hp:IsA("BasePart") then
-                        local prompt = hp:FindFirstChildOfClass("ProximityPrompt")
-                        if prompt and prompt.ActionText == "Harvest" then
-                            table.insert(harvestCache, {part = hp, prompt = prompt})
-                        end
+        local owner = plot:GetAttribute("Owner")
+        if owner == player.Name then
+            for _, obj in ipairs(plot:GetDescendants()) do
+                if obj.Name == "HarvestPart" and obj:IsA("BasePart") then
+                    local prompt = obj:FindFirstChildOfClass("ProximityPrompt")
+                    if prompt and prompt.ActionText == "Harvest" then
+                        table.insert(harvestCache, {part = obj, prompt = prompt})
                     end
                 end
             end
@@ -274,15 +255,15 @@ local function doHarvest()
     end
     
     local target = harvestCache[harvestIndex]
-    if target.part and target.part.Parent then
-        fireproximityprompt(target.prompt)
-        firetouchinterest(root, target.part, 0)
-        firetouchinterest(root, target.part, 1)
-    else
-        -- Fruit no longer exists, remove from cache
+    if not target or not target.part or not target.part.Parent then
         table.remove(harvestCache, harvestIndex)
         harvestIndex = harvestIndex - 1
+        return
     end
+    
+    fireproximityprompt(target.prompt)
+    firetouchinterest(root, target.part, 0)
+    firetouchinterest(root, target.part, 1)
 end
 
 -- Check if plot has fruits worth stealing (not on ignore list)
@@ -295,12 +276,10 @@ local function plotHasStealableFruits(plot)
         if userId and userId ~= player.UserId then
             local seedName = plant:GetAttribute("SeedName")
             if not seedName or not ignoredSeeds[seedName] then
-                -- Check regular fruits
                 local fruits = plant:FindFirstChild("Fruits")
                 if fruits and #fruits:GetChildren() > 0 then
                     return true
                 end
-                -- Check bamboo/mushrooms
                 if plant:FindFirstChild("HarvestPart") then
                     return true
                 end
@@ -350,7 +329,6 @@ local function collectFruitsOnPlot(plot)
         if userId and userId ~= player.UserId then
             local seedName = plant:GetAttribute("SeedName")
             if not seedName or not ignoredSeeds[seedName] then
-                -- Regular fruits
                 local fruits = plant:FindFirstChild("Fruits")
                 if fruits then
                     for _, fruit in ipairs(fruits:GetChildren()) do
@@ -368,7 +346,6 @@ local function collectFruitsOnPlot(plot)
                         end
                     end
                 end
-                -- Bamboo/mushrooms
                 local hp = plant:FindFirstChild("HarvestPart")
                 if hp then
                     local prompt = hp:FindFirstChildOfClass("ProximityPrompt")
@@ -531,7 +508,6 @@ end
 RunService.Heartbeat:Connect(function()
     local now = tick()
     
-    -- Harvest: scan every 4s, collect every 0.1s
     if harvestEnabled then
         if now - lastHarvestScan > harvestScanDelay then
             lastHarvestScan = now
