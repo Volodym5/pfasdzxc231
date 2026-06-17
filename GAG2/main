@@ -281,6 +281,31 @@ local function doHarvest()
     end
 end
 
+-- Check if plot has fruits worth stealing (not on ignore list)
+local function plotHasStealableFruits(plot)
+    local plants = plot:FindFirstChild("Plants")
+    if not plants then return false end
+    
+    for _, plant in ipairs(plants:GetChildren()) do
+        local userId = plant:GetAttribute("UserId")
+        if userId and userId ~= player.UserId then
+            local seedName = plant:GetAttribute("SeedName")
+            if not seedName or not ignoredSeeds[seedName] then
+                -- Check regular fruits
+                local fruits = plant:FindFirstChild("Fruits")
+                if fruits and #fruits:GetChildren() > 0 then
+                    return true
+                end
+                -- Check bamboo/mushrooms
+                if plant:FindFirstChild("HarvestPart") then
+                    return true
+                end
+            end
+        end
+    end
+    return false
+end
+
 -- Steal
 local function getUnlockedPlots()
     local myUserId = player.UserId
@@ -290,13 +315,15 @@ local function getUnlockedPlots()
             local plotNum = tonumber(plot.Name:match("%d+$"))
             local ownerId = plot:GetAttribute("OwnerUserId")
             if ownerId and ownerId ~= myUserId and isPlotUnlocked(plotNum) then
-                local visual = plot:FindFirstChild("Visual")
-                if visual then
-                    local col1 = visual:FindFirstChild("PlantAreaColumn1")
-                    local col2 = visual:FindFirstChild("PlantAreaColumn2")
-                    if col1 and col2 and col1:IsA("BasePart") and col2:IsA("BasePart") then
-                        local midPoint = (col1.Position + col2.Position) / 2
-                        table.insert(plots, {plotNum = plotNum, position = midPoint + Vector3.new(0, -7, 0)})
+                if plotHasStealableFruits(plot) then
+                    local visual = plot:FindFirstChild("Visual")
+                    if visual then
+                        local col1 = visual:FindFirstChild("PlantAreaColumn1")
+                        local col2 = visual:FindFirstChild("PlantAreaColumn2")
+                        if col1 and col2 and col1:IsA("BasePart") and col2:IsA("BasePart") then
+                            local midPoint = (col1.Position + col2.Position) / 2
+                            table.insert(plots, {plotNum = plotNum, position = midPoint + Vector3.new(0, -7, 0)})
+                        end
                     end
                 end
             end
@@ -364,14 +391,15 @@ local function doStealCycle()
     end
     for _, plotData in ipairs(plots) do
         if not stealEnabled then break end
-        local char = player.Character
-        if char then
-            local root = char:FindFirstChild("HumanoidRootPart")
-            if root then root.CFrame = CFrame.new(plotData.position) end
-        end
         
         local plot = workspace.Gardens:FindFirstChild("Plot" .. plotData.plotNum)
-        if plot then
+        if plot and plotHasStealableFruits(plot) then
+            local char = player.Character
+            if char then
+                local root = char:FindFirstChild("HumanoidRootPart")
+                if root then root.CFrame = CFrame.new(plotData.position) end
+            end
+            
             local endTime = tick() + 2
             while tick() < endTime and stealEnabled do
                 collectFruitsOnPlot(plot)
