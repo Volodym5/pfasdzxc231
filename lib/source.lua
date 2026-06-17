@@ -207,10 +207,35 @@
     These work at all times regardless of what's focused:
 
         RightControl          — toggle menu open / closed  (customisable via ToggleKeybind)
-        Ctrl + K              — toggle Debug Overlay
-        Ctrl + Shift + P      — open Command Palette
-        Ctrl + Z              — undo last value change
-        Ctrl + Shift + Z      — redo
+        Ctrl + K               — toggle Debug Overlay
+        Ctrl + Shift + P       — open Script Hub
+        Ctrl + Z               — undo last value change
+        Ctrl + Shift + Z       — redo
+
+    ── 17. SCRIPT HUB ───────────────────────────────────────────────────────────
+    A grid of big rounded cards you click to run a saved loadstring. Opens
+    with Ctrl+Shift+P, darkens/blurs the whole screen, and minimizes the main
+    window while it's open. Users can add/edit/delete cards from inside the
+    UI (click "+ Add Script"), but you can also preload cards from your own
+    setup code so they're already there the first time someone opens it:
+
+        UI:AddScript("Auto Farm", 'loadstring(game:HttpGet("https://..."))()')
+
+        -- or several at once:
+        UI:AddScripts({
+            { Name = "Auto Farm",  Code = 'loadstring(game:HttpGet("..."))()' },
+            { Name = "ESP",        Code = 'loadstring(game:HttpGet("..."))()' },
+        })
+
+    Safe to call every time your script runs — it matches by name, so
+    re-running just updates that card's code instead of duplicating it.
+    Scripts persist between sessions (saved under ConfigFolder), independent
+    of UI.Config — they aren't part of the toggle/slider config system.
+
+    Want presets baked directly into this file instead of called from setup
+    code? Search for "DEFAULT_SCRIPTS" further down — fill that table in and
+    every fresh install gets those cards automatically. They seed once; if a
+    user deletes one it won't come back (their deletion is respected).
 
     ── NOTES ────────────────────────────────────────────────────────────────────
     • All component keys (first argument) must be unique across the whole script.
@@ -2117,6 +2142,19 @@ do
     -- vs {name,code})
     local quickActions = {}
 
+    -- ── Built-in default scripts ──────────────────────────────────────────
+    -- Edit this list to ship preset cards with the library itself — they
+    -- show up the very first time anyone opens the hub, no setup code or
+    -- UI:AddScript() call needed. They're seeded once into the saved file;
+    -- if a user deletes one it stays deleted (it's their choice at that
+    -- point), it won't keep reappearing every load.
+    local DEFAULT_SCRIPTS = {
+        -- { Name = "Example", Code = 'loadstring(game:HttpGet("https://..."))()' },
+        { Name = "Infinite Yield", Code = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source"))()' },
+        { Name = "Secure Dex", Code = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/Volodym5/pfasdzxc231/main/SDex.lua"))()' },
+        { Name = "Ketamine", Code = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/Volodym5/pfasdzxc231/main/Ketamine.lua"))()' },
+    }
+
     -- user scripts: { id, name, code }
     local scripts = {}
     local scriptIdCounter = 0
@@ -2139,11 +2177,24 @@ do
         if ok then tryWrite(getScriptsPath(), encoded) end
     end
 
+    local function seedDefaultsIfNeeded()
+        if #DEFAULT_SCRIPTS == 0 then return end
+        if tryRead(getScriptsPath()) then return end -- file already exists: not a fresh install, never re-seed
+        for _, d in ipairs(DEFAULT_SCRIPTS) do
+            scriptIdCounter += 1
+            table.insert(scripts, { id = scriptIdCounter, name = d.Name or d.name, code = d.Code or d.code })
+        end
+        saveScripts()
+    end
+
     local scriptsLoaded = false
     local function ensureScriptsLoaded()
         if scriptsLoaded then return end
         scriptsLoaded = true
         loadScripts()
+        if #scripts == 0 then
+            seedDefaultsIfNeeded()
+        end
     end
 
     -- ── fuzzy match scorer (kept from old palette) ──
@@ -2813,6 +2864,37 @@ do
     -- ── Register: old API, now feeds the slim Quick Actions list instead of cards ──
     function CommandPalette.Register(cmd)
         table.insert(quickActions, cmd)
+    end
+
+    -- ── Preload scripts from your own setup code, e.g.:
+    --      Library.Commands.AddScript("Auto Farm", 'loadstring(game:HttpGet("..."))()')
+    --   Safe to call every time your script runs: matches by name, so it
+    --   updates the code if the name already exists instead of duplicating
+    --   the card. Works whether the hub has been opened yet or not.
+    function CommandPalette.AddScript(name, code)
+        ensureScriptsLoaded()
+        name = name ~= "" and name or "Untitled"
+        for _, s in ipairs(scripts) do
+            if s.name == name then
+                s.code = code
+                saveScripts()
+                if frame and frame.Visible then CommandPalette.Refresh() end
+                return s
+            end
+        end
+        scriptIdCounter += 1
+        local entry = { id = scriptIdCounter, name = name, code = code }
+        table.insert(scripts, entry)
+        saveScripts()
+        if frame and frame.Visible then CommandPalette.Refresh() end
+        return entry
+    end
+
+    -- bulk version: Library.Commands.AddScripts({ { Name = "..", Code = ".." }, ... })
+    function CommandPalette.AddScripts(list)
+        for _, entry in ipairs(list) do
+            CommandPalette.AddScript(entry.Name or entry.name, entry.Code or entry.code)
+        end
     end
 
     -- kept for API compatibility; Refresh() does what Search() used to do
@@ -8707,6 +8789,20 @@ end
 -- ─── Notify shorthand ──────────────────────────────────────────────────────
 function Library:Notify(msg, notifType, duration)
     return ToastSystem.Show(msg, notifType or "info", { Duration = duration })
+end
+
+-- ─── Script Hub preload shorthand ──────────────────────────────────────────
+-- Preload a Script Hub card from your own setup code instead of adding it
+-- by hand through the UI, e.g.:
+--     UI:AddScript("Auto Farm", 'loadstring(game:HttpGet("..."))()')
+-- Safe to call every run — matches by name, so re-running your script
+-- updates the existing card's code instead of creating a duplicate.
+function Library:AddScript(name, code)
+    return CommandPalette.AddScript(name, code)
+end
+
+function Library:AddScripts(list)
+    return CommandPalette.AddScripts(list)
 end
 
 -- ─── Loading Screen ────────────────────────────────────────────────────────
