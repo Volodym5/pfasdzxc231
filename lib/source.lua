@@ -5,7 +5,7 @@
     ── 1. STARTUP ──────────────────────────────────────────────────────────────
     Load the library and create a window. All components hang off the window.
 
-        local UI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Volodym5/pfasdzxc231/main/lib/source.lua"))()
+        local UI = loadstring(game:HttpGet("YOUR_RAW_URL"))()
 
         local Window = UI:CreateWindow({
             Title           = "My Menu",          -- window title
@@ -237,6 +237,7 @@ local TextService       = cloneref(game:GetService("TextService"))
 local SoundService      = cloneref(game:GetService("SoundService"))
 local Teams             = cloneref(game:GetService("Teams"))
 local HttpService        = cloneref(game:GetService("HttpService"))
+local Lighting           = cloneref(game:GetService("Lighting"))
 
 local getgenv           = getgenv   or function() return shared end
 local setclipboard      = setclipboard or function() end
@@ -246,6 +247,17 @@ local gethui            = gethui    or function() return CoreGui end
 local LocalPlayer = Players.LocalPlayer or Players.PlayerAdded:Wait()
 local Mouse       = cloneref(LocalPlayer:GetMouse())
 local Camera      = workspace.CurrentCamera
+
+-- Forward declaration: the real Library table is assigned further down
+-- (search "Main Library Object"), but earlier modules like the Script Hub
+-- need to call into it (Window:Toggle, Library.ConfigFolder, etc). Since
+-- this is a `local`, and Lua resolves upvalues lexically (not by execution
+-- order), declaring the assignment later as `local Library = {...}` would
+-- create a brand-new shadowing local invisible to closures defined above it
+-- — they'd silently capture a `nil` global instead. Forward-declaring here
+-- and assigning (without `local`) later keeps everyone pointed at the same
+-- upvalue.
+local Library
 
 -- ─── Constants ─────────────────────────────────────────────────────────────
 local LIBRARY_VERSION   = "2.0.0"
@@ -2041,22 +2053,100 @@ do
     function ToastSystem.Error(msg, opts)   return ToastSystem.Show(msg, "error",   opts) end
 end
 
--- ─── Command Palette ───────────────────────────────────────────────────────
+-- ─── Script Hub ─────────────────────────────────────────────────────────────
 --[[
-    VS Code style command palette.
-    Open with Ctrl+Shift+P (or programmatically).
-    Fuzzy search across registered commands.
+    Replaces the old VS Code style command palette with an integrated script
+    hub: big rounded cards you click to run a saved loadstring, plus a search
+    bar to filter them. The whole screen darkens + blurs behind it (real
+    Lighting.BlurEffect, not the menu-local fake frost), and the main window
+    minimizes automatically while it's open (restored on close if it was open).
+
+    API kept compatible with the old CommandPalette so existing call sites
+    elsewhere in the file (Settings/theme quick-actions) don't need to change:
+        CommandPalette.Register({ name=.., category=.., action=.. })
+        CommandPalette.Open() / Close() / Toggle()
+    Those registered entries still show up — as a slim "Quick Actions" list
+    under the search results — while the big cards above them are reserved
+    for user-created scripts (Name + loadstring), which is the actual point.
 ]]
 local CommandPalette = {}
 do
-    local commands  = {}  -- { id, name, description, category, action, keywords }
-    local visible   = false
-    local frame, inputBox, listFrame
-    local listItems = {}
-    local selectedIdx = 0
-    local maid = Maid.New()
+    -- ── persistence (independent of ConfigSystem — these aren't config values) ──
+    -- NOTE: Library.ConfigFolder isn't set until the user calls
+    -- Library:CreateWindow(...), which happens well after this module
+    -- finishes loading (and Library itself is nil at module-load time, see
+    -- the forward-declaration note near the top of the file). So the path
+    -- must be computed fresh on every read/write, not baked in once here.
+    local function getScriptsPath()
+        return (Library and Library.ConfigFolder or "NexusUI") .. "/scripthub_scripts.json"
+    end
 
-    -- Fuzzy match scorer
+    local function tryWrite(path, data)
+        if writefile then
+            local ok = pcall(writefile, path, data)
+            return ok
+        end
+        if getgenv then
+            getgenv().__NexusUI_ScriptHub = getgenv().__NexusUI_ScriptHub or {}
+            getgenv().__NexusUI_ScriptHub[path] = data
+            return true
+        end
+        return false
+    end
+
+    local function tryRead(path)
+        if readfile and isfile and isfile(path) then
+            local ok, data = pcall(readfile, path)
+            if ok and data then return data end
+        end
+        if getgenv and getgenv().__NexusUI_ScriptHub then
+            return getgenv().__NexusUI_ScriptHub[path]
+        end
+        return nil
+    end
+
+    local function ensureFolder()
+        local folder = Library and Library.ConfigFolder or "NexusUI"
+        if makefolder and not (isfolder and isfolder(folder)) then
+            pcall(makefolder, folder)
+        end
+    end
+
+    -- quick-actions (old CommandPalette.Register entries) — kept separate
+    -- from user scripts since they're a different shape ({name,category,action}
+    -- vs {name,code})
+    local quickActions = {}
+
+    -- user scripts: { id, name, code }
+    local scripts = {}
+    local scriptIdCounter = 0
+
+    local function loadScripts()
+        local raw = tryRead(getScriptsPath())
+        if not raw then return end
+        local ok, data = pcall(function() return HttpService:JSONDecode(raw) end)
+        if ok and typeof(data) == "table" then
+            scripts = data
+            for _, s in ipairs(scripts) do
+                scriptIdCounter = math.max(scriptIdCounter, tonumber(s.id) or 0)
+            end
+        end
+    end
+
+    local function saveScripts()
+        ensureFolder()
+        local ok, encoded = pcall(function() return HttpService:JSONEncode(scripts) end)
+        if ok then tryWrite(getScriptsPath(), encoded) end
+    end
+
+    local scriptsLoaded = false
+    local function ensureScriptsLoaded()
+        if scriptsLoaded then return end
+        scriptsLoaded = true
+        loadScripts()
+    end
+
+    -- ── fuzzy match scorer (kept from old palette) ──
     local function fuzzyScore(pattern, str)
         pattern = pattern:lower()
         str     = str:lower()
@@ -2068,227 +2158,738 @@ do
                 pi += 1
             end
         end
-        if pi <= #pattern then return -1 end  -- not all chars matched
+        if pi <= #pattern then return -1 end
         return score
     end
 
-    local function buildUI()
-        local overlay = New("Frame", {
-            BackgroundColor3 = Color3.new(0,0,0),
-            BackgroundTransparency = 0.5,
-            Size = UDim2.fromScale(1, 1),
+    -- ── state ──
+    local visible        = false
+    local openGen         = 0   -- generation token: invalidates stale close-delays
+    local wasWindowOpen   = false
+    local blurEffect, dimOverlay
+    local frame, inputBox, cardGrid, quickList, emptyLabel
+    local query = ""
+    local maid = Maid.New()
+
+    -- ── full-screen darken + blur (real BlurEffect, screen-wide on purpose —
+    -- this is different from the menu's own internal frost layers, which
+    -- only fake a localized blur because BlurEffect can't be scoped) ──
+    local function buildScreenDim()
+        dimOverlay = New("TextButton", {
+            BackgroundColor3 = Color3.new(0, 0, 0),
+            BackgroundTransparency = 1,
+            Size    = UDim2.fromScale(1, 1),
+            Text    = "",
+            AutoButtonColor = false,
             Visible = false,
             Parent  = ScreenGui,
         })
-        ZManager.Apply(overlay, "modal")
+        ZManager.Apply(dimOverlay, "modal")
 
+        -- defensive: if this script was executed before without a clean
+        -- Unload(), an old blur effect could still be sitting in Lighting
+        -- and would stack with this new one
+        local existing = Lighting:FindFirstChild("NexusUI_ScriptHubBlur")
+        if existing then existing:Destroy() end
+
+        blurEffect = Instance.new("BlurEffect")
+        blurEffect.Name = "NexusUI_ScriptHubBlur"
+        blurEffect.Size = 0
+        blurEffect.Parent = Lighting
+        LibraryMaid:Give(blurEffect)
+    end
+
+    local function buildUI()
         frame = New("Frame", {
-            AnchorPoint = Vector2.new(0.5, 0),
+            AnchorPoint = Vector2.new(0.5, 0.5),
             BackgroundColor3 = "SurfaceColor",
-            Position = UDim2.new(0.5, 0, 0, 60),
-            Size     = UDim2.fromOffset(460, 0),
-            AutomaticSize = Enum.AutomaticSize.Y,
-            Parent   = overlay,
+            Position = UDim2.fromScale(0.5, 0.46),
+            Size     = UDim2.fromOffset(620, 480),
+            Active   = true, -- blocks clicks on blank panel areas from falling
+                              -- through dimOverlay to the game world behind it
+            Visible  = false,
+            Parent   = dimOverlay,
         })
-        New("UICorner",  { CornerRadius = UDim.new(0, Tokens.RadiusLG), Parent = frame })
-        New("UIStroke",  { Color = "BorderColor", Thickness = 1, Parent = frame })
-        ZManager.Apply(frame, "modal")
+        New("UICorner", { CornerRadius = UDim.new(0, 20), Parent = frame })
+        New("UIStroke", { Color = "BorderColor", Thickness = 1, Transparency = 0.3, Parent = frame })
+        ZManager.Apply(frame, "modal", 1)
 
-        local scale = Instance.new("UIScale")
-        scale.Scale = 0.95
-        scale.Parent = frame
+        local scaleI = Instance.new("UIScale")
+        scaleI.Scale = 0.94
+        scaleI.Parent = frame
 
         New("UIPadding", {
-            PaddingLeft   = UDim.new(0, 12),
-            PaddingRight  = UDim.new(0, 12),
-            PaddingTop    = UDim.new(0, 8),
-            PaddingBottom = UDim.new(0, 8),
+            PaddingLeft = UDim.new(0, 20), PaddingRight = UDim.new(0, 20),
+            PaddingTop  = UDim.new(0, 18), PaddingBottom = UDim.new(0, 16),
             Parent = frame,
         })
-        New("UIListLayout", { Padding = UDim.new(0, 6), Parent = frame })
+        New("UIListLayout", { Padding = UDim.new(0, 14), Parent = frame })
 
-        -- Search input
-        local inputRow = New("Frame", {
-            BackgroundColor3 = "BackgroundColor",
-            Size = UDim2.new(1, 0, 0, 34),
+        -- Header row: title + search bar
+        local header = New("Frame", {
+            BackgroundTransparency = 1,
+            Size = UDim2.new(1, 0, 0, 26),
             LayoutOrder = 1,
             Parent = frame,
         })
-        New("UICorner", { CornerRadius = UDim.new(0, Tokens.RadiusSM), Parent = inputRow })
-        New("UIStroke", { Color = "BorderColor", Thickness = 1, Parent = inputRow })
-        New("UIPadding", {
-            PaddingLeft  = UDim.new(0, 10),
-            PaddingRight = UDim.new(0, 10),
-            Parent = inputRow,
-        })
-
-        local searchIcon = New("TextLabel", {
+        New("TextLabel", {
             BackgroundTransparency = 1,
-            Size   = UDim2.new(0, 16, 1, 0),
-            Text   = "⌕",
-            TextSize = 16,
+            Size = UDim2.new(0.5, 0, 1, 0),
+            Text = "Script Hub",
+            TextSize = Tokens.FontSize.H2,
+            FontFace = "FontBold",
+            TextXAlignment = Enum.TextXAlignment.Left,
+            Parent = header,
+        })
+        local countLabel = New("TextLabel", {
+            AnchorPoint = Vector2.new(1, 0.5),
+            BackgroundTransparency = 1,
+            Position = UDim2.new(1, 0, 0.5, 0),
+            Size = UDim2.new(0.5, 0, 1, 0),
+            Text = "",
+            TextSize = Tokens.FontSize.SM,
             TextColor3 = "TextMuted",
-            Parent = inputRow,
+            TextXAlignment = Enum.TextXAlignment.Right,
+            Parent = header,
         })
 
+        -- Search bar
+        local searchRow = New("Frame", {
+            BackgroundColor3 = "BackgroundColor",
+            Size = UDim2.new(1, 0, 0, 38),
+            LayoutOrder = 2,
+            Parent = frame,
+        })
+        New("UICorner", { CornerRadius = UDim.new(0, Tokens.RadiusMD), Parent = searchRow })
+        New("UIStroke", { Color = "BorderColor", Thickness = 1, Transparency = 0.3, Parent = searchRow })
+        New("UIPadding", { PaddingLeft = UDim.new(0, 12), PaddingRight = UDim.new(0, 12), Parent = searchRow })
+
+        New("TextLabel", {
+            BackgroundTransparency = 1,
+            Size = UDim2.new(0, 18, 1, 0),
+            Text = "⌕",
+            TextSize = 18,
+            TextColor3 = "TextMuted",
+            Parent = searchRow,
+        })
         inputBox = New("TextBox", {
             BackgroundTransparency = 1,
             ClearTextOnFocus = false,
-            PlaceholderText = "Search commands…",
-            Position = UDim2.fromOffset(24, 0),
-            Size     = UDim2.new(1, -24, 1, 0),
+            PlaceholderText = "Search scripts…",
+            Position = UDim2.fromOffset(26, 0),
+            Size     = UDim2.new(1, -26, 1, 0),
             TextSize = Tokens.FontSize.MD,
             TextXAlignment = Enum.TextXAlignment.Left,
-            Parent   = inputRow,
+            Parent   = searchRow,
         })
 
-        -- Results list
-        listFrame = New("Frame", {
+        -- Body: one scrolling area holding the card grid, then the quick
+        -- actions list stacked underneath it. Both auto-size their height
+        -- and the outer ScrollingFrame absorbs whatever doesn't fit in the
+        -- visible 620x480 frame — this replaces an earlier version that
+        -- tried to hand-compute a fixed height for the grid alone and left
+        -- no room for the quick-actions list or empty-state message.
+        local bodyScroll = New("ScrollingFrame", {
             BackgroundTransparency = 1,
-            Size      = UDim2.new(1, 0, 0, 0),
-            AutomaticSize = Enum.AutomaticSize.Y,
-            LayoutOrder = 2,
-            Parent    = frame,
+            Size = UDim2.new(1, 0, 1, 0),
+            AutomaticSize = Enum.AutomaticSize.None,
+            CanvasSize = UDim2.new(0, 0, 0, 0),
+            AutomaticCanvasSize = Enum.AutomaticSize.Y,
+            LayoutOrder = 3,
+            Parent = frame,
         })
-        New("UIListLayout", { Padding = UDim.new(0, 2), Parent = listFrame })
+        New("UIListLayout", { Padding = UDim.new(0, 16), Parent = bodyScroll })
+
+        local gridHolder = New("Frame", {
+            BackgroundTransparency = 1,
+            Size = UDim2.new(1, 0, 0, 0),
+            AutomaticSize = Enum.AutomaticSize.Y,
+            LayoutOrder = 1,
+            Parent = bodyScroll,
+        })
+        cardGrid = gridHolder
+
+        local grid = New("UIGridLayout", {
+            CellSize = UDim2.fromOffset(176, 108),
+            CellPadding = UDim2.fromOffset(14, 14),
+            SortOrder = Enum.SortOrder.LayoutOrder,
+            Parent = gridHolder,
+        })
+
+        emptyLabel = New("TextLabel", {
+            BackgroundTransparency = 1,
+            Size = UDim2.new(1, 0, 0, 40),
+            Text = "No scripts yet — click \"+ Add Script\" to create one.",
+            TextSize = Tokens.FontSize.MD,
+            TextColor3 = "TextMuted",
+            Visible = false,
+            LayoutOrder = 2,
+            Parent = bodyScroll,
+        })
+
+        quickList = New("Frame", {
+            BackgroundTransparency = 1,
+            Size = UDim2.new(1, 0, 0, 0),
+            AutomaticSize = Enum.AutomaticSize.Y,
+            LayoutOrder = 3,
+            Visible = false,
+            Parent = bodyScroll,
+        })
+        New("UIListLayout", { Padding = UDim.new(0, 2), Parent = quickList })
 
         maid:Connect(inputBox:GetPropertyChangedSignal("Text"), function()
-            CommandPalette.Search(inputBox.Text)
+            query = inputBox.Text
+            CommandPalette.Refresh()
         end)
 
-        maid:Connect(inputBox.FocusLost, function(enterPressed)
-            if enterPressed and listItems[selectedIdx] then
-                CommandPalette.Execute(listItems[selectedIdx].command)
-            end
-        end)
-
-        return overlay, scale
+        return scaleI, countLabel, grid
     end
 
-    local palOverlay, palScale = buildUI()
+    local frameScale, countLabel, gridLayout
+    buildScreenDim()
+    frameScale, countLabel, gridLayout = buildUI()
 
-    local function renderResults(results)
-        -- Clear existing items
-        for _, item in ipairs(listItems) do
-            if item.frame then item.frame:Destroy() end
+    -- clicking the darkened backdrop (anywhere outside the hub panel) closes
+    -- the hub, same as clicking outside the Add/Edit dialog closes that
+    dimOverlay.MouseButton1Click:Connect(function()
+        CommandPalette.Close()
+    end)
+
+    -- ── Card rendering ──
+    local function clearChildren(inst)
+        for _, c in ipairs(inst:GetChildren()) do
+            if not c:IsA("UILayout") and not c:IsA("UIPadding") then
+                c:Destroy()
+            end
         end
-        listItems = {}
-        selectedIdx = 1
+    end
 
-        for i, cmd in ipairs(results) do
+    local function makeAddCard(layoutOrder)
+        local card = New("TextButton", {
+            BackgroundColor3 = "BackgroundColor",
+            Text = "",
+            AutoButtonColor = false,
+            LayoutOrder = layoutOrder,
+            Parent = cardGrid,
+        })
+        New("UICorner", { CornerRadius = UDim.new(0, 18), Parent = card })
+        local stroke = New("UIStroke", {
+            Color = "BorderColor",
+            Thickness = 1.5,
+            Transparency = 0.2,
+            Parent = card,
+        })
+        -- dashed look isn't natively supported; emulate with a slightly
+        -- transparent stroke + plus icon instead
+        New("TextLabel", {
+            BackgroundTransparency = 1,
+            AnchorPoint = Vector2.new(0.5, 0.5),
+            Position = UDim2.fromScale(0.5, 0.38),
+            Size = UDim2.fromOffset(34, 34),
+            Text = "+",
+            TextSize = 30,
+            TextColor3 = "AccentColor",
+            Parent = card,
+        })
+        New("TextLabel", {
+            BackgroundTransparency = 1,
+            AnchorPoint = Vector2.new(0.5, 0.5),
+            Position = UDim2.fromScale(0.5, 0.72),
+            Size = UDim2.new(1, -16, 0, 18),
+            Text = "Add Script",
+            TextSize = Tokens.FontSize.MD,
+            TextColor3 = "TextSecondary",
+            Parent = card,
+        })
+
+        card.MouseEnter:Connect(function()
+            TweenService:Create(stroke, TweenInfo.new(0.12), { Color = ThemeEngine.CurrentScheme.AccentColor, Transparency = 0 }):Play()
+        end)
+        card.MouseLeave:Connect(function()
+            TweenService:Create(stroke, TweenInfo.new(0.12), { Color = ThemeEngine.CurrentScheme.BorderColor, Transparency = 0.2 }):Play()
+        end)
+        card.MouseButton1Click:Connect(function()
+            CommandPalette.OpenEditor(nil)
+        end)
+        return card
+    end
+
+    local function makeScriptCard(script, layoutOrder)
+        local card = New("TextButton", {
+            BackgroundColor3 = "BackgroundColor",
+            Text = "",
+            AutoButtonColor = false,
+            LayoutOrder = layoutOrder,
+            Parent = cardGrid,
+        })
+        New("UICorner", { CornerRadius = UDim.new(0, 18), Parent = card })
+        local stroke = New("UIStroke", { Color = "BorderColor", Thickness = 1, Transparency = 0.4, Parent = card })
+
+        New("UIPadding", {
+            PaddingLeft = UDim.new(0, 14), PaddingRight = UDim.new(0, 14),
+            PaddingTop  = UDim.new(0, 12), PaddingBottom = UDim.new(0, 10),
+            Parent = card,
+        })
+
+        New("TextLabel", {
+            BackgroundTransparency = 1,
+            Size = UDim2.new(1, 0, 0, 22),
+            Text = script.name ~= "" and script.name or "Untitled",
+            TextSize = Tokens.FontSize.LG,
+            FontFace = "FontBold",
+            TextXAlignment = Enum.TextXAlignment.Left,
+            TextTruncate = Enum.TextTruncate.AtEnd,
+            Parent = card,
+        })
+        New("TextLabel", {
+            AnchorPoint = Vector2.new(0, 1),
+            BackgroundTransparency = 1,
+            Position = UDim2.new(0, 0, 1, 0),
+            Size = UDim2.new(1, 0, 0, 16),
+            Text = "▶ Run",
+            TextSize = Tokens.FontSize.SM,
+            TextColor3 = "AccentColor",
+            TextXAlignment = Enum.TextXAlignment.Left,
+            Parent = card,
+        })
+
+        -- small edit/delete affordance in the corner
+        local editBtn = New("TextButton", {
+            AnchorPoint = Vector2.new(1, 0),
+            BackgroundTransparency = 1,
+            Position = UDim2.new(1, 0, 0, 0),
+            Size = UDim2.fromOffset(20, 20),
+            Text = "⋯",
+            TextSize = 18,
+            TextColor3 = "TextMuted",
+            ZIndex = 2,
+            Parent = card,
+        })
+
+        card.MouseEnter:Connect(function()
+            TweenService:Create(stroke, TweenInfo.new(0.12), { Transparency = 0, Color = ThemeEngine.CurrentScheme.AccentColor }):Play()
+            TweenService:Create(card, TweenInfo.new(0.12), { BackgroundColor3 = ThemeEngine.CurrentScheme.SurfaceAltColor }):Play()
+        end)
+        card.MouseLeave:Connect(function()
+            TweenService:Create(stroke, TweenInfo.new(0.12), { Transparency = 0.4, Color = ThemeEngine.CurrentScheme.BorderColor }):Play()
+            TweenService:Create(card, TweenInfo.new(0.12), { BackgroundColor3 = ThemeEngine.CurrentScheme.BackgroundColor }):Play()
+        end)
+        card.MouseButton1Click:Connect(function()
+            CommandPalette.RunScript(script.id)
+        end)
+        editBtn.MouseButton1Click:Connect(function()
+            CommandPalette.OpenEditor(script.id)
+        end)
+
+        return card
+    end
+
+    local function renderQuickActions(list)
+        clearChildren(quickList)
+        quickList.Visible = #list > 0
+        for i, qa in ipairs(list) do
             local row = New("TextButton", {
-                BackgroundColor3 = i == 1 and "SurfaceAltColor" or "SurfaceColor",
-                BackgroundTransparency = i == 1 and 0 or 1,
-                Size    = UDim2.new(1, 0, 0, 38),
-                Text    = "",
+                BackgroundTransparency = 1,
+                Size = UDim2.new(1, 0, 0, 30),
+                Text = "",
                 LayoutOrder = i,
-                Parent  = listFrame,
+                Parent = quickList,
             })
             New("UICorner", { CornerRadius = UDim.new(0, Tokens.RadiusSM), Parent = row })
-            New("UIPadding", {
-                PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 10),
-                Parent = row,
-            })
-
             New("TextLabel", {
                 BackgroundTransparency = 1,
-                Size   = UDim2.new(0.6, 0, 0, 18),
-                Text   = cmd.name,
-                TextSize = Tokens.FontSize.MD,
+                Size = UDim2.new(0.6, 0, 1, 0),
+                Position = UDim2.fromOffset(8, 0),
+                Text = qa.name,
+                TextSize = Tokens.FontSize.SM,
                 TextXAlignment = Enum.TextXAlignment.Left,
                 Parent = row,
             })
             New("TextLabel", {
                 AnchorPoint = Vector2.new(1, 0.5),
                 BackgroundTransparency = 1,
-                Position = UDim2.new(1, 0, 0.5, 0),
-                Size     = UDim2.new(0.35, 0, 0, 14),
-                Text     = cmd.category or "",
-                TextSize = Tokens.FontSize.SM,
+                Position = UDim2.new(1, -8, 0.5, 0),
+                Size = UDim2.new(0.35, 0, 1, 0),
+                Text = qa.category or "",
+                TextSize = Tokens.FontSize.XS,
                 TextColor3 = "TextMuted",
                 TextXAlignment = Enum.TextXAlignment.Right,
                 Parent = row,
             })
-
-            local idx = i
             row.MouseEnter:Connect(function()
-                row.BackgroundTransparency = 0
+                row.BackgroundTransparency = 0.5
                 row.BackgroundColor3 = ThemeEngine.CurrentScheme.SurfaceAltColor
-                selectedIdx = idx
             end)
-            row.MouseLeave:Connect(function()
-                if selectedIdx ~= idx then
-                    row.BackgroundTransparency = 1
-                end
-            end)
+            row.MouseLeave:Connect(function() row.BackgroundTransparency = 1 end)
             row.MouseButton1Click:Connect(function()
-                CommandPalette.Execute(cmd)
+                pcall(qa.action)
                 CommandPalette.Close()
             end)
-
-            table.insert(listItems, { frame = row, command = cmd })
         end
     end
 
-    function CommandPalette.Register(cmd)
-        table.insert(commands, cmd)
+    function CommandPalette.Refresh()
+        clearChildren(cardGrid) -- UIGridLayout (gridLayout) survives this, it's excluded by IsA("UILayout")
+
+        local filteredScripts = {}
+        local filteredActions  = {}
+
+        if query == "" then
+            filteredScripts = scripts
+            -- only surface quick actions when not searching and there are few/no scripts,
+            -- so the hub doesn't get cluttered once someone has a real script library
+            if #scripts == 0 then filteredActions = quickActions end
+        else
+            local scored = {}
+            for _, s in ipairs(scripts) do
+                local sc = fuzzyScore(query, s.name)
+                if sc >= 0 then table.insert(scored, { item = s, score = sc }) end
+            end
+            table.sort(scored, function(a, b) return a.score > b.score end)
+            for _, e in ipairs(scored) do table.insert(filteredScripts, e.item) end
+
+            local scoredA = {}
+            for _, a in ipairs(quickActions) do
+                local sc = fuzzyScore(query, a.name)
+                if sc >= 0 then table.insert(scoredA, { item = a, score = sc }) end
+            end
+            table.sort(scoredA, function(a, b) return a.score > b.score end)
+            for _, e in ipairs(scoredA) do table.insert(filteredActions, e.item) end
+        end
+
+        makeAddCard(1)
+        for i, s in ipairs(filteredScripts) do
+            makeScriptCard(s, i + 1)
+        end
+
+        renderQuickActions(filteredActions)
+
+        if #scripts == 0 and query == "" then
+            emptyLabel.Text = "No scripts yet — click \"+ Add Script\" to create one."
+            emptyLabel.Visible = true
+        elseif query ~= "" and #filteredScripts == 0 and #filteredActions == 0 then
+            emptyLabel.Text = "No matches for \"" .. query .. "\"."
+            emptyLabel.Visible = true
+        else
+            emptyLabel.Visible = false
+        end
+        countLabel.Text = #scripts .. (#scripts == 1 and " script" or " scripts")
     end
 
-    function CommandPalette.Search(query)
-        if not query or query == "" then
-            renderResults(commands)
-            return
-        end
-        local scored = {}
-        for _, cmd in ipairs(commands) do
-            local s = fuzzyScore(query, cmd.name)
-            if s >= 0 then
-                table.insert(scored, { cmd = cmd, score = s })
+    -- ── Editor dialog (Add / Edit script) ──
+    local editorDismiss = nil  -- set while the Add/Edit dialog is open, so Escape closes it first
+
+    function CommandPalette.OpenEditor(scriptId)
+        local editing = nil
+        if scriptId then
+            for _, s in ipairs(scripts) do
+                if s.id == scriptId then editing = s break end
             end
         end
-        table.sort(scored, function(a, b) return a.score > b.score end)
-        local results = {}
-        for _, s in ipairs(scored) do
-            table.insert(results, s.cmd)
+
+        local overlay = New("TextButton", {
+            BackgroundColor3 = Color3.new(0, 0, 0),
+            BackgroundTransparency = 1,
+            Size = UDim2.fromScale(1, 1),
+            Text = "",
+            AutoButtonColor = false,
+            Parent = dimOverlay, -- sits above the hub frame, both inside the same dim overlay
+        })
+        ZManager.Apply(overlay, "modal", 2)
+        TweenService:Create(overlay, TweenInfo.new(0.12), { BackgroundTransparency = 0.4 }):Play()
+
+        local box = New("Frame", {
+            AnchorPoint = Vector2.new(0.5, 0.5),
+            BackgroundColor3 = "SurfaceColor",
+            Position = UDim2.fromScale(0.5, 0.5),
+            Size = UDim2.fromOffset(420, 360),
+            Active = true, -- blocks clicks from falling through to the overlay's
+                            -- click-outside-to-dismiss handler when clicking on
+                            -- blank areas of the dialog (title/hint text, padding)
+            Parent = overlay,
+        })
+        New("UICorner", { CornerRadius = UDim.new(0, 16), Parent = box })
+        New("UIStroke", { Color = "BorderColor", Thickness = 1, Parent = box })
+        New("UIPadding", {
+            PaddingLeft = UDim.new(0, 18), PaddingRight = UDim.new(0, 18),
+            PaddingTop = UDim.new(0, 16), PaddingBottom = UDim.new(0, 16),
+            Parent = box,
+        })
+        New("UIListLayout", { Padding = UDim.new(0, 10), Parent = box })
+
+        New("TextLabel", {
+            BackgroundTransparency = 1,
+            Size = UDim2.new(1, 0, 0, 22),
+            Text = editing and "Edit Script" or "Add Script",
+            TextSize = Tokens.FontSize.H3,
+            FontFace = "FontBold",
+            TextXAlignment = Enum.TextXAlignment.Left,
+            LayoutOrder = 1,
+            Parent = box,
+        })
+
+        local nameRow = New("Frame", {
+            BackgroundColor3 = "BackgroundColor",
+            Size = UDim2.new(1, 0, 0, 34),
+            LayoutOrder = 2,
+            Parent = box,
+        })
+        New("UICorner", { CornerRadius = UDim.new(0, Tokens.RadiusSM), Parent = nameRow })
+        New("UIStroke", { Color = "BorderColor", Thickness = 1, Parent = nameRow })
+        New("UIPadding", { PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 10), Parent = nameRow })
+        local nameBox = New("TextBox", {
+            BackgroundTransparency = 1,
+            ClearTextOnFocus = false,
+            PlaceholderText = "Script name…",
+            Text = editing and editing.name or "",
+            Size = UDim2.new(1, 0, 1, 0),
+            TextSize = Tokens.FontSize.MD,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            Parent = nameRow,
+        })
+
+        local codeRow = New("Frame", {
+            BackgroundColor3 = "BackgroundColor",
+            Size = UDim2.new(1, 0, 0, 170),
+            LayoutOrder = 3,
+            Parent = box,
+        })
+        New("UICorner", { CornerRadius = UDim.new(0, Tokens.RadiusSM), Parent = codeRow })
+        New("UIStroke", { Color = "BorderColor", Thickness = 1, Parent = codeRow })
+        New("UIPadding", {
+            PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 10),
+            PaddingTop = UDim.new(0, 8), PaddingBottom = UDim.new(0, 8),
+            Parent = codeRow,
+        })
+        local codeScroll = New("ScrollingFrame", {
+            BackgroundTransparency = 1,
+            Size = UDim2.new(1, 0, 1, 0),
+            CanvasSize = UDim2.new(0, 0, 0, 0),
+            AutomaticCanvasSize = Enum.AutomaticSize.Y,
+            Parent = codeRow,
+        })
+        local codeBox = New("TextBox", {
+            BackgroundTransparency = 1,
+            ClearTextOnFocus = false,
+            MultiLine = true,
+            PlaceholderText = 'loadstring(game:HttpGet("https://..."))()',
+            Text = editing and editing.code or "",
+            Size = UDim2.new(1, 0, 0, 0),
+            AutomaticSize = Enum.AutomaticSize.Y,
+            TextSize = Tokens.FontSize.SM,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            TextYAlignment = Enum.TextYAlignment.Top,
+            TextWrapped = true,
+            FontFace = Font.fromEnum(Enum.Font.Code),
+            Parent = codeScroll,
+        })
+
+        local hint = New("TextLabel", {
+            BackgroundTransparency = 1,
+            Size = UDim2.new(1, 0, 0, 14),
+            Text = "Paste a loadstring or any Lua snippet — it runs when you click the card.",
+            TextSize = Tokens.FontSize.XS,
+            TextColor3 = "TextMuted",
+            TextXAlignment = Enum.TextXAlignment.Left,
+            LayoutOrder = 4,
+            Parent = box,
+        })
+
+        local btnRow = New("Frame", {
+            BackgroundTransparency = 1,
+            Size = UDim2.new(1, 0, 0, 30),
+            LayoutOrder = 5,
+            Parent = box,
+        })
+        New("UIListLayout", {
+            FillDirection = Enum.FillDirection.Horizontal,
+            HorizontalAlignment = Enum.HorizontalAlignment.Right,
+            Padding = UDim.new(0, 8),
+            Parent = btnRow,
+        })
+
+        local function dismiss()
+            editorDismiss = nil
+            TweenService:Create(overlay, TweenInfo.new(0.1), { BackgroundTransparency = 1 }):Play()
+            task.delay(0.12, function() if overlay and overlay.Parent then overlay:Destroy() end end)
         end
-        renderResults(results)
+        editorDismiss = dismiss
+        overlay.MouseButton1Click:Connect(dismiss)
+
+        if editing then
+            local delBtn = New("TextButton", {
+                BackgroundColor3 = "DangerColor",
+                Size = UDim2.fromOffset(0, 28),
+                AutomaticSize = Enum.AutomaticSize.X,
+                Text = "",
+                Parent = btnRow,
+            })
+            New("UICorner", { CornerRadius = UDim.new(0, Tokens.RadiusSM), Parent = delBtn })
+            New("UIPadding", { PaddingLeft = UDim.new(0,14), PaddingRight = UDim.new(0,14), Parent = delBtn })
+            New("TextLabel", {
+                BackgroundTransparency = 1, Size = UDim2.fromScale(1,1),
+                Text = "Delete", TextSize = Tokens.FontSize.MD, TextColor3 = Color3.new(1,1,1),
+                Parent = delBtn,
+            })
+            delBtn.MouseButton1Click:Connect(function()
+                for i, s in ipairs(scripts) do
+                    if s.id == editing.id then table.remove(scripts, i) break end
+                end
+                saveScripts()
+                CommandPalette.Refresh()
+                dismiss()
+            end)
+        end
+
+        local cancelBtn = New("TextButton", {
+            BackgroundColor3 = "SurfaceAltColor",
+            Size = UDim2.fromOffset(0, 28),
+            AutomaticSize = Enum.AutomaticSize.X,
+            Text = "",
+            Parent = btnRow,
+        })
+        New("UICorner", { CornerRadius = UDim.new(0, Tokens.RadiusSM), Parent = cancelBtn })
+        New("UIPadding", { PaddingLeft = UDim.new(0,14), PaddingRight = UDim.new(0,14), Parent = cancelBtn })
+        New("TextLabel", {
+            BackgroundTransparency = 1, Size = UDim2.fromScale(1,1),
+            Text = "Cancel", TextSize = Tokens.FontSize.MD, Parent = cancelBtn,
+        })
+        cancelBtn.MouseButton1Click:Connect(dismiss)
+
+        local saveBtn = New("TextButton", {
+            BackgroundColor3 = "AccentColor",
+            Size = UDim2.fromOffset(0, 28),
+            AutomaticSize = Enum.AutomaticSize.X,
+            Text = "",
+            Parent = btnRow,
+        })
+        New("UICorner", { CornerRadius = UDim.new(0, Tokens.RadiusSM), Parent = saveBtn })
+        New("UIPadding", { PaddingLeft = UDim.new(0,14), PaddingRight = UDim.new(0,14), Parent = saveBtn })
+        New("TextLabel", {
+            BackgroundTransparency = 1, Size = UDim2.fromScale(1,1),
+            Text = "Save", TextSize = Tokens.FontSize.MD, TextColor3 = Color3.new(1,1,1),
+            Parent = saveBtn,
+        })
+        saveBtn.MouseButton1Click:Connect(function()
+            local name = nameBox.Text ~= "" and nameBox.Text or "Untitled"
+            local code = codeBox.Text
+            if editing then
+                editing.name = name
+                editing.code = code
+            else
+                scriptIdCounter += 1
+                table.insert(scripts, { id = scriptIdCounter, name = name, code = code })
+            end
+            saveScripts()
+            CommandPalette.Refresh()
+            dismiss()
+        end)
+    end
+
+    function CommandPalette.RunScript(scriptId)
+        local target = nil
+        for _, s in ipairs(scripts) do
+            if s.id == scriptId then target = s break end
+        end
+        if not target then return end
+        if not loadstring then
+            if Library then Library:Notify("This executor doesn't support loadstring.", "error") end
+            return
+        end
+        local fn, err = loadstring(target.code)
+        if not fn then
+            if Library then Library:Notify("Script error: " .. tostring(err), "error", 5) end
+            return
+        end
+        local ok, runErr = pcall(fn)
+        if not ok then
+            if Library then Library:Notify("Runtime error: " .. tostring(runErr), "error", 5) end
+        else
+            if Library then Library:Notify("Ran \"" .. target.name .. "\"", "success", 2) end
+        end
+        CommandPalette.Close()
+    end
+
+    -- ── Register: old API, now feeds the slim Quick Actions list instead of cards ──
+    function CommandPalette.Register(cmd)
+        table.insert(quickActions, cmd)
+    end
+
+    -- kept for API compatibility; Refresh() does what Search() used to do
+    function CommandPalette.Search(q)
+        query = q or ""
+        inputBox.Text = query
+        CommandPalette.Refresh()
     end
 
     function CommandPalette.Execute(cmd)
-        if cmd and cmd.action then
-            pcall(cmd.action)
-        end
+        if cmd and cmd.action then pcall(cmd.action) end
     end
 
+    -- ── Open / Close (generation-token guarded to fix the reopen flicker) ──
     function CommandPalette.Open()
         if visible then return end
         visible = true
-        palOverlay.Visible = true
+        openGen += 1
+        ensureScriptsLoaded()
+
+        -- minimize the main window if it's open, and remember to restore it.
+        -- (Window itself is a local scoped inside Library:CreateWindow, not
+        -- reachable from here — Library:Toggle is the public wrapper for it.)
+        wasWindowOpen = Library and Library.Toggled or false
+        if wasWindowOpen and Library then
+            Library:Toggle(false)
+        end
+
+        dimOverlay.Visible = true
+        frame.Visible = true
+        query = ""
         inputBox.Text = ""
-        CommandPalette.Search("")
+        CommandPalette.Refresh()
         inputBox:CaptureFocus()
-        palScale.Scale = 0.95
-        frame.BackgroundTransparency = 1
-        palOverlay.BackgroundTransparency = 1
-        TweenService:Create(palScale,   TweenInfo.new(0.18, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
-        TweenService:Create(frame,      TweenInfo.new(0.15, Enum.EasingStyle.Quad),                           { BackgroundTransparency = 0 }):Play()
-        TweenService:Create(palOverlay, TweenInfo.new(0.15, Enum.EasingStyle.Quad),                           { BackgroundTransparency = 0.5 }):Play()
-        InteractionManager.Push("commandpalette", CommandPalette.Close)
+
+        frameScale.Scale = 0.94
+        dimOverlay.BackgroundTransparency = 1
+        TweenService:Create(blurEffect, TweenInfo.new(0.18, Enum.EasingStyle.Quad), { Size = 24 }):Play()
+        TweenService:Create(dimOverlay, TweenInfo.new(0.18, Enum.EasingStyle.Quad), { BackgroundTransparency = 0.45 }):Play()
+        TweenService:Create(frameScale, TweenInfo.new(0.2, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
+
+        InteractionManager.Push("scripthub", CommandPalette.Close)
     end
 
     function CommandPalette.Close()
         if not visible then return end
         visible = false
-        TweenService:Create(palScale,   TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { Scale = 0.95 }):Play()
-        TweenService:Create(palOverlay, TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { BackgroundTransparency = 1 }):Play()
-        task.delay(0.14, function() palOverlay.Visible = false end)
+        openGen += 1
+        local myGen = openGen  -- any in-flight delayed callback from a PRIOR open/close is now stale
+
+        if editorDismiss then editorDismiss() end
+
+        TweenService:Create(frameScale, TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { Scale = 0.94 }):Play()
+        TweenService:Create(dimOverlay, TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { BackgroundTransparency = 1 }):Play()
+        TweenService:Create(blurEffect, TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { Size = 0 }):Play()
+
+        task.delay(0.14, function()
+            -- only the close that scheduled this delay is allowed to hide things;
+            -- if Open() was called again in the meantime, openGen has moved on
+            -- and this stale callback must do nothing (this is what fixed the
+            -- "opens for half a second then disappears" bug)
+            if openGen ~= myGen then return end
+            dimOverlay.Visible = false
+            frame.Visible = false
+        end)
+
+        if wasWindowOpen and Library then
+            Library:Toggle(true)
+        end
     end
 
     function CommandPalette.Toggle()
         if visible then CommandPalette.Close() else CommandPalette.Open() end
     end
 
-    -- Ctrl+Shift+P hotkey
+    -- Ctrl+Shift+P hotkey (unchanged), Escape closes the editor dialog first
+    -- if it's open, otherwise the whole hub
     LibraryMaid:Connect(UserInputService.InputBegan, function(input, gpe)
         if gpe then return end
         if input.KeyCode == Enum.KeyCode.P
@@ -2296,8 +2897,12 @@ do
             and UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then
             CommandPalette.Toggle()
         end
-        if input.KeyCode == Enum.KeyCode.Escape and visible then
-            CommandPalette.Close()
+        if input.KeyCode == Enum.KeyCode.Escape then
+            if editorDismiss then
+                editorDismiss()
+            elseif visible then
+                CommandPalette.Close()
+            end
         end
     end)
 end
@@ -2666,7 +3271,7 @@ do
 end
 
 -- ─── Main Library Object ───────────────────────────────────────────────────
-local Library = {
+Library = {
     Version         = LIBRARY_VERSION,
     ScreenGui       = ScreenGui,
     LocalPlayer     = LocalPlayer,
