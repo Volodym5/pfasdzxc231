@@ -57,18 +57,18 @@ local buyGearIndex = 0
 local lastSell = 0
 local sellDelay = 2
 local lastSeedPack = 0
-local seedPackDelay = 0.0001
+local seedPackDelay = 0.005
 local lastAutoBuySeed = 0
 local lastAutoBuyGear = 0
-local autoBuyDelay = 0.05
+local autoBuyDelay = 0.07
 local ignoredSeeds = {}
 
 -- Harvest - scan every 4s, collect every 0.1s
 local harvestCache = {}
 local lastHarvestScan = 0
-local harvestScanDelay = 2
+local harvestScanDelay = 4
 local harvestIndex = 0
-local harvestCollectDelay = 0.18
+local harvestCollectDelay = 0.1
 local lastHarvestCollect = 0
 
 local antiCactusEnabled = false
@@ -79,7 +79,7 @@ local ghostPepperParts = {}
 local dragonParts = {}
 
 local walkSpeedEnabled = false
-local walkSpeedValue = 36
+local walkSpeedValue = 40
 local walkSpeedConnection = nil
 local jumpPowerEnabled = false
 local jumpPowerValue = 50
@@ -161,6 +161,26 @@ local function stopFly()
     end
 end
 
+local function freezeCharacter()
+    local char = player.Character
+    if char then
+        local humanoid = char:FindFirstChild("Humanoid")
+        local root = char:FindFirstChild("HumanoidRootPart")
+        if humanoid then humanoid.PlatformStand = true end
+        if root then root.Anchored = true end
+    end
+end
+
+local function unfreezeCharacter()
+    local char = player.Character
+    if char then
+        local humanoid = char:FindFirstChild("Humanoid")
+        local root = char:FindFirstChild("HumanoidRootPart")
+        if root then root.Anchored = false end
+        if humanoid then humanoid.PlatformStand = false end
+    end
+end
+
 local function isPlotUnlocked(plotNum)
     local plotGui = player.PlayerGui:FindFirstChild("Plot" .. plotNum)
     if plotGui then
@@ -201,6 +221,7 @@ local function goHome()
     local homePos = getMyPlotMidpoint()
     if homePos then
         root.CFrame = CFrame.new(homePos + Vector3.new(0, 3, 0))
+        root.AssemblyLinearVelocity = Vector3.zero
     end
 end
 
@@ -220,7 +241,7 @@ local function collectSeedPack()
     end
 end
 
--- Scan for harvestable fruits - just get all HarvestParts in our plot
+-- Scan for harvestable fruits
 local function scanHarvest()
     table.clear(harvestCache)
     for _, plot in ipairs(workspace.Gardens:GetChildren()) do
@@ -266,7 +287,7 @@ local function doHarvest()
     firetouchinterest(root, target.part, 1)
 end
 
--- Check if plot has fruits worth stealing (not on ignore list)
+-- Check if plot has fruits worth stealing
 local function plotHasStealableFruits(plot)
     local plants = plot:FindFirstChild("Plants")
     if not plants then return false end
@@ -370,6 +391,10 @@ local function doStealCycle()
         local j = math.random(1, i)
         plots[i], plots[j] = plots[j], plots[i]
     end
+    
+    -- Freeze for entire steal session
+    freezeCharacter()
+    
     for _, plotData in ipairs(plots) do
         if not stealEnabled then break end
         
@@ -377,20 +402,32 @@ local function doStealCycle()
         if plot and plotHasStealableFruits(plot) then
             local char = player.Character
             local root = char and char:FindFirstChild("HumanoidRootPart")
-            if not root then return end
+            if not root then break end
             
-            local targetPos = CFrame.new(plotData.position)
+            -- Direct teleport since we're frozen
+            root.CFrame = CFrame.new(plotData.position)
+            root.AssemblyLinearVelocity = Vector3.zero
+            
+            -- Collect for 2 seconds
             local endTime = tick() + 2
-            
-            -- Spam teleport to fight anti-cheat
             while tick() < endTime and stealEnabled do
-                root.CFrame = targetPos
                 collectFruitsOnPlot(plot)
-                task.wait(0.01)
+                task.wait(0.05)
             end
         end
     end
-    if stealEnabled then goHome() end
+    
+    if stealEnabled then
+        local homePos = getMyPlotMidpoint()
+        if homePos then
+            local char = player.Character
+            local root = char and char:FindFirstChild("HumanoidRootPart")
+            if root then
+                root.CFrame = CFrame.new(homePos + Vector3.new(0, 3, 0))
+                root.AssemblyLinearVelocity = Vector3.zero
+            end
+        end
+    end
 end
 
 local function doSell()
@@ -587,7 +624,13 @@ FarmBox:AddToggle("Sell", { Text = "Auto Sell", Default = false, Callback = func
 FarmBox:AddToggle("SeedPack", { Text = "Auto Seed Pack", Default = false, Callback = function(value) seedPackEnabled = value end })
 
 local StealBox = MainTab:AddGroupbox({ Name = "Steal", Side = 2 })
-StealBox:AddToggle("Steal", { Text = "Auto Steal", Default = false, Risky = false, Callback = function(value) stealEnabled = value; if not value then goHome() end end })
+StealBox:AddToggle("Steal", { Text = "Auto Steal", Default = false, Risky = false, Callback = function(value) 
+    stealEnabled = value
+    if not value then 
+        unfreezeCharacter()
+        goHome() 
+    end
+end })
 StealBox:AddDropdown("IgnoreList", { Text = "Ignore List", Values = fruitNames, Multi = true, Callback = function(selected) ignoredSeeds = selected end })
 
 local AntiBox = MainTab:AddGroupbox({ Name = "Anti", Side = 2 })
