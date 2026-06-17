@@ -2945,6 +2945,16 @@ do
         openGen += 1
         local myGen = openGen  -- any in-flight delayed callback from a PRIOR open/close is now stale
 
+        -- pop our own InteractionManager entry now, while closing — if this
+        -- isn't done, it lingers on the stack, and the NEXT Open()'s Push()
+        -- sees that stale "scripthub" entry still on top, immediately pops
+        -- it (calling Close() again) and fights with the just-started open
+        -- animation. That's what caused the "opens for half a second then
+        -- disappears, sometimes doesn't open at all" bug on the second open.
+        if InteractionManager.Current() and InteractionManager.Current().id == "scripthub" then
+            InteractionManager.Pop()
+        end
+
         if editorDismiss then editorDismiss() end
 
         TweenService:Create(frameScale, TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { Scale = 0.94 }):Play()
