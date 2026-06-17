@@ -57,18 +57,18 @@ local buyGearIndex = 0
 local lastSell = 0
 local sellDelay = 2
 local lastSeedPack = 0
-local seedPackDelay = 0.005
+local seedPackDelay = 0.0001
 local lastAutoBuySeed = 0
 local lastAutoBuyGear = 0
-local autoBuyDelay = 0.07
+local autoBuyDelay = 0.05
 local ignoredSeeds = {}
 
--- Harvest - scan every 4s, collect every 0.15s
+-- Harvest - scan every 4s, collect every 0.1s
 local harvestCache = {}
 local lastHarvestScan = 0
 local harvestScanDelay = 4
 local harvestIndex = 0
-local harvestCollectDelay = 0.15
+local harvestCollectDelay = 0.1
 local lastHarvestCollect = 0
 
 local antiCactusEnabled = false
@@ -79,7 +79,7 @@ local ghostPepperParts = {}
 local dragonParts = {}
 
 local walkSpeedEnabled = false
-local walkSpeedValue = 40
+local walkSpeedValue = 36
 local walkSpeedConnection = nil
 local jumpPowerEnabled = false
 local jumpPowerValue = 50
@@ -278,6 +278,10 @@ local function doHarvest()
         fireproximityprompt(target.prompt)
         firetouchinterest(root, target.part, 0)
         firetouchinterest(root, target.part, 1)
+    else
+        -- Fruit no longer exists, remove from cache
+        table.remove(harvestCache, harvestIndex)
+        harvestIndex = harvestIndex - 1
     end
 end
 
@@ -527,7 +531,7 @@ end
 RunService.Heartbeat:Connect(function()
     local now = tick()
     
-    -- Harvest: scan every 4s, collect every 0.15s
+    -- Harvest: scan every 4s, collect every 0.1s
     if harvestEnabled then
         if now - lastHarvestScan > harvestScanDelay then
             lastHarvestScan = now
