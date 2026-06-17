@@ -376,15 +376,17 @@ local function doStealCycle()
         local plot = workspace.Gardens:FindFirstChild("Plot" .. plotData.plotNum)
         if plot and plotHasStealableFruits(plot) then
             local char = player.Character
-            if char then
-                local root = char:FindFirstChild("HumanoidRootPart")
-                if root then root.CFrame = CFrame.new(plotData.position) end
-            end
+            local root = char and char:FindFirstChild("HumanoidRootPart")
+            if not root then return end
             
+            local targetPos = CFrame.new(plotData.position)
             local endTime = tick() + 2
+            
+            -- Spam teleport to fight anti-cheat
             while tick() < endTime and stealEnabled do
+                root.CFrame = targetPos
                 collectFruitsOnPlot(plot)
-                task.wait(0.1)
+                task.wait(0.01)
             end
         end
     end
