@@ -509,7 +509,7 @@ local function FindTargetLegit(baseFOV, targetMode, visCheck, teamCheck, useDyna
 end
 
 -- ========================================================
--- FIND BEST RAGE TARGET (VISIBLE ONLY, WITH HITBOX)
+-- FIND BEST RAGE TARGET (FIXED - ALL PARTS, MODE PRIORITY)
 -- ========================================================
 local function FindBestRageTarget(baseFOV, targetMode, teamCheck, useDynamicFOV)
     local fov = useDynamicFOV and GetDynamicFOV(baseFOV) or baseFOV
@@ -532,22 +532,30 @@ local function FindBestRageTarget(baseFOV, targetMode, teamCheck, useDynamicFOV)
         local partsToCheck = {"Head", "UpperTorso", "LowerTorso", "HumanoidRootPart"}
         
         for _, partName in ipairs(partsToCheck) do
-            if IsValidHitPart(partName, targetMode) then
-                local part = char:FindFirstChild(partName)
-                if part and IsPartVisible(part, char, true) then
-                    local predictedPos = GetPredictedPosition(part, char)
-                    if predictedPos then
-                        local sp, vis = Camera:WorldToViewportPoint(predictedPos)
-                        if vis then
-                            local d = (Vector2.new(sp.X, sp.Y) - center).Magnitude / hitboxMult
-                            if partName == "Head" then
-                                d = d * 0.7
-                            end
-                            if d < bestDist then
-                                bestDist = d
-                                bestPart = part
-                                bestPlayer = player
-                            end
+            local part = char:FindFirstChild(partName)
+            if part and IsPartVisible(part, char, true) then
+                local predictedPos = GetPredictedPosition(part, char)
+                if predictedPos then
+                    local sp, vis = Camera:WorldToViewportPoint(predictedPos)
+                    if vis then
+                        local d = (Vector2.new(sp.X, sp.Y) - center).Magnitude / hitboxMult
+                        
+                        -- Priority bonuses based on targetMode
+                        if targetMode == "Head" and partName == "Head" then
+                            d = d * 0.3 -- Heavy priority for head
+                        elseif targetMode == "Torso" and (partName == "UpperTorso" or partName == "LowerTorso") then
+                            d = d * 0.5 -- Priority for torso parts
+                        elseif targetMode == "Nearest" then
+                            -- No bonus, closest part wins
+                        else
+                            -- Non-preferred part - still check it with penalty
+                            d = d * 2.0
+                        end
+                        
+                        if d < bestDist then
+                            bestDist = d
+                            bestPart = part
+                            bestPlayer = player
                         end
                     end
                 end
@@ -659,7 +667,7 @@ local function UpdateSilentFOVTracking()
 end
 
 -- ========================================================
--- RAGEBOT (WITH AUTO SCOPE)
+-- RAGEBOT (WITH AUTO SCOPE, FIXED TARGETING)
 -- ========================================================
 local function HandleRagebot(Window)
     if not config.Rage.Enabled then
@@ -703,9 +711,9 @@ local function HandleRagebot(Window)
             end
             
             -- Shoot
-            VIM:SendMouseButtonEvent(1, 0, 0, true, game, 0)
+            VIM:SendMouseButtonEvent(0, 0, 0, true, game, 0)
             task.wait(0.01)
-            VIM:SendMouseButtonEvent(1, 0, 0, false, game, 0)
+            VIM:SendMouseButtonEvent(0, 0, 0, false, game, 0)
             
             -- Release scope if we activated it
             if state.rageScoped then
@@ -1448,5 +1456,3 @@ LocalPlayer.CharacterAdded:Connect(function()
     state.team = GetTeam()
 end)
 state.team = GetTeam()
-
-print("✅ nexus.gg loaded! RightShift to toggle menu")
