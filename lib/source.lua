@@ -7174,159 +7174,224 @@ function Library:CreateWindow(info)
     frostGrad.Parent = frostLayer2
 
     -- ── Particle Network Field ──────────────────────────────────────────
-    --[[
-        Connected-dots network effect: dots drift around and thin lines are
-        drawn between any two dots closer than CONNECT_DIST px. Line opacity
-        scales with proximity (closer = more opaque). Runs on Heartbeat so
-        positions and lines update every frame. Everything is destroyed (not
-        just hidden) when the menu closes or particles are toggled off.
-    ]]
-    local particleField = New("Frame", {
-        BackgroundTransparency = 1,
-        Size             = UDim2.fromScale(1, 1),
-        ZIndex           = mainFrame.ZIndex,
-        ClipsDescendants = true,
-        Parent           = mainFrame,
+
+local particleField = New("Frame", {
+    BackgroundTransparency = 1,
+    Size = UDim2.fromScale(1, 1),
+    ZIndex = mainFrame.ZIndex,
+    ClipsDescendants = true,
+    Parent = mainFrame,
+})
+
+local PARTICLE_COUNT = 40
+local CONNECT_DIST = 120
+local DOT_SPEED = 28
+local DOT_MIN_SIZE = 2
+local DOT_MAX_SIZE = 4
+local DOT_ALPHA = 0.55
+local LINE_MAX_ALPHA = 0.72
+
+local _particlesSpawned = false
+local _heartbeatConn = nil
+local _dots = {}
+local _lines = {}
+
+--------------------------------------------------------
+-- Line pool
+--------------------------------------------------------
+
+local function getLine()
+    for _, line in ipairs(_lines) do
+        if not line._inUse then
+            line._inUse = true
+            line.inst.Visible = true
+            return line
+        end
+    end
+
+    local inst = New("Frame", {
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        BackgroundColor3 = "AccentColor",
+        BorderSizePixel = 0,
+        ZIndex = particleField.ZIndex,
+        Parent = particleField,
     })
 
-    local PARTICLE_COUNT = 40       -- number of dots
-    local CONNECT_DIST   = 120      -- px — max distance to draw a line
-    local DOT_SPEED      = 28       -- px/s base speed
-    local DOT_MIN_SIZE   = 2
-    local DOT_MAX_SIZE   = 4
-    local DOT_ALPHA      = 0.55     -- dot transparency (lower = more visible)
-    local LINE_MAX_ALPHA = 0.72     -- line transparency at closest distance
+    local line = {
+        inst = inst,
+        _inUse = true
+    }
 
-    local _particlesSpawned = false
-    local _heartbeatConn    = nil
-    local _dots             = {}    -- { inst, x, y, vx, vy, size }
-    local _lines            = {}    -- pool of line frames
+    table.insert(_lines, line)
 
-    -- Line pool: reuse frames instead of creating/destroying every frame
-    local function getLine()
-        for _, l in ipairs(_lines) do
-            if not l._inUse then
-                l._inUse = true
-                l.inst.Visible = true
-                return l
-            end
-        end
-        -- Allocate a new one
-        local inst = New("Frame", {
-            AnchorPoint      = Vector2.new(0, 0.5),
+    return line
+end
+
+local function returnLines()
+    for _, line in ipairs(_lines) do
+        line._inUse = false
+        line.inst.Visible = false
+    end
+end
+
+--------------------------------------------------------
+-- Spawn particles
+--------------------------------------------------------
+
+local function spawnParticles()
+    if _particlesSpawned then
+        return
+    end
+
+    _particlesSpawned = true
+
+    local fw = mainFrame.AbsoluteSize.X
+    local fh = mainFrame.AbsoluteSize.Y
+
+    for i = 1, PARTICLE_COUNT do
+        local size = math.random(DOT_MIN_SIZE, DOT_MAX_SIZE)
+
+        local speed = DOT_SPEED * (0.6 + math.random() * 0.8)
+        local angle = math.random() * math.pi * 2
+
+        local dot = New("Frame", {
             BackgroundColor3 = "AccentColor",
-            BorderSizePixel  = 0,
-            ZIndex           = particleField.ZIndex,
-            Parent           = particleField,
+            BackgroundTransparency = DOT_ALPHA,
+            Size = UDim2.fromOffset(size, size),
+            ZIndex = particleField.ZIndex + 1,
+            Parent = particleField,
         })
-        local l = { inst = inst, _inUse = true }
-        table.insert(_lines, l)
-        return l
+
+        New("UICorner", {
+            CornerRadius = UDim.new(1, 0),
+            Parent = dot,
+        })
+
+        _dots[i] = {
+            inst = dot,
+            x = math.random() * fw,
+            y = math.random() * fh,
+            vx = math.cos(angle) * speed,
+            vy = math.sin(angle) * speed,
+            size = size,
+        }
     end
 
-    local function returnLines()
-        for _, l in ipairs(_lines) do
-            l._inUse = false
-            l.inst.Visible = false
-        end
-    end
+    --------------------------------------------------------
+    -- Update
+    --------------------------------------------------------
 
-    local function spawnParticles()
-        if _particlesSpawned then return end
-        _particlesSpawned = true
-
-        local w = mainFrame.AbsoluteSize.X
-        local h = mainFrame.AbsoluteSize.Y
-
-        -- Create dots
-        for i = 1, PARTICLE_COUNT do
-            local sz  = math.random(DOT_MIN_SIZE, DOT_MAX_SIZE)
-            local spd = DOT_SPEED * (0.6 + math.random() * 0.8)
-            local ang = math.random() * math.pi * 2
-            local inst = New("Frame", {
-                BackgroundColor3       = "AccentColor",
-                BackgroundTransparency = DOT_ALPHA,
-                Size     = UDim2.fromOffset(sz, sz),
-                Position = UDim2.fromOffset(math.random() * w, math.random() * h),
-                ZIndex   = particleField.ZIndex + 1,
-                Parent   = particleField,
-            })
-            New("UICorner", { CornerRadius = UDim.new(1, 0), Parent = inst })
-            _dots[i] = {
-                inst = inst,
-                x    = math.random() * w,
-                y    = math.random() * h,
-                vx   = math.cos(ang) * spd,
-                vy   = math.sin(ang) * spd,
-                size = sz,
-            }
+    _heartbeatConn = RunService.Heartbeat:Connect(function(dt)
+        if not mainFrame.Parent then
+            return
         end
 
-        -- Heartbeat: move dots + redraw lines every frame
-        _heartbeatConn = RunService.Heartbeat:Connect(function(dt)
-            if not mainFrame or not mainFrame.Parent then return end
+        local fw = mainFrame.AbsoluteSize.X
+        local fh = mainFrame.AbsoluteSize.Y
 
-            local fw = mainFrame.AbsoluteSize.X
-            local fh = mainFrame.AbsoluteSize.Y
-            if fw < 10 or fh < 10 then return end
+        ----------------------------------------------------
+        -- Move particles
+        ----------------------------------------------------
 
-            -- Move dots, bounce off edges
-            for _, d in ipairs(_dots) do
-                d.x = d.x + d.vx * dt
-                d.y = d.y + d.vy * dt
-                -- Bounce
-                if d.x < 0       then d.x = 0;        d.vx = math.abs(d.vx)  end
-                if d.x > fw      then d.x = fw;        d.vx = -math.abs(d.vx) end
-                if d.y < 0       then d.y = 0;         d.vy = math.abs(d.vy)  end
-                if d.y > fh      then d.y = fh;        d.vy = -math.abs(d.vy) end
-                -- Apply position
-                d.inst.Position = UDim2.fromOffset(d.x - d.size * 0.5, d.y - d.size * 0.5)
+        for _, p in ipairs(_dots) do
+            p.x += p.vx * dt
+            p.y += p.vy * dt
+
+            if p.x <= 0 then
+                p.x = 0
+                p.vx = math.abs(p.vx)
+            elseif p.x >= fw then
+                p.x = fw
+                p.vx = -math.abs(p.vx)
             end
 
-            -- Draw lines between close pairs
-            returnLines()
-            local n = #_dots
-            for i = 1, n - 1 do
-                local a = _dots[i]
-                for j = i + 1, n do
-                    local b  = _dots[j]
-                    local dx = b.x - a.x
-                    local dy = b.y - a.y
-                    local dist = math.sqrt(dx * dx + dy * dy)
-                    if dist < CONNECT_DIST then
-                        local alpha = LINE_MAX_ALPHA + (1 - LINE_MAX_ALPHA) * (dist / CONNECT_DIST)
-                        local l = getLine()
-                        local angle = math.deg(math.atan2(dy, dx))
-                        l.inst.Position            = UDim2.fromOffset(a.x, a.y)
-                        l.inst.Size                = UDim2.fromOffset(dist, 1)
-                        l.inst.Rotation            = angle
-                        l.inst.BackgroundTransparency = alpha
-                    end
+            if p.y <= 0 then
+                p.y = 0
+                p.vy = math.abs(p.vy)
+            elseif p.y >= fh then
+                p.y = fh
+                p.vy = -math.abs(p.vy)
+            end
+
+            p.inst.Position = UDim2.fromOffset(
+                p.x - p.size / 2,
+                p.y - p.size / 2
+            )
+        end
+
+        ----------------------------------------------------
+        -- Draw lines
+        ----------------------------------------------------
+
+        returnLines()
+
+        local maxDistSq = CONNECT_DIST * CONNECT_DIST
+        local n = #_dots
+
+        for i = 1, n - 1 do
+            local a = _dots[i]
+
+            for j = i + 1, n do
+                local b = _dots[j]
+
+                local dx = b.x - a.x
+                local dy = b.y - a.y
+
+                local distSq = dx * dx + dy * dy
+
+                if distSq < maxDistSq then
+                    local dist = math.sqrt(distSq)
+
+                    local alpha =
+                        LINE_MAX_ALPHA +
+                        (1 - LINE_MAX_ALPHA) * (dist / CONNECT_DIST)
+
+                    local line = getLine()
+
+                    local mx = (a.x + b.x) * 0.5
+                    local my = (a.y + b.y) * 0.5
+
+                    line.inst.Position = UDim2.fromOffset(mx, my)
+                    line.inst.Size = UDim2.fromOffset(dist, 1)
+                    line.inst.Rotation = math.deg(math.atan(dy, dx))
+                    line.inst.BackgroundTransparency = alpha
                 end
             end
-        end)
+        end
+    end)
 
-        -- clearParticles handles disconnect; also register with maid for safety
-        windowMaid:Give(function() if _heartbeatConn then _heartbeatConn:Disconnect() end end)
-    end
-
-    local function clearParticles()
+    windowMaid:Give(function()
         if _heartbeatConn then
             _heartbeatConn:Disconnect()
-            _heartbeatConn = nil
         end
-        for _, d in ipairs(_dots) do
-            if d.inst and d.inst.Parent then d.inst:Destroy() end
-        end
-        _dots = {}
-        for _, l in ipairs(_lines) do
-            if l.inst and l.inst.Parent then l.inst:Destroy() end
-        end
-        _lines = {}
-        _particlesSpawned = false
+    end)
+end
+
+--------------------------------------------------------
+-- Cleanup
+--------------------------------------------------------
+
+local function clearParticles()
+    if _heartbeatConn then
+        _heartbeatConn:Disconnect()
+        _heartbeatConn = nil
     end
 
-    Library.ParticlesEnabled = true
+    for _, dot in ipairs(_dots) do
+        dot.inst:Destroy()
+    end
+
+    for _, line in ipairs(_lines) do
+        line.inst:Destroy()
+    end
+
+    table.clear(_dots)
+    table.clear(_lines)
+
+    _particlesSpawned = false
+end
+
+Library.ParticlesEnabled = true
 
     -- ── Titlebar ─────────────────────────────────────────────────────────
     local titleBar = New("Frame", {
