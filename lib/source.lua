@@ -182,9 +182,9 @@
     Any toggle, slider, or dropdown can host an inline ColorPicker or KeyPicker
     on its right side — no extra row needed:
 
-        local toggle = Box:AddToggle("espToggle", { Text = "ESP", Default = false, Callback = function() end })
-        toggle:AddColorPicker("espColor", { Default = Color3.fromRGB(255, 80, 80), Callback = function(c) end })
-        toggle:AddKeyPicker("espKey",    { Default = "X", Mode = "Toggle",          Callback = function(v) end })
+        local toggle = Box:AddToggle("bbToggle", { Text = "asd", Default = false, Callback = function() end })
+        toggle:AddColorPicker("bbColor", { Default = Color3.fromRGB(255, 80, 80), Callback = function(c) end })
+        toggle:AddKeyPicker("bbKey",    { Default = "X", Mode = "Toggle",          Callback = function(v) end })
 
     ── 14. TABBOX (sub-tabs inside a groupbox) ──────────────────────────────────
         local TBox   = Tab:AddTabbox({ Side = 2 })
@@ -223,8 +223,8 @@
 
         -- or several at once:
         UI:AddScripts({
-            { Name = "Auto Farm",  Code = 'loadstring(game:HttpGet("..."))()' },
-            { Name = "ESP",        Code = 'loadstring(game:HttpGet("..."))()' },
+            { Name = "fadb",  Code = 'loadstring(game:HttpGet("..."))()' },
+            { Name = "asfdbg",        Code = 'loadstring(game:HttpGet("..."))()' },
         })
 
     Safe to call every time your script runs — it matches by name, so
