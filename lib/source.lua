@@ -4976,7 +4976,7 @@ function BaseGroupbox:AddButton(idx, info)
     local btn = New("TextButton", {
         BackgroundColor3 = bg,
         BackgroundTransparency = bgT,
-        Size     = UDim2.new(1, 0, 0, 22),
+        Size     = UDim2.new(1, 0, 0, 14),
         Text     = info.Text,
         TextColor3 = tc,
         TextSize = Tokens.FontSize.MD,
