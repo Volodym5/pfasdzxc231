@@ -522,12 +522,113 @@ do
             Danger   = Color3.fromRGB(239, 68, 68),
             Info     = Color3.fromRGB(59, 130, 246),
         },
+
+        -- ── Custom redesign theme — exact palette from spec ──────────────────
+        Custom = {
+            IsLight  = false,
+            _direct  = true,   -- signals Build() to use direct overrides below
+            Accent   = Color3.fromRGB(77, 124, 250),   -- active toggle / active slider line
+            Neutral  = Color3.fromRGB(11, 10, 15),     -- menu background #0b0a0f
+
+            -- Direct overrides (used when _direct == true)
+            BackgroundColor  = Color3.fromRGB(11, 10, 15),    -- #0b0a0f
+            SurfaceColor     = Color3.fromRGB(27, 28, 32),    -- active tab bg #1b1c20
+            SurfaceAltColor  = Color3.fromRGB(10, 11, 15),    -- card bg #0a0b0f
+            BorderColor      = Color3.fromRGB(21, 22, 27),    -- card outline #15161b
+            MutedColor       = Color3.fromRGB(133, 134, 136), -- element text #858688
+            TextPrimary      = Color3.fromRGB(236, 237, 241), -- active tab text #ecedf1
+            TextSecondary    = Color3.fromRGB(125, 128, 133), -- card text #7d8085
+            TextMuted        = Color3.fromRGB(116, 122, 122), -- inactive tab text #747a7a
+            TextDisabled     = Color3.fromRGB(118, 124, 124), -- tab section text #767c7c
+            AccentColor      = Color3.fromRGB(77, 124, 250),  -- #4d7cfa
+            AccentHover      = Color3.fromRGB(99, 143, 252),
+            AccentActive     = Color3.fromRGB(60, 105, 230),
+            AccentSubtle     = Color3.fromRGB(30, 50, 100),
+            AccentGlow       = Color3.fromRGB(100, 150, 255),
+            SuccessColor     = Color3.fromRGB(34, 197, 94),
+            WarningColor     = Color3.fromRGB(234, 179, 8),
+            DangerColor      = Color3.fromRGB(239, 68, 68),
+            InfoColor        = Color3.fromRGB(88, 127, 234),  -- active slider line #587fea
+            ShadowColor      = Color3.new(0, 0, 0),
+            -- Toggle-specific
+            ToggleInactiveBg   = Color3.fromRGB(9, 12, 22),      -- #090c16
+            ToggleInactivePill = Color3.fromRGB(133, 134, 137),  -- #858689
+            ToggleActiveBg     = Color3.fromRGB(77, 124, 250),   -- #4d7cfa
+            ToggleActivePill   = Color3.fromRGB(254, 253, 251),  -- #fefdfb
+            -- Slider-specific
+            SliderPill          = Color3.fromRGB(248, 248, 247), -- #f8f8f7
+            SliderLineInactive  = Color3.fromRGB(31, 28, 35),    -- #1f1c23
+            SliderLineActive    = Color3.fromRGB(88, 127, 234),  -- #587fea
+            SliderValueBox      = Color3.fromRGB(25, 28, 35),    -- #191c23
+            SliderValueText     = Color3.fromRGB(114, 115, 120), -- #727378
+            -- Dropdown-specific
+            DropdownBg   = Color3.fromRGB(25, 28, 35),           -- #191c23
+            DropdownText = Color3.fromRGB(97, 100, 107),         -- #61646b
+            -- Card divider (between elements inside a card)
+            CardDivider  = Color3.fromRGB(25, 26, 31),           -- #191a1f
+            -- Divider between tabs and content
+            TabContentDivider = Color3.fromRGB(18, 15, 22),      -- #120f16
+
+            Success  = Color3.fromRGB(34, 197, 94),
+            Warning  = Color3.fromRGB(234, 179, 8),
+            Danger   = Color3.fromRGB(239, 68, 68),
+            Info     = Color3.fromRGB(88, 127, 234),
+        },
     }
 
     ThemeEngine.LerpColor     = LerpColor
     ThemeEngine.BuiltinThemes = BuiltinThemes
 
     function ThemeEngine:Build(themeData)
+        -- Direct-override themes supply every color explicitly
+        if themeData._direct then
+            local d = themeData
+            return {
+                IsLight          = d.IsLight,
+                AccentColor      = d.AccentColor,
+                AccentHover      = d.AccentHover,
+                AccentActive     = d.AccentActive,
+                AccentSubtle     = d.AccentSubtle,
+                AccentGlow       = d.AccentGlow,
+                BackgroundColor  = d.BackgroundColor,
+                SurfaceColor     = d.SurfaceColor,
+                SurfaceAltColor  = d.SurfaceAltColor,
+                BorderColor      = d.BorderColor,
+                MutedColor       = d.MutedColor,
+                TextPrimary      = d.TextPrimary,
+                TextSecondary    = d.TextSecondary,
+                TextMuted        = d.TextMuted,
+                TextDisabled     = d.TextDisabled,
+                SuccessColor     = d.SuccessColor,
+                WarningColor     = d.WarningColor,
+                DangerColor      = d.DangerColor,
+                InfoColor        = d.InfoColor,
+                ShadowColor      = d.ShadowColor,
+                ToggleInactiveBg   = d.ToggleInactiveBg,
+                ToggleInactivePill = d.ToggleInactivePill,
+                ToggleActiveBg     = d.ToggleActiveBg,
+                ToggleActivePill   = d.ToggleActivePill,
+                SliderPill         = d.SliderPill,
+                SliderLineInactive = d.SliderLineInactive,
+                SliderLineActive   = d.SliderLineActive,
+                SliderValueBox     = d.SliderValueBox,
+                SliderValueText    = d.SliderValueText,
+                DropdownBg         = d.DropdownBg,
+                DropdownText       = d.DropdownText,
+                CardDivider        = d.CardDivider,
+                TabContentDivider  = d.TabContentDivider,
+                Font               = Font.fromEnum(Enum.Font.Gotham),
+                FontBold           = Font.fromEnum(Enum.Font.Gotham),
+                MainColor          = d.SurfaceColor,
+                OutlineColor       = d.BorderColor,
+                FontColor          = d.TextPrimary,
+                DarkColor          = Color3.new(0, 0, 0),
+                WhiteColor         = Color3.new(1, 1, 1),
+                RedColor           = d.DangerColor,
+                DestructiveColor   = d.DangerColor,
+            }
+        end
+
         local isLight = themeData.IsLight
         local neutral = GenerateNeutralScale(themeData.Neutral, isLight)
         local accent  = GenerateAccentVariants(themeData.Accent)
@@ -561,7 +662,6 @@ do
             Font             = Font.fromEnum(Enum.Font.Gotham),
             FontBold         = Font.fromEnum(Enum.Font.Gotham),
 
-            -- Legacy aliases for drop-in compat
             MainColor        = neutral.N100,
             OutlineColor     = neutral.N300,
             FontColor        = neutral.N900,
@@ -585,8 +685,9 @@ do
         return result
     end
 
-    ThemeEngine.CurrentScheme = ThemeEngine:Build(BuiltinThemes.Dark)
-    ThemeEngine.ActiveThemeName = "Dark"
+    -- Default to Custom theme (spec redesign palette)
+    ThemeEngine.CurrentScheme = ThemeEngine:Build(BuiltinThemes.Custom)
+    ThemeEngine.ActiveThemeName = "Custom"
 end
 
 -- ─── Spring Solver ─────────────────────────────────────────────────────────
@@ -3768,10 +3869,10 @@ function BaseGroupbox:AddDivider(info)
             end
         end)
     else
-        -- Plain line, full width, vertically centred
+        -- Plain line, full width, vertically centred — spec: card element divider #191a1f
         New("Frame", {
             AnchorPoint      = Vector2.new(0.5, 0.5),
-            BackgroundColor3 = "BorderColor",
+            BackgroundColor3 = Color3.fromRGB(25, 26, 31),  -- #191a1f
             Position         = UDim2.fromScale(0.5, 0.5),
             Size             = UDim2.new(1, 0, 0, 1),
             Parent           = holder,
@@ -3847,7 +3948,7 @@ function BaseGroupbox:AddToggle(idx, info)
     local holder = New("TextButton", {
         Active                = not info.Disabled,
         BackgroundTransparency= 1,
-        Size                  = UDim2.new(1, 0, 0, 20),
+        Size                  = UDim2.new(1, 0, 0, 30),
         Text                  = "",
         Visible               = info.Visible,
         Parent                = container,
@@ -3855,39 +3956,38 @@ function BaseGroupbox:AddToggle(idx, info)
 
     local label = New("TextLabel", {
         BackgroundTransparency = 1,
-        Size   = UDim2.new(1, -46, 1, 0),
+        Size   = UDim2.new(1, -36, 1, 0),
         Text   = info.Text,
         TextSize = Tokens.FontSize.MD,
-        TextColor3 = info.Risky and "DangerColor" or "TextPrimary",
-        TextTransparency = 0.4,
+        TextColor3 = info.Risky and "DangerColor" or "MutedColor",
+        TextTransparency = 0,
         TextXAlignment   = Enum.TextXAlignment.Left,
         Parent = holder,
     })
 
-    -- Switch track — wider for easier clicking
+    -- Switch track — spec: length 30, pill radius 6
     local track = New("Frame", {
         AnchorPoint = Vector2.new(1, 0.5),
-        BackgroundColor3 = "SurfaceAltColor",
+        BackgroundColor3 = Library.Scheme.ToggleInactiveBg or Color3.fromRGB(9, 12, 22),
         Position = UDim2.new(1, 0, 0.5, 0),
-        Size     = UDim2.fromOffset(38, 20),
+        Size     = UDim2.fromOffset(30, 18),
         Parent   = holder,
     })
-    New("UICorner", { CornerRadius = UDim.new(1, 0), Parent = track })
+    New("UICorner", { CornerRadius = UDim.new(0, 6), Parent = track })
     New("UIPadding", {
         PaddingLeft = UDim.new(0, 3), PaddingRight = UDim.new(0, 3),
         PaddingTop  = UDim.new(0, 3), PaddingBottom= UDim.new(0, 3),
         Parent = track,
     })
 
-    -- Knob with a subtle inner shadow ring
+    -- Knob with spec pill radius 6
     local knob = New("Frame", {
-        BackgroundColor3 = Color3.new(1,1,1),
+        BackgroundColor3 = Library.Scheme.ToggleInactivePill or Color3.fromRGB(133, 134, 137),
         Size     = UDim2.fromScale(1, 1),
         SizeConstraint = Enum.SizeConstraint.RelativeYY,
         Parent   = track,
     })
-    New("UICorner", { CornerRadius = UDim.new(1, 0), Parent = knob })
-    New("UIStroke", { Color = Color3.fromRGB(180,180,180), Thickness = 0.5, Transparency = 0.6, Parent = knob })
+    New("UICorner", { CornerRadius = UDim.new(0, 6), Parent = knob })
 
     local Toggle = setmetatable({
         Text     = info.Text,
@@ -3913,12 +4013,17 @@ function BaseGroupbox:AddToggle(idx, info)
         local on       = Toggle.Value
         local disabled = Toggle.Disabled
 
+        local activePill   = Library.Scheme.ToggleActivePill   or Color3.fromRGB(254, 253, 251)
+        local inactivePill = Library.Scheme.ToggleInactivePill or Color3.fromRGB(133, 134, 137)
+        local activeBg     = Library.Scheme.ToggleActiveBg     or Library.Scheme.AccentColor
+        local inactiveBg   = Library.Scheme.ToggleInactiveBg   or Color3.fromRGB(9, 12, 22)
+
         if _cancelKnobSpring then _cancelKnobSpring() end
         if skipAnim then
             local v = on and 1 or 0
             knob.AnchorPoint = Vector2.new(v, 0)
             knob.Position    = UDim2.fromScale(v, 0)
-            knob.BackgroundColor3 = on and Color3.new(1,1,1) or Color3.fromRGB(170,170,170)
+            knob.BackgroundColor3 = on and activePill or inactivePill
         else
             _cancelKnobSpring = AnimEngine.Spring({
                 from      = knob.Position.X.Scale,
@@ -3930,11 +4035,11 @@ function BaseGroupbox:AddToggle(idx, info)
                 end,
             })
             TweenService:Create(knob, TweenInfo.new(0.1, Enum.EasingStyle.Quad),
-                { BackgroundColor3 = on and Color3.new(1,1,1) or Color3.fromRGB(170,170,170) }):Play()
+                { BackgroundColor3 = on and activePill or inactivePill }):Play()
         end
 
         if _toggleTweenTrack then _toggleTweenTrack:Cancel() end
-        local targetColor = on and Library.Scheme.AccentColor or Library.Scheme.SurfaceAltColor
+        local targetColor = on and activeBg or inactiveBg
         if skipAnim then
             track.BackgroundColor3 = targetColor
         else
@@ -3944,15 +4049,16 @@ function BaseGroupbox:AddToggle(idx, info)
             _toggleTweenTrack:Play()
         end
 
-        local targetAlpha = (disabled and 0.65) or (on and 0 or 0.38)
+        -- Element text color from spec: #858688 for all element text
+        local elemColor = Library.Scheme.MutedColor or Color3.fromRGB(133, 134, 136)
         if skipAnim then
-            label.TextTransparency = targetAlpha
+            label.TextColor3 = elemColor
         else
             TweenService:Create(label, TweenInfo.new(0.1, Enum.EasingStyle.Quad),
-                { TextTransparency = targetAlpha }):Play()
+                { TextColor3 = elemColor }):Play()
         end
 
-        track.BackgroundTransparency = disabled and 0.5 or (on and 0 or (Library.ElementTransparency or 0))
+        track.BackgroundTransparency = disabled and 0.5 or 0
     end
 
     function Toggle:SetValue(v)
@@ -4064,66 +4170,89 @@ function BaseGroupbox:AddSlider(idx, info)
     local container = self.Container
     local maid      = Maid.New()
 
+    -- Spec: element height 30, text 10 gap top+bottom = centered
     local holder = New("Frame", {
         BackgroundTransparency = 1,
-        Size    = UDim2.new(1, 0, 0, 34),
+        Size    = UDim2.new(1, 0, 0, 30),
         Visible = info.Visible,
         Parent  = container,
     })
 
-    -- Label row
-    local topRow = New("Frame", {
-        BackgroundTransparency = 1,
-        Size = UDim2.new(1, 0, 0, 14),
-        Parent = holder,
-    })
+    -- Label: left-aligned, vertically centered
     local nameLabel = New("TextLabel", {
         BackgroundTransparency = 1,
-        Size = UDim2.fromScale(0.6, 1),
+        AnchorPoint = Vector2.new(0, 0.5),
+        Position = UDim2.new(0, 0, 0.5, 0),
+        Size = UDim2.new(1, -50, 0, 14),
         Text = info.Text,
         TextSize = Tokens.FontSize.MD,
+        TextColor3 = Library.Scheme.MutedColor or Color3.fromRGB(133, 134, 136),
         TextXAlignment = Enum.TextXAlignment.Left,
-        Parent = topRow,
-    })
-    local valueLabel = New("TextLabel", {
-        AnchorPoint = Vector2.new(1, 0),
-        BackgroundTransparency = 1,
-        Position = UDim2.fromScale(1, 0),
-        Size = UDim2.fromScale(0.4, 1),
-        Text = "",
-        TextSize = Tokens.FontSize.SM,
-        TextColor3 = "TextMuted",
-        TextXAlignment = Enum.TextXAlignment.Right,
-        Parent = topRow,
+        Parent = holder,
     })
 
-    -- Track
+    -- Value box: 40x20, right-anchored, spec colors
+    local valueBox = New("Frame", {
+        AnchorPoint = Vector2.new(1, 0.5),
+        BackgroundColor3 = Library.Scheme.SliderValueBox or Color3.fromRGB(25, 28, 35),
+        Position = UDim2.new(1, 0, 0.5, 0),
+        Size = UDim2.fromOffset(40, 20),
+        Parent = holder,
+    })
+    New("UICorner", { CornerRadius = UDim.new(0, Tokens.RadiusSM), Parent = valueBox })
+    local valueLabel = New("TextLabel", {
+        BackgroundTransparency = 1,
+        Size = UDim2.fromScale(1, 1),
+        Text = "",
+        TextSize = Tokens.FontSize.XS,
+        TextColor3 = Library.Scheme.SliderValueText or Color3.fromRGB(114, 115, 120),
+        TextXAlignment = Enum.TextXAlignment.Center,
+        Parent = valueBox,
+    })
+    -- Value box click-to-type
+    local valueBoxBtn = New("TextButton", {
+        BackgroundTransparency = 1,
+        Size = UDim2.fromScale(1, 1),
+        Text = "",
+        Parent = valueBox,
+    })
+
+    -- Track line: 85% width centered, height 4, left of value box
+    local trackHolder = New("Frame", {
+        BackgroundTransparency = 1,
+        AnchorPoint = Vector2.new(0, 0.5),
+        Position = UDim2.new(0, 0, 0.5, 10),  -- below label
+        Size = UDim2.new(0, 0, 0, 4),  -- will be set below
+        Parent = holder,
+    })
+
+    -- Compute line length as 85% of card width minus value box (set via task.defer)
     local track = New("TextButton", {
-        AnchorPoint = Vector2.new(0, 1),
-        BackgroundColor3 = "SurfaceAltColor",
-        Position = UDim2.fromScale(0, 1),
-        Size     = UDim2.new(1, 0, 0, 8),
+        AnchorPoint = Vector2.new(0, 0.5),
+        BackgroundColor3 = Library.Scheme.SliderLineInactive or Color3.fromRGB(31, 28, 35),
+        Position = UDim2.new(0, 0, 1, 8),
+        Size     = UDim2.new(0.85, -48, 0, 4),
         Text     = "",
         Parent   = holder,
     })
     New("UICorner", { CornerRadius = UDim.new(1, 0), Parent = track })
 
     local fill = New("Frame", {
-        BackgroundColor3 = "AccentColor",
+        BackgroundColor3 = Library.Scheme.SliderLineActive or Color3.fromRGB(88, 127, 234),
         Size  = UDim2.fromScale(0, 1),
         Parent = track,
     })
     New("UICorner", { CornerRadius = UDim.new(1, 0), Parent = fill })
 
-    -- Knob
+    -- Knob pill: radius 5 per spec
     local knob = New("Frame", {
         AnchorPoint = Vector2.new(0.5, 0.5),
-        BackgroundColor3 = "TextPrimary",
+        BackgroundColor3 = Library.Scheme.SliderPill or Color3.fromRGB(248, 248, 247),
         Position = UDim2.fromScale(0, 0.5),
-        Size     = UDim2.fromOffset(14, 14),
+        Size     = UDim2.fromOffset(12, 12),
         Parent   = track,
     })
-    New("UICorner", { CornerRadius = UDim.new(1, 0), Parent = knob })
+    New("UICorner", { CornerRadius = UDim.new(0, 5), Parent = knob })
 
     -- Drag state declared early so hover handlers can read it
     local dragging = false
@@ -4135,12 +4264,12 @@ function BaseGroupbox:AddSlider(idx, info)
     local tiKnob = TweenInfo.new(0.1, Enum.EasingStyle.Quad)
     maid:Connect(track.MouseEnter, function()
         TweenService:Create(knobScale, tiKnob, { Scale = 1.25 }):Play()
-        TweenService:Create(fill,     tiKnob, { BackgroundColor3 = Library.Scheme.AccentHover }):Play()
+        TweenService:Create(fill,     tiKnob, { BackgroundColor3 = Library.Scheme.AccentHover or (Library.Scheme.SliderLineActive or Color3.fromRGB(88, 127, 234)) }):Play()
     end)
     maid:Connect(track.MouseLeave, function()
         if not dragging then
             TweenService:Create(knobScale, tiKnob, { Scale = 1.0 }):Play()
-            TweenService:Create(fill,     tiKnob, { BackgroundColor3 = Library.Scheme.AccentColor }):Play()
+            TweenService:Create(fill,     tiKnob, { BackgroundColor3 = Library.Scheme.SliderLineActive or Library.Scheme.AccentColor }):Play()
         end
     end)
 
@@ -4465,9 +4594,9 @@ function BaseGroupbox:AddDropdown(idx, info)
 
     local displayBtn = New("TextButton", {
         AnchorPoint = Vector2.new(0, 1),
-        BackgroundColor3 = "SurfaceColor",
+        BackgroundColor3 = Library.Scheme.DropdownBg or Color3.fromRGB(25, 28, 35),
         Position = UDim2.fromScale(0, 1),
-        Size     = UDim2.new(1, 0, 0, 24),
+        Size     = UDim2.new(0, 100, 0, 20),
         Text     = "",
         Parent   = holder,
     })
@@ -4483,7 +4612,7 @@ function BaseGroupbox:AddDropdown(idx, info)
         Size = UDim2.new(1, -18, 1, 0),
         Text = info.Multi and "Select..." or (info.Default or "Select..."),
         TextSize = Tokens.FontSize.MD,
-        TextColor3 = "TextMuted",
+        TextColor3 = Library.Scheme.DropdownText or Color3.fromRGB(97, 100, 107),
         TextXAlignment = Enum.TextXAlignment.Left,
         TextYAlignment = Enum.TextYAlignment.Center,
         Parent = displayBtn,
@@ -4784,67 +4913,78 @@ function BaseGroupbox:AddButton(idx, info)
         Tooltip  = nil,
         Variant  = "Primary",  -- Primary | Secondary | Ghost | Danger
         Sub      = nil,
+        Icon     = nil,   -- optional: unicode icon string shown to the left of text
     })
 
     local container = self.Container
     local maid      = Maid.New()
 
     local scheme = Library.Scheme
-    -- All buttons use a neutral surface style — no loud accent or red
-    local bgColors = {
-        Primary   = scheme.SurfaceAltColor,
-        Secondary = scheme.SurfaceColor,
-        Ghost     = Color3.new(0,0,0),
-        Danger    = Color3.fromRGB(60, 25, 25),  -- very subtle dark red
-    }
-    local textColors = {
-        Primary   = scheme.TextPrimary,
-        Secondary = scheme.TextSecondary,
-        Ghost     = scheme.TextPrimary,
-        Danger    = Color3.fromRGB(220, 100, 100),  -- muted red text
-    }
-    local strokeColors = {
-        Primary   = scheme.BorderColor,
-        Secondary = scheme.BorderColor,
-        Ghost     = Color3.new(0,0,0),
-        Danger    = Color3.fromRGB(100, 40, 40),
-    }
+    -- Spec: buttons are just text; text color from element text spec (#858688)
+    local tc = info.Variant == "Danger" and Color3.fromRGB(220, 100, 100)
+            or scheme.MutedColor or Color3.fromRGB(133, 134, 136)
 
-    local bg     = bgColors[info.Variant]     or scheme.SurfaceAltColor
-    local tc     = textColors[info.Variant]   or scheme.TextPrimary
-    local sc     = strokeColors[info.Variant] or scheme.BorderColor
-    local bgT    = info.Variant == "Ghost" and 1 or 0
-    local hoverBg = Color3.fromRGB(
-        math.clamp(bg.R*255 + 12, 0, 255)/255,
-        math.clamp(bg.G*255 + 12, 0, 255)/255,
-        math.clamp(bg.B*255 + 12, 0, 255)/255
-    )
-
+    -- Holder frame: transparent background, element height 30
     local btn = New("TextButton", {
-        BackgroundColor3 = bg,
-        BackgroundTransparency = bgT,
-        Size     = UDim2.new(1, 0, 0, 22),
-        Text     = info.Text,
-        TextColor3 = tc,
-        TextSize = Tokens.FontSize.MD,
+        BackgroundTransparency = 1,
+        Size     = UDim2.new(1, 0, 0, 30),
+        Text     = "",
         Visible  = info.Visible,
         Parent   = container,
     })
-    New("UICorner", { CornerRadius = UDim.new(0, Tokens.RadiusSM), Parent = btn })
-    New("UIStroke", { Color = sc,  Thickness = 1, Parent = btn })
 
-    Micro.PressDepression(btn, maid)
-    Micro.Ripple(btn, Color3.new(1,1,1), maid)
+    -- Icon label (shown only when Icon is provided)
+    local iconLabel
+    local textOffsetX = 0
+    if info.Icon and info.Icon ~= "" then
+        textOffsetX = 20  -- shift text right to make room
+        iconLabel = New("TextLabel", {
+            BackgroundTransparency = 1,
+            AnchorPoint = Vector2.new(0, 0.5),
+            Position = UDim2.new(0, 0, 0.5, 0),
+            Size = UDim2.fromOffset(18, 18),
+            Text = info.Icon,
+            TextSize = Tokens.FontSize.MD,
+            TextColor3 = tc,
+            TextXAlignment = Enum.TextXAlignment.Center,
+            Parent = btn,
+        })
+    end
 
+    local textLabel = New("TextLabel", {
+        BackgroundTransparency = 1,
+        AnchorPoint = Vector2.new(0, 0.5),
+        Position = UDim2.new(0, textOffsetX, 0.5, 0),
+        Size = UDim2.new(1, -textOffsetX, 0, 18),
+        Text = info.Text,
+        TextSize = Tokens.FontSize.MD,
+        TextColor3 = tc,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Parent = btn,
+    })
+
+    -- Subtle hover: text brightens slightly
     local tiBtn = TweenInfo.new(0.1, Enum.EasingStyle.Quad)
+    local hoverTc = Color3.fromRGB(
+        math.clamp(tc.R*255 + 30, 0, 255)/255,
+        math.clamp(tc.G*255 + 30, 0, 255)/255,
+        math.clamp(tc.B*255 + 30, 0, 255)/255
+    )
     maid:Connect(btn.MouseEnter, function()
         if not info.Disabled then
-            TweenService:Create(btn, tiBtn, { BackgroundColor3 = hoverBg, BackgroundTransparency = bgT == 1 and 0.85 or 0 }):Play()
+            TweenService:Create(textLabel, tiBtn, { TextColor3 = hoverTc }):Play()
+            if iconLabel then TweenService:Create(iconLabel, tiBtn, { TextColor3 = hoverTc }):Play() end
         end
     end)
     maid:Connect(btn.MouseLeave, function()
-        TweenService:Create(btn, tiBtn, { BackgroundColor3 = bg, BackgroundTransparency = bgT }):Play()
+        TweenService:Create(textLabel, tiBtn, { TextColor3 = tc }):Play()
+        if iconLabel then TweenService:Create(iconLabel, tiBtn, { TextColor3 = tc }):Play() end
     end)
+
+    local bg     = Color3.fromRGB(0,0,0)
+    local sc     = Color3.fromRGB(0,0,0)
+    local bgT    = 1
+    local hoverBg = bg
 
     local Button = setmetatable({
         Text     = info.Text,
@@ -4864,13 +5004,13 @@ function BaseGroupbox:AddButton(idx, info)
 
     function Button:SetText(t)
         self.Text = t
-        btn.Text  = t
+        textLabel.Text = t
     end
 
     function Button:SetDisabled(v)
         self.Disabled = v
         btn.Active    = not v
-        btn.BackgroundTransparency = v and 0.5 or bgT
+        textLabel.TextTransparency = v and 0.5 or 0
     end
 
     function Button:SetVisible(v)
@@ -4893,22 +5033,11 @@ function BaseGroupbox:AddButton(idx, info)
     -- Refresh button colors on theme change
     maid:Give(EventBus:On("themeChange", function()
         local s = Library.Scheme
-        local newBg = info.Variant == "Primary" and s.SurfaceAltColor
-                   or info.Variant == "Secondary" and s.SurfaceColor
-                   or info.Variant == "Danger" and Color3.fromRGB(60, 25, 25)
-                   or Color3.new(0,0,0)
-        local newTc = info.Variant == "Primary" and s.TextPrimary
-                   or info.Variant == "Secondary" and s.TextSecondary
-                   or info.Variant == "Danger" and Color3.fromRGB(220, 100, 100)
-                   or s.TextPrimary
-        bg, tc = newBg, newTc
-        hoverBg = Color3.fromRGB(
-            math.clamp(bg.R*255 + 12, 0, 255)/255,
-            math.clamp(bg.G*255 + 12, 0, 255)/255,
-            math.clamp(bg.B*255 + 12, 0, 255)/255
-        )
-        btn.BackgroundColor3 = bg
-        btn.TextColor3 = tc
+        local newTc = info.Variant == "Danger" and Color3.fromRGB(220, 100, 100)
+                   or s.MutedColor or Color3.fromRGB(133, 134, 136)
+        tc = newTc
+        textLabel.TextColor3 = tc
+        if iconLabel then iconLabel.TextColor3 = tc end
     end))
 
     return Button
@@ -5010,62 +5139,37 @@ function ComponentBase:AddKeyPicker(idx, info)
 end
 
 -- ─── Status Badge ──────────────────────────────────────────────────────────
+-- Spec: "status should be with no colors etc, so a simple element that all
+-- it has is a text for example 'Status: tested something.'"
 function BaseGroupbox:AddStatusBadge(info)
     info = Library:Validate(info, {
         Text    = "Status",
-        Status  = "ok",     -- "ok" | "warn" | "error" | "info" | "offline"
+        Status  = "ok",
         Visible = true,
     })
 
-    local statusColors = {
-        ok      = Library.Scheme.SuccessColor,
-        warn    = Library.Scheme.WarningColor,
-        error   = Library.Scheme.DangerColor,
-        info    = Library.Scheme.InfoColor,
-        offline = Library.Scheme.MutedColor,
-    }
-    local statusDot = { ok="●", warn="●", error="●", info="●", offline="○" }
-
+    -- Plain text label — no colored dot, no status theming
     local holder = New("Frame", {
         BackgroundTransparency = 1,
-        Size    = UDim2.new(1, 0, 0, 18),
+        Size    = UDim2.new(1, 0, 0, 20),
         Visible = info.Visible,
         Parent  = self.Container,
     })
-    New("UIListLayout", {
-        FillDirection = Enum.FillDirection.Horizontal,
-        VerticalAlignment = Enum.VerticalAlignment.Center,
-        Padding = UDim.new(0, 6),
-        Parent = holder,
-    })
 
-    local dot = New("TextLabel", {
-        BackgroundTransparency = 1,
-        Size  = UDim2.fromOffset(10, 10),
-        Text  = statusDot[info.Status] or "●",
-        TextSize = 10,
-        TextColor3 = statusColors[info.Status] or Library.Scheme.InfoColor,
-        LayoutOrder = 1,
-        Parent = holder,
-    })
     local textLabel = New("TextLabel", {
         BackgroundTransparency = 1,
-        Size  = UDim2.new(1, -16, 1, 0),
+        Size  = UDim2.fromScale(1, 1),
         Text  = info.Text,
         TextSize = Tokens.FontSize.SM,
-        TextColor3 = "TextSecondary",
+        TextColor3 = Library.Scheme.MutedColor or Color3.fromRGB(133, 134, 136),
         TextXAlignment = Enum.TextXAlignment.Left,
-        LayoutOrder = 2,
         Parent = holder,
     })
 
     local Badge = { Type = "StatusBadge", Holder = holder, Visible = info.Visible }
 
     function Badge:SetStatus(s)
-        dot.TextColor3 = statusColors[s] or Library.Scheme.InfoColor
-        dot.Text       = statusDot[s] or "●"
-        dot.TextTransparency = 1
-        TweenService:Create(dot, TweenInfo.new(0.2, Enum.EasingStyle.Quad), { TextTransparency = 0 }):Play()
+        -- no-op for color changes — spec has no color status
     end
 
     function Badge:SetText(t)
@@ -7064,9 +7168,9 @@ function Library:CreateWindow(info)
     local windowMaid = Maid.New()
     LibraryMaid:Give(windowMaid)
 
-    -- Layout constants
-    local TH  = 42   -- titlebar height
-    local SW  = 152  -- sidebar width
+    -- Layout constants — spec sizes
+    local TH  = 45   -- header height (spec: 45)
+    local SW  = 175  -- sidebar / tab width (spec: whole tab length 175)
     local FH  = 22   -- footer height
     local CR  = info.CornerRadius
 
@@ -7328,76 +7432,367 @@ function Library:CreateWindow(info)
 
     Library.ParticlesEnabled = true
 
-    -- ── Titlebar ─────────────────────────────────────────────────────────
+    -- ── Titlebar — spec redesign ─────────────────────────────────────────────
+    -- Header height 45 (TH). Layout: [ConfigBox][Title][...][SearchIcon][CloseBtn]
+    -- Divider at bottom goes across the full menu width.
     local titleBar = New("Frame", {
-        BackgroundColor3 = "SurfaceColor",
-        BackgroundTransparency = 0.25,
+        BackgroundColor3 = Color3.fromRGB(11, 10, 15),  -- matches menu bg
+        BackgroundTransparency = 0,
         Size             = UDim2.new(1, 0, 0, TH),
         ZIndex           = mainFrame.ZIndex + 1,
         Parent           = mainFrame,
     })
-    -- Bottom border line
+    -- Full-width bottom divider (spec: #120f16)
     New("Frame", {
         AnchorPoint      = Vector2.new(0, 1),
-        BackgroundColor3 = "BorderColor",
+        BackgroundColor3 = Color3.fromRGB(18, 15, 22),  -- #120f16
         Position         = UDim2.fromScale(0, 1),
         Size             = UDim2.new(1, 0, 0, 1),
         ZIndex           = titleBar.ZIndex,
         Parent           = titleBar,
     })
 
-    -- Subtle accent shimmer: a soft gradient sliver that slowly sweeps
-    -- across the titlebar's bottom edge. Purely cosmetic, single Frame +
-    -- looping UIGradient offset tween — negligible cost.
-    do
-        local shimmer = New("Frame", {
-            AnchorPoint      = Vector2.new(0, 1),
-            BackgroundColor3 = "AccentColor",
-            BackgroundTransparency = 0.5,
-            Position         = UDim2.fromScale(0, 1),
-            Size             = UDim2.new(1, 0, 0, 1),
-            ZIndex           = titleBar.ZIndex,
-            Parent           = titleBar,
-        })
-        local shimmerGrad = Instance.new("UIGradient")
-        shimmerGrad.Transparency = NumberSequence.new({
-            NumberSequenceKeypoint.new(0,    1),
-            NumberSequenceKeypoint.new(0.45, 1),
-            NumberSequenceKeypoint.new(0.5,  0),
-            NumberSequenceKeypoint.new(0.55, 1),
-            NumberSequenceKeypoint.new(1,    1),
-        })
-        shimmerGrad.Offset = Vector2.new(-1.5, 0)
-        shimmerGrad.Parent = shimmer
+    -- ── Config dropdown box (left of header, same gap as divider-to-card = 10px)
+    -- Spec: "rounded box like dropdown style on the left of the menu header"
+    -- Box: 115x30, opens downward to a config panel
+    local CFG_GAP = 10
+    local configBoxFrame = New("Frame", {
+        AnchorPoint      = Vector2.new(0, 0.5),
+        BackgroundColor3 = Color3.fromRGB(25, 28, 35),  -- dropdown bg #191c23
+        Position         = UDim2.new(0, CFG_GAP, 0.5, 0),
+        Size             = UDim2.fromOffset(115, 30),
+        ZIndex           = titleBar.ZIndex + 1,
+        Parent           = titleBar,
+    })
+    New("UICorner", { CornerRadius = UDim.new(0, Tokens.RadiusSM), Parent = configBoxFrame })
+    New("UIStroke", { Color = Color3.fromRGB(21, 22, 27), Thickness = 1, Parent = configBoxFrame })
 
-        local shimmerInfo = TweenInfo.new(5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, false)
-        TweenService:Create(shimmerGrad, shimmerInfo, { Offset = Vector2.new(1.5, 0) }):Play()
+    local configBoxLabel = New("TextLabel", {
+        BackgroundTransparency = 1,
+        Position = UDim2.new(0, 10, 0, 0),
+        Size     = UDim2.new(1, -24, 1, 0),
+        Text     = "Config",
+        TextSize = Tokens.FontSize.SM,
+        TextColor3 = Color3.fromRGB(97, 100, 107),  -- dropdown text #61646b
+        TextXAlignment = Enum.TextXAlignment.Left,
+        ZIndex   = configBoxFrame.ZIndex,
+        Parent   = configBoxFrame,
+    })
+    -- Small chevron
+    local configChevron = New("TextLabel", {
+        AnchorPoint = Vector2.new(1, 0.5),
+        BackgroundTransparency = 1,
+        Position = UDim2.new(1, -6, 0.5, 0),
+        Size     = UDim2.fromOffset(12, 12),
+        Text     = "▾",
+        TextSize = 10,
+        TextColor3 = Color3.fromRGB(97, 100, 107),
+        ZIndex   = configBoxFrame.ZIndex,
+        Parent   = configBoxFrame,
+    })
+    local configBoxBtn = New("TextButton", {
+        BackgroundTransparency = 1,
+        Size     = UDim2.fromScale(1, 1),
+        Text     = "",
+        ZIndex   = configBoxFrame.ZIndex + 1,
+        Parent   = configBoxFrame,
+    })
+
+    -- Config dropdown panel (opens below header)
+    local configPanelOpen = false
+    local configPanel = New("Frame", {
+        BackgroundColor3 = Color3.fromRGB(25, 28, 35),
+        Position         = UDim2.new(0, CFG_GAP, 0, TH + 2),
+        Size             = UDim2.fromOffset(115, 0),
+        AutomaticSize    = Enum.AutomaticSize.Y,
+        Visible          = false,
+        ZIndex           = mainFrame.ZIndex + 10,
+        Parent           = mainFrame,
+    })
+    New("UICorner", { CornerRadius = UDim.new(0, Tokens.RadiusSM), Parent = configPanel })
+    New("UIStroke", { Color = Color3.fromRGB(21, 22, 27), Thickness = 1, Parent = configPanel })
+    New("UIPadding", {
+        PaddingLeft   = UDim.new(0, 8), PaddingRight  = UDim.new(0, 8),
+        PaddingTop    = UDim.new(0, 8), PaddingBottom = UDim.new(0, 8),
+        Parent = configPanel,
+    })
+
+    -- Panel header row: "Config" label + input box + plus button
+    local configHeaderRow = New("Frame", {
+        BackgroundTransparency = 1,
+        Size = UDim2.new(1, 0, 0, 20),
+        Parent = configPanel,
+    })
+    New("TextLabel", {
+        BackgroundTransparency = 1,
+        Size = UDim2.new(0, 36, 1, 0),
+        Text = "Config",
+        TextSize = Tokens.FontSize.XS,
+        TextColor3 = Color3.fromRGB(97, 100, 107),
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Parent = configHeaderRow,
+    })
+    local configNameInput = New("TextBox", {
+        AnchorPoint = Vector2.new(0, 0.5),
+        BackgroundColor3 = Color3.fromRGB(19, 20, 25),
+        Position = UDim2.new(0, 40, 0.5, 0),
+        Size     = UDim2.new(1, -56, 0, 16),
+        PlaceholderText = "Config name",
+        ClearTextOnFocus = false,
+        TextSize = Tokens.FontSize.XS,
+        TextColor3 = Color3.fromRGB(97, 100, 107),
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Parent = configHeaderRow,
+    })
+    New("UICorner", { CornerRadius = UDim.new(0, 3), Parent = configNameInput })
+    New("UIPadding", { PaddingLeft = UDim.new(0, 4), Parent = configNameInput })
+    local configAddBtn = New("TextButton", {
+        AnchorPoint = Vector2.new(1, 0.5),
+        BackgroundColor3 = Color3.fromRGB(77, 124, 250),
+        Position = UDim2.new(1, 0, 0.5, 0),
+        Size     = UDim2.fromOffset(14, 14),
+        Text     = "+",
+        TextSize = 11,
+        TextColor3 = Color3.fromRGB(254, 253, 251),
+        Parent = configHeaderRow,
+    })
+    New("UICorner", { CornerRadius = UDim.new(0, 3), Parent = configAddBtn })
+
+    -- Divider
+    New("Frame", {
+        BackgroundColor3 = Color3.fromRGB(25, 26, 31),  -- card element divider #191a1f
+        Size = UDim2.new(1, 0, 0, 1),
+        Parent = configPanel,
+    })
+
+    -- Config list scroll
+    local configListFrame = New("ScrollingFrame", {
+        BackgroundTransparency = 1,
+        Size      = UDim2.new(1, 0, 0, 0),
+        AutomaticSize = Enum.AutomaticSize.Y,
+        CanvasSize = UDim2.fromOffset(0, 0),
+        AutomaticCanvasSize = Enum.AutomaticSize.Y,
+        ScrollBarThickness = 2,
+        ScrollingDirection = Enum.ScrollingDirection.Y,
+        Parent = configPanel,
+    })
+    New("UIListLayout", { Padding = UDim.new(0, 2), Parent = configListFrame })
+
+    -- Config panel open/close logic
+    local function refreshConfigPanel()
+        -- Clear existing
+        for _, child in ipairs(configListFrame:GetChildren()) do
+            if child:IsA("GuiObject") then child:Destroy() end
+        end
+        local cfgList = Library.Config and Library.Config.List and Library.Config.List() or {}
+        for _, cfgName in ipairs(cfgList) do
+            local row = New("Frame", {
+                BackgroundTransparency = 1,
+                Size = UDim2.new(1, 0, 0, 20),
+                Parent = configListFrame,
+            })
+            New("TextLabel", {
+                BackgroundTransparency = 1,
+                Size = UDim2.new(1, -54, 1, 0),
+                Text = cfgName,
+                TextSize = Tokens.FontSize.XS,
+                TextColor3 = Color3.fromRGB(97, 100, 107),
+                TextXAlignment = Enum.TextXAlignment.Left,
+                TextTruncate = Enum.TextTruncate.AtEnd,
+                Parent = row,
+            })
+            -- Load button (rightmost)
+            local loadBtn = New("TextButton", {
+                AnchorPoint = Vector2.new(1, 0.5),
+                BackgroundTransparency = 1,
+                Position = UDim2.new(1, 0, 0.5, 0),
+                Size     = UDim2.fromOffset(16, 16),
+                Text     = "▶",
+                TextSize = 9,
+                TextColor3 = Color3.fromRGB(88, 127, 234),
+                Parent = row,
+            })
+            -- Save button
+            local saveBtn = New("TextButton", {
+                AnchorPoint = Vector2.new(1, 0.5),
+                BackgroundTransparency = 1,
+                Position = UDim2.new(1, -18, 0.5, 0),
+                Size     = UDim2.fromOffset(16, 16),
+                Text     = "💾",
+                TextSize = 9,
+                TextColor3 = Color3.fromRGB(97, 100, 107),
+                Parent = row,
+            })
+            -- Trash button
+            local trashBtn = New("TextButton", {
+                AnchorPoint = Vector2.new(1, 0.5),
+                BackgroundTransparency = 1,
+                Position = UDim2.new(1, -36, 0.5, 0),
+                Size     = UDim2.fromOffset(16, 16),
+                Text     = "🗑",
+                TextSize = 9,
+                TextColor3 = Color3.fromRGB(200, 80, 80),
+                Parent = row,
+            })
+            local cn = cfgName
+            windowMaid:Connect(loadBtn.MouseButton1Click, function()
+                if Library.Config then Library.Config.Load(cn) end
+            end)
+            windowMaid:Connect(saveBtn.MouseButton1Click, function()
+                if Library.Config then Library.Config.Save(cn) end
+            end)
+            windowMaid:Connect(trashBtn.MouseButton1Click, function()
+                if Library.Config then Library.Config.Delete(cn) end
+                refreshConfigPanel()
+            end)
+        end
     end
 
-    -- Title label: starts after a left pad, ends before close button
+    local function toggleConfigPanel()
+        configPanelOpen = not configPanelOpen
+        if configPanelOpen then
+            refreshConfigPanel()
+            configPanel.Visible = true
+            configPanel.BackgroundTransparency = 1
+            TweenService:Create(configPanel,
+                TweenInfo.new(0.12, Enum.EasingStyle.Quad),
+                { BackgroundTransparency = 0 }):Play()
+        else
+            TweenService:Create(configPanel,
+                TweenInfo.new(0.10, Enum.EasingStyle.Quad),
+                { BackgroundTransparency = 1 }):Play()
+            task.delay(0.12, function()
+                if not configPanelOpen then configPanel.Visible = false end
+            end)
+        end
+        -- Rotate chevron
+        TweenService:Create(configChevron,
+            TweenInfo.new(0.12, Enum.EasingStyle.Quad),
+            { Rotation = configPanelOpen and 180 or 0 }):Play()
+    end
+
+    windowMaid:Connect(configBoxBtn.MouseButton1Click, toggleConfigPanel)
+    windowMaid:Connect(configAddBtn.MouseButton1Click, function()
+        local name = configNameInput.Text
+        if name and name ~= "" then
+            if Library.Config then Library.Config.Save(name) end
+            configNameInput.Text = ""
+            refreshConfigPanel()
+        end
+    end)
+
+    -- Title label: between config box and search icon
     local titleLabel = New("TextLabel", {
         BackgroundTransparency = 1,
-        Position  = UDim2.fromOffset(16, 0),
-        Size      = UDim2.new(1, -56, 1, 0),
+        Position  = UDim2.new(0, CFG_GAP + 115 + 10, 0, 0),
+        Size      = UDim2.new(1, -(CFG_GAP + 115 + 10 + 70), 1, 0),
         Text      = info.Title,
-        TextSize  = Tokens.FontSize.XL,
+        TextSize  = Tokens.FontSize.LG,
         FontFace  = Font.new("rbxasset://fonts/families/GothamSSm.json",
             Enum.FontWeight.SemiBold, Enum.FontStyle.Normal),
-        TextXAlignment = Enum.TextXAlignment.Left,
+        TextXAlignment = Enum.TextXAlignment.Center,
+        TextColor3     = Color3.fromRGB(133, 134, 136),  -- element text #858688
         ZIndex    = titleBar.ZIndex,
         Parent    = titleBar,
     })
+
+    -- ── Search icon (right side of header) ──────────────────────────────────
+    -- Spec: "simple icon on the right of the draggable header, when clicked
+    -- the icon moves to the left and a text box smoothly appears from right to left"
+    local SEARCH_BTN_W = 30
+    local searchActive = false
+
+    local searchIconBtn = New("TextButton", {
+        AnchorPoint      = Vector2.new(1, 0.5),
+        BackgroundTransparency = 1,
+        Position         = UDim2.new(1, -40, 0.5, 0),
+        Size             = UDim2.fromOffset(SEARCH_BTN_W, SEARCH_BTN_W),
+        Text             = "⌕",
+        TextSize         = 16,
+        TextColor3       = Color3.fromRGB(133, 134, 136),
+        ZIndex           = titleBar.ZIndex + 2,
+        Parent           = titleBar,
+    })
+
+    -- Search text input: hidden initially, grows from right on click
+    local searchBox = New("TextBox", {
+        AnchorPoint      = Vector2.new(1, 0.5),
+        BackgroundColor3 = Color3.fromRGB(25, 28, 35),
+        BackgroundTransparency = 0,
+        Position         = UDim2.new(1, -40, 0.5, 0),
+        Size             = UDim2.fromOffset(0, 24),
+        PlaceholderText  = "Search...",
+        ClearTextOnFocus = false,
+        TextSize         = Tokens.FontSize.SM,
+        TextColor3       = Color3.fromRGB(133, 134, 136),
+        TextXAlignment   = Enum.TextXAlignment.Left,
+        Visible          = false,
+        ClipsDescendants = true,
+        ZIndex           = titleBar.ZIndex + 2,
+        Parent           = titleBar,
+    })
+    New("UICorner", { CornerRadius = UDim.new(0, Tokens.RadiusSM), Parent = searchBox })
+    New("UIPadding", {
+        PaddingLeft  = UDim.new(0, 8),
+        PaddingRight = UDim.new(0, 8),
+        Parent = searchBox,
+    })
+
+    local SEARCH_EXPANDED_W = 160
+    local tiSearch = TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+
+    local function openSearch()
+        if searchActive then return end
+        searchActive = true
+        -- Move icon left
+        TweenService:Create(searchIconBtn, tiSearch, {
+            Position = UDim2.new(1, -(40 + SEARCH_EXPANDED_W + 4), 0.5, 0),
+        }):Play()
+        -- Reveal input box growing from right
+        searchBox.Visible = true
+        searchBox.Size = UDim2.fromOffset(0, 24)
+        TweenService:Create(searchBox, tiSearch, {
+            Size = UDim2.fromOffset(SEARCH_EXPANDED_W, 24),
+        }):Play()
+        task.delay(0.18, function()
+            pcall(function() searchBox:CaptureFocus() end)
+        end)
+    end
+
+    local function closeSearch()
+        if not searchActive then return end
+        searchActive = false
+        TweenService:Create(searchBox, TweenInfo.new(0.14, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+            Size = UDim2.fromOffset(0, 24),
+        }):Play()
+        TweenService:Create(searchIconBtn, TweenInfo.new(0.14, Enum.EasingStyle.Quad), {
+            Position = UDim2.new(1, -40, 0.5, 0),
+        }):Play()
+        task.delay(0.15, function()
+            searchBox.Visible = false
+            searchBox.Text    = ""
+        end)
+    end
+
+    windowMaid:Connect(searchIconBtn.MouseButton1Click, function()
+        if searchActive then closeSearch() else openSearch() end
+    end)
+    windowMaid:Connect(searchBox.FocusLost, function(enterPressed)
+        if not enterPressed and searchBox.Text == "" then
+            closeSearch()
+        end
+    end)
 
     -- Close button: pinned to right edge
     local closeBtn = New("TextButton", {
         AnchorPoint      = Vector2.new(1, 0.5),
         BackgroundColor3 = Color3.fromRGB(210, 40, 40),
         BackgroundTransparency = 1,
-        Position         = UDim2.new(1, -12, 0.5, 0),
-        Size             = UDim2.fromOffset(24, 24),
+        Position         = UDim2.new(1, -10, 0.5, 0),
+        Size             = UDim2.fromOffset(22, 22),
         Text             = "×",
-        TextSize         = 16,
-        TextColor3       = "TextMuted",
+        TextSize         = 15,
+        TextColor3       = Color3.fromRGB(133, 134, 136),
         ZIndex           = titleBar.ZIndex + 1,
         Parent           = titleBar,
     })
@@ -7413,7 +7808,7 @@ function Library:CreateWindow(info)
     windowMaid:Connect(closeBtn.MouseLeave, function()
         TweenService:Create(closeBtn, tiClose, {
             BackgroundTransparency = 1,
-            TextColor3 = Library.Scheme.TextMuted,
+            TextColor3 = Color3.fromRGB(133, 134, 136),
         }):Play()
     end)
     windowMaid:Connect(closeBtn.MouseButton1Click, function()
@@ -7423,14 +7818,14 @@ function Library:CreateWindow(info)
     -- ── Footer ───────────────────────────────────────────────────────────
     local footer = New("Frame", {
         AnchorPoint      = Vector2.new(0, 1),
-        BackgroundColor3 = "SurfaceColor",
+        BackgroundColor3 = Color3.fromRGB(11, 10, 15),
         Position         = UDim2.fromScale(0, 1),
         Size             = UDim2.new(1, 0, 0, FH),
         ZIndex           = mainFrame.ZIndex + 1,
         Parent           = mainFrame,
     })
     New("Frame", {  -- top border
-        BackgroundColor3 = "BorderColor",
+        BackgroundColor3 = Color3.fromRGB(18, 15, 22),
         Size             = UDim2.new(1, 0, 0, 1),
         ZIndex           = footer.ZIndex,
         Parent           = footer,
@@ -7441,7 +7836,7 @@ function Library:CreateWindow(info)
         Size      = UDim2.new(0.5, -12, 1, 0),
         Text      = info.Footer,
         TextSize  = Tokens.FontSize.XS,
-        TextColor3 = "TextMuted",
+        TextColor3 = Color3.fromRGB(114, 115, 120),
         TextXAlignment = Enum.TextXAlignment.Left,
         ZIndex    = footer.ZIndex,
         Parent    = footer,
@@ -7453,7 +7848,7 @@ function Library:CreateWindow(info)
         Size           = UDim2.new(0.5, 0, 1, 0),
         Text           = "NexusUI v" .. LIBRARY_VERSION,
         TextSize       = Tokens.FontSize.XS,
-        TextColor3     = "TextMuted",
+        TextColor3     = Color3.fromRGB(114, 115, 120),
         TextXAlignment = Enum.TextXAlignment.Right,
         ZIndex         = footer.ZIndex,
         Parent         = footer,
@@ -7462,23 +7857,24 @@ function Library:CreateWindow(info)
     -- ── Sidebar ───────────────────────────────────────────────────────────
     -- Sidebar: left column from below titlebar to above footer
     local sidebar = New("Frame", {
-        BackgroundColor3 = "SurfaceColor",
-        BackgroundTransparency = 0.2,
+        BackgroundColor3 = Color3.fromRGB(11, 10, 15),  -- same as bg
+        BackgroundTransparency = 0,
         Position         = UDim2.fromOffset(0, TH),
         Size             = UDim2.new(0, SW, 1, -(TH + FH)),
         ZIndex           = mainFrame.ZIndex + 1,
         Parent           = mainFrame,
     })
-    New("Frame", {  -- right border
+    -- Right border — spec divider color #120f16 between tabs and content
+    New("Frame", {
         AnchorPoint      = Vector2.new(1, 0),
-        BackgroundColor3 = "BorderColor",
+        BackgroundColor3 = Color3.fromRGB(18, 15, 22),  -- #120f16
         Position         = UDim2.fromScale(1, 0),
         Size             = UDim2.new(0, 1, 1, 0),
         ZIndex           = sidebar.ZIndex,
         Parent           = sidebar,
     })
 
-    -- Tab button list: leaves 42px at bottom for settings button + separator
+    -- Tab button list
     local tabList = New("Frame", {
         BackgroundTransparency = 1,
         Position = UDim2.fromOffset(6, 8),
@@ -7490,39 +7886,6 @@ function Library:CreateWindow(info)
         Padding   = UDim.new(0, 2),
         SortOrder = Enum.SortOrder.LayoutOrder,
         Parent    = tabList,
-    })
-
-    -- Search box at bottom of sidebar (sits inside footer area on the left)
-    local searchBox = New("TextBox", {
-        BackgroundColor3 = "SurfaceColor",
-        BackgroundTransparency = 0.3,
-        Position         = UDim2.new(0, 0, 1, -(FH + 1)),
-        Size             = UDim2.new(0, SW, 0, FH),
-        PlaceholderText  = "⌕  Search…",
-        ClearTextOnFocus = true,
-        TextSize         = Tokens.FontSize.SM,
-        TextXAlignment   = Enum.TextXAlignment.Left,
-        ZIndex           = mainFrame.ZIndex + 2,
-        Parent           = mainFrame,
-    })
-    New("UIPadding", {
-        PaddingLeft  = UDim.new(0, 8),
-        PaddingRight = UDim.new(0, 4),
-        Parent       = searchBox,
-    })
-    New("Frame", {  -- top border of search box
-        BackgroundColor3 = "BorderColor",
-        Size             = UDim2.new(1, 0, 0, 1),
-        ZIndex           = searchBox.ZIndex,
-        Parent           = searchBox,
-    })
-    New("Frame", {  -- right border of search box
-        AnchorPoint      = Vector2.new(1, 0),
-        BackgroundColor3 = "BorderColor",
-        Position         = UDim2.fromScale(1, 0),
-        Size             = UDim2.new(0, 1, 1, 0),
-        ZIndex           = searchBox.ZIndex,
-        Parent           = searchBox,
     })
 
     -- ── Content Area ──────────────────────────────────────────────────────
@@ -7633,7 +7996,7 @@ function Library:CreateWindow(info)
         local tabBtn = New("TextButton", {
             BackgroundColor3       = "AccentColor",
             BackgroundTransparency = 1,
-            Size                   = UDim2.new(1, 0, 0, 32),
+            Size                   = UDim2.new(1, 0, 0, 30),
             Text                   = "",
             ClipsDescendants       = true,
             Parent                 = tabList,
@@ -7657,7 +8020,7 @@ function Library:CreateWindow(info)
             Size             = UDim2.new(1, -14, 1, 0),
             Text             = name,
             TextSize         = Tokens.FontSize.SM,
-            TextTransparency = 0.45,
+            TextColor3       = Color3.fromRGB(116, 122, 122), -- inactive tab text #747a7a
             FontFace         = Font.new("rbxasset://fonts/families/GothamSSm.json",
                 Enum.FontWeight.Medium, Enum.FontStyle.Normal),
             TextXAlignment   = Enum.TextXAlignment.Left,
@@ -7776,7 +8139,7 @@ function Library:CreateWindow(info)
             -- Deactivate settings button visuals
             if Window.Settings and Window.Settings._btn then
                 TweenService:Create(Window.Settings._btn,   tiNorm, { BackgroundTransparency = 1 }):Play()
-                TweenService:Create(Window.Settings._label, tiNorm, { TextTransparency = 0.45 }):Play()
+                TweenService:Create(Window.Settings._label, tiNorm, { TextColor3 = Color3.fromRGB(116, 122, 122) }):Play()
                 if Window.Settings._bar then
                     TweenService:Create(Window.Settings._bar, tiFast, { Size = UDim2.fromOffset(0, 14) }):Play()
                 end
@@ -7785,13 +8148,13 @@ function Library:CreateWindow(info)
             for _, t in pairs(Window.Tabs) do
                 if t ~= tab then
                     TweenService:Create(t._btn,   tiNorm, { BackgroundTransparency = 1 }):Play()
-                    TweenService:Create(t._label, tiNorm, { TextTransparency = 0.45 }):Play()
+                    TweenService:Create(t._label, tiNorm, { TextColor3 = Color3.fromRGB(116, 122, 122) }):Play()
                     TweenService:Create(t._bar,   tiFast, { Size = UDim2.fromOffset(0, 14) }):Play()
                 end
             end
 
-            TweenService:Create(tabBtn,      tiNorm, { BackgroundTransparency = 0.88 }):Play()
-            TweenService:Create(tabBtnLabel, tiNorm, { TextTransparency = 0 }):Play()
+            TweenService:Create(tabBtn,      tiNorm, { BackgroundColor3 = Color3.fromRGB(27, 28, 32), BackgroundTransparency = 0 }):Play()
+            TweenService:Create(tabBtnLabel, tiNorm, { TextColor3 = Color3.fromRGB(236, 237, 241) }):Play()
             TweenService:Create(activeBar,   tiFast, { Size = UDim2.fromOffset(3, 18) }):Play()
 
             showTabContent(tab, prev)
@@ -7804,14 +8167,14 @@ function Library:CreateWindow(info)
             if Window.ActiveTab ~= tab then
                 TweenService:Create(tabBtnLabel,
                     TweenInfo.new(0.1, Enum.EasingStyle.Quad),
-                    { TextTransparency = 0.2 }):Play()
+                    { TextColor3 = Color3.fromRGB(160, 165, 165) }):Play()
             end
         end)
         windowMaid:Connect(tabBtn.MouseLeave, function()
             if Window.ActiveTab ~= tab then
                 TweenService:Create(tabBtnLabel,
                     TweenInfo.new(0.1, Enum.EasingStyle.Quad),
-                    { TextTransparency = 0.5 }):Play()
+                    { TextColor3 = Color3.fromRGB(116, 122, 122) }):Play()
             end
         end)
 
@@ -7832,38 +8195,29 @@ function Library:CreateWindow(info)
             refreshColumnLayout()
 
             local boxHolder = New("Frame", {
-                BackgroundColor3 = "SurfaceColor",
-                BackgroundTransparency = 0.4,
+                BackgroundColor3 = Color3.fromRGB(10, 11, 15),  -- card bg #0a0b0f
+                BackgroundTransparency = 0,
                 Size = UDim2.new(1, 0, 0, 0),
                 AutomaticSize = Enum.AutomaticSize.Y,
                 Parent = scroll,
             })
             New("UICorner", { CornerRadius = UDim.new(0, Tokens.RadiusMD), Parent = boxHolder })
             New("UIStroke", {
-                Color = "BorderColor",
+                Color = Color3.fromRGB(21, 22, 27),  -- card outline #15161b
                 Thickness = 1,
-                Transparency = 0.4,
+                Transparency = 0,
                 Parent = boxHolder,
             })
 
-            -- Header row
+            -- Card name text sits ABOVE the card (gap 10px between text and card)
+            -- We implement this as a header row inside the card at the top
             local header = New("Frame", {
                 BackgroundTransparency = 1,
-                Size = UDim2.new(1, 0, 0, 32),
+                Size = UDim2.new(1, 0, 0, 28),
                 Parent = boxHolder,
             })
-            -- Accent left bar on header
-            New("Frame", {
-                BackgroundColor3 = "AccentColor",
-                Position = UDim2.fromOffset(-9, 7.5),
-                Size     = UDim2.fromOffset(3, 16),
-                ZIndex   = boxHolder.ZIndex + 1,
-                Parent   = header,
-            })
-            New("UICorner", { CornerRadius = UDim.new(1, 0),
-                Parent = header:FindFirstChildOfClass("Frame") })
             New("UIPadding", {
-                PaddingLeft = UDim.new(0, 14), PaddingRight = UDim.new(0, 8),
+                PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 8),
                 Parent = header,
             })
             New("TextLabel", {
@@ -7872,26 +8226,26 @@ function Library:CreateWindow(info)
                 Text = gbInfo.Name or "",
                 TextSize = Tokens.FontSize.SM,
                 FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json",
-                    Enum.FontWeight.SemiBold, Enum.FontStyle.Normal),
-                TextColor3 = "TextSecondary",
+                    Enum.FontWeight.Medium, Enum.FontStyle.Normal),
+                TextColor3 = Color3.fromRGB(125, 128, 133),  -- card text #7d8085
                 TextXAlignment = Enum.TextXAlignment.Left,
                 Parent = header,
             })
 
-            -- Divider under header
+            -- Divider under header — card element divider #191a1f
             New("Frame", {
                 AnchorPoint = Vector2.new(0, 0),
-                BackgroundColor3 = "BorderColor",
-                BackgroundTransparency = 0.5,
-                Position = UDim2.fromOffset(0, 32),
+                BackgroundColor3 = Color3.fromRGB(25, 26, 31),  -- #191a1f
+                BackgroundTransparency = 0,
+                Position = UDim2.fromOffset(0, 28),
                 Size = UDim2.new(1, 0, 0, 1),
                 Parent = boxHolder,
             })
 
-            -- Content
+            -- Content — spec: 10px gap top+bottom (element height gap)
             local gbContainer = New("Frame", {
                 BackgroundTransparency = 1,
-                Position = UDim2.fromOffset(0, 33),
+                Position = UDim2.fromOffset(0, 29),
                 Size = UDim2.new(1, 0, 0, 0),
                 AutomaticSize = Enum.AutomaticSize.Y,
                 Parent = boxHolder,
@@ -7899,12 +8253,12 @@ function Library:CreateWindow(info)
             New("UIPadding", {
                 PaddingLeft   = UDim.new(0, 10),
                 PaddingRight  = UDim.new(0, 10),
-                PaddingTop    = UDim.new(0, 7),
-                PaddingBottom = UDim.new(0, 9),
+                PaddingTop    = UDim.new(0, 10),  -- spec: 10 gap
+                PaddingBottom = UDim.new(0, 10),  -- spec: 10 gap
                 Parent = gbContainer,
             })
             New("UIListLayout", {
-                Padding = UDim.new(0, 4),
+                Padding = UDim.new(0, 0),  -- elements use their own height, no extra gap
                 Parent  = gbContainer,
             })
 
