@@ -4179,12 +4179,12 @@ function BaseGroupbox:AddSlider(idx, info)
 
     local container  = self.Container
     local maid       = Maid.New()
-    local LINE_LEN   = Tokens.V2.SliderLineLength   -- 85
-    local PILL_R     = Tokens.V2.SliderPillRadius   -- 5
-    local VALUE_BOX  = Tokens.V2.SliderValueBox      -- 40x20
-    local ROW_H      = Tokens.V2.ElementHeight        -- 30
+    local ROW_H      = Tokens.V2.ElementHeight  -- 30
+    local TRACK_H    = 6
 
-    -- Single row: Label (left, flexible) | Slider (middle, fixed width) | Value box (right, fixed)
+    -- Two rows: [label .......... value] on top, [track ............] below.
+    -- Value sits as plain text (no background box) but keeps a real
+    -- clickable hitbox so it can still be typed into.
     local holder = New("Frame", {
         BackgroundTransparency = 1,
         Size    = UDim2.new(1, 0, 0, ROW_H),
@@ -4192,44 +4192,45 @@ function BaseGroupbox:AddSlider(idx, info)
         Parent  = container,
     })
 
-    local nameLabel = New("TextLabel", {
+    local topRow = New("Frame", {
         BackgroundTransparency = 1,
         Position = UDim2.fromOffset(0, 0),
-        Size = UDim2.new(1, -(LINE_LEN + VALUE_BOX.X + Tokens.V2.CardTextGap * 2), 1, 0),
+        Size     = UDim2.new(1, 0, 0, 16),
+        Parent   = holder,
+    })
+
+    local nameLabel = New("TextLabel", {
+        BackgroundTransparency = 1,
+        Size = UDim2.new(0.6, 0, 1, 0),
         Text = info.Text,
         TextSize = Tokens.FontSize.MD,
         TextXAlignment = Enum.TextXAlignment.Left,
         TextYAlignment = Enum.TextYAlignment.Center,
-        Parent = holder,
+        Parent = topRow,
     })
 
-    -- Value box sits flush right
-    local valueBoxFrame = New("Frame", {
-        AnchorPoint = Vector2.new(1, 0.5),
-        BackgroundColor3 = "SliderValueBox",
-        Position = UDim2.new(1, 0, 0.5, 0),
-        Size     = UDim2.fromOffset(VALUE_BOX.X, VALUE_BOX.Y),
-        Parent   = holder,
-    })
-    New("UICorner", { CornerRadius = UDim.new(0, Tokens.RadiusSM), Parent = valueBoxFrame })
+    -- Value: plain text, no background — but it's a real TextBox so the
+    -- hitbox is there to click into and type a new value.
     local valueBox = New("TextBox", {
+        AnchorPoint = Vector2.new(1, 0),
         BackgroundTransparency = 1,
+        Position = UDim2.fromScale(1, 0),
+        Size     = UDim2.new(0.4, 0, 1, 0),
         ClearTextOnFocus = false,
-        Size     = UDim2.fromScale(1, 1),
         Text     = "",
         TextSize = Tokens.FontSize.SM,
         TextColor3 = "SliderValueText",
-        TextXAlignment = Enum.TextXAlignment.Center,
+        TextXAlignment = Enum.TextXAlignment.Right,
         TextYAlignment = Enum.TextYAlignment.Center,
-        Parent   = valueBoxFrame,
+        Parent   = topRow,
     })
 
-    -- Track sits just to the left of the value box, fixed 85px line length
+    -- Track — bottom row, stretches nearly full card width instead of a
+    -- fixed short line.
     local track = New("TextButton", {
-        AnchorPoint = Vector2.new(1, 0.5),
+        Position = UDim2.fromOffset(0, 20),
+        Size     = UDim2.new(1, 0, 0, TRACK_H),
         BackgroundColor3 = "SliderInactiveLine",
-        Position = UDim2.new(1, -(VALUE_BOX.X + Tokens.V2.CardTextGap), 0.5, 0),
-        Size     = UDim2.fromOffset(LINE_LEN, 6),
         Text     = "",
         Parent   = holder,
     })
@@ -4242,7 +4243,8 @@ function BaseGroupbox:AddSlider(idx, info)
     })
     New("UICorner", { CornerRadius = UDim.new(1, 0), Parent = fill })
 
-    -- Knob — pill radius 5 per spec
+    -- Knob — pill radius 5 per spec (true circle: radius = half diameter)
+    local PILL_R = Tokens.V2.SliderPillRadius
     local knob = New("Frame", {
         AnchorPoint = Vector2.new(0.5, 0.5),
         BackgroundColor3 = "SliderPill",
@@ -4398,9 +4400,17 @@ function BaseGroupbox:AddSlider(idx, info)
 
     -- Editable value box: typing a number and confirming (Enter/focus-lost) commits it
     maid:Connect(valueBox.FocusLost, function(enterPressed)
-        local num = tonumber(valueBox.Text:gsub("[^%d%.%-]", ""))
+        -- IMPORTANT: gsub returns two values (string, count). Wrapping in
+        -- parens discards the count so it doesn't get passed as tonumber's
+        -- second arg (which it interprets as a numeric base and errors on).
+        local cleaned = (valueBox.Text:gsub("[^%d%.%-]", ""))
+        local num = tonumber(cleaned)
         if num then
             Slider:SetValue(num)
+            -- Always resync display text even if SetValue no-op'd because
+            -- the rounded/clamped value matched the current one — otherwise
+            -- the box keeps showing the user's raw unformatted input.
+            valueBox.Text = Slider.Prefix .. tostring(Slider.Value) .. Slider.Suffix
         else
             -- Invalid entry — restore current value display
             valueBox.Text = Slider.Prefix .. tostring(Slider.Value) .. Slider.Suffix
@@ -7344,9 +7354,9 @@ function Library:CreateWindow(info)
         Parent           = mainFrame,
     })
 
-    local PARTICLE_COUNT = 22       -- number of dots
-    local DOT_SPEED_MIN  = 6        -- px/s
-    local DOT_SPEED_MAX  = 16       -- px/s
+    local PARTICLE_COUNT = 38       -- number of dots
+    local DOT_SPEED_MIN  = 10       -- px/s
+    local DOT_SPEED_MAX  = 24       -- px/s
     local DOT_MIN_SIZE   = 2
     local DOT_MAX_SIZE   = 3
     local DOT_MAX_ALPHA  = 0.6      -- peak transparency target (1 = invisible)
@@ -8026,12 +8036,12 @@ function Library:CreateWindow(info)
             -- Outer wrapper: title row ABOVE the card, then the card itself.
             -- Kept as a single child of the scroll column so the existing
             -- UIListLayout there still spaces one "card unit" per groupbox.
-            -- Fixed width per spec (220px) — cards do NOT stretch to fill
-            -- the column, which was making everything inside them
-            -- (buttons especially) look oversized.
+            -- Stretches to fill the column width — a fixed 220px was
+            -- causing component labels (e.g. longer slider text) to
+            -- overlap their controls.
             local outer = New("Frame", {
                 BackgroundTransparency = 1,
-                Size = UDim2.new(0, Tokens.V2.CardWidth, 0, 0),
+                Size = UDim2.new(1, 0, 0, 0),
                 AutomaticSize = Enum.AutomaticSize.Y,
                 Parent = scroll,
             })
