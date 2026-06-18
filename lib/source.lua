@@ -182,9 +182,9 @@
     Any toggle, slider, or dropdown can host an inline ColorPicker or KeyPicker
     on its right side — no extra row needed:
 
-        local toggle = Box:AddToggle("bbToggle", { Text = "asd", Default = false, Callback = function() end })
-        toggle:AddColorPicker("bbColor", { Default = Color3.fromRGB(255, 80, 80), Callback = function(c) end })
-        toggle:AddKeyPicker("bbKey",    { Default = "X", Mode = "Toggle",          Callback = function(v) end })
+        local toggle = Box:AddToggle("espToggle", { Text = "ESP", Default = false, Callback = function() end })
+        toggle:AddColorPicker("espColor", { Default = Color3.fromRGB(255, 80, 80), Callback = function(c) end })
+        toggle:AddKeyPicker("espKey",    { Default = "X", Mode = "Toggle",          Callback = function(v) end })
 
     ── 14. TABBOX (sub-tabs inside a groupbox) ──────────────────────────────────
         local TBox   = Tab:AddTabbox({ Side = 2 })
@@ -223,8 +223,8 @@
 
         -- or several at once:
         UI:AddScripts({
-            { Name = "fadb",  Code = 'loadstring(game:HttpGet("..."))()' },
-            { Name = "asfdbg",        Code = 'loadstring(game:HttpGet("..."))()' },
+            { Name = "Auto Farm",  Code = 'loadstring(game:HttpGet("..."))()' },
+            { Name = "ESP",        Code = 'loadstring(game:HttpGet("..."))()' },
         })
 
     Safe to call every time your script runs — it matches by name, so
@@ -346,6 +346,30 @@ local Tokens = {
     LayerToast     = 200,
     LayerCursor    = 500,
     LayerDebug     = 999,
+
+    -- ── V2 sizing spec ──────────────────────────────────────────────────
+    -- Exact pixel values from the V2 design spec. Some of these (TabWidth,
+    -- HeaderHeight, ConfigBox, etc.) aren't wired into layout yet — that's
+    -- the structural pass — but they're centralized here now so every
+    -- component pulls from one source instead of scattered magic numbers.
+    V2 = {
+        TabHeight         = 30,
+        ElementHeight     = 30,
+        ToggleSize        = 30,   -- track length (toggle is square-ish, length = height)
+        TogglePillRadius  = 6,
+        SliderLineLength  = 85,
+        SliderPillRadius  = 5,
+        CardWidth         = 220,
+        CardTextGap       = 10,
+        ElementPaddingV   = 10,   -- top/bottom
+        SliderValueBox    = Vector2.new(40, 20),
+        DropdownSize      = Vector2.new(100, 20),
+        TabWidth          = 175,
+        HeaderHeight      = 45,
+        GapDividerToCards = 10,
+        GapBetweenColumns = 10,
+        ConfigBox         = Vector2.new(115, 30),
+    },
 }
 
 -- ─── Theme Engine ──────────────────────────────────────────────────────────
@@ -412,6 +436,52 @@ do
     end
 
     local BuiltinThemes = {
+        Nexus = {
+            IsLight  = false,
+            Accent   = Color3.fromRGB(0x4d, 0x7c, 0xfa),  -- #4d7cfa (active toggle bg)
+            Neutral  = Color3.fromRGB(0x0b, 0x0a, 0x0f),  -- #0b0a0f (menu background)
+            Success  = Color3.fromRGB(34, 197, 94),
+            Warning  = Color3.fromRGB(234, 179, 8),
+            Danger   = Color3.fromRGB(239, 68, 68),
+            Info     = Color3.fromRGB(0x4d, 0x7c, 0xfa),
+            Overrides = {
+                -- Core
+                MenuBackground      = Color3.fromHex("#0b0a0f"),
+                BackgroundColor     = Color3.fromHex("#0b0a0f"),
+                TextMuted           = Color3.fromHex("#858688"),  -- element text
+                CardBackground      = Color3.fromHex("#0a0b0f"),
+                SurfaceColor        = Color3.fromHex("#0a0b0f"),
+                CardText            = Color3.fromHex("#7d8085"),
+                CardOutline         = Color3.fromHex("#15161b"),
+                BorderColor         = Color3.fromHex("#15161b"),
+                CardDivider         = Color3.fromHex("#191a1f"),
+
+                -- Tabs
+                TabActiveText       = Color3.fromHex("#ecedf1"),
+                TabActiveBackground = Color3.fromHex("#1b1c20"),
+                TabInactiveText     = Color3.fromHex("#747a7a"),
+                TabSectionText      = Color3.fromHex("#767c7c"),
+                TabContentDivider   = Color3.fromHex("#120f16"),
+
+                -- Toggles
+                ToggleInactiveBg    = Color3.fromHex("#090c16"),
+                ToggleInactivePill  = Color3.fromHex("#858689"),
+                ToggleActiveBg      = Color3.fromHex("#4d7cfa"),
+                ToggleActivePill    = Color3.fromHex("#fefdfb"),
+                AccentColor         = Color3.fromHex("#4d7cfa"),
+
+                -- Sliders
+                SliderPill          = Color3.fromHex("#f8f8f7"),
+                SliderInactiveLine  = Color3.fromHex("#1f1c23"),
+                SliderActiveLine    = Color3.fromHex("#587fea"),
+                SliderValueBox      = Color3.fromHex("#191c23"),
+                SliderValueText     = Color3.fromHex("#727378"),
+
+                -- Dropdowns
+                DropdownBackground  = Color3.fromHex("#191c23"),
+                DropdownText        = Color3.fromHex("#61646b"),
+            },
+        },
         Dark = {
             IsLight  = false,
             Accent   = Color3.fromRGB(108, 82, 246),    -- refined purple
@@ -532,7 +602,7 @@ do
         local neutral = GenerateNeutralScale(themeData.Neutral, isLight)
         local accent  = GenerateAccentVariants(themeData.Accent)
 
-        return {
+        local built = {
             IsLight          = isLight,
             AccentColor      = accent.Base,
             AccentHover      = accent.Hover,
@@ -569,7 +639,50 @@ do
             WhiteColor       = Color3.new(1, 1, 1),
             RedColor         = themeData.Danger,
             DestructiveColor = themeData.Danger,
+
+            -- ── V2 component-level tokens ──────────────────────────────────
+            -- These give every theme (not just hand-tuned ones) a sane,
+            -- derived value for the more specific surfaces the V2 layout
+            -- introduced. Hand-tuned themes can still override any of these
+            -- via themeData.Overrides for pixel-exact specs.
+            MenuBackground     = neutral.N050,
+            CardBackground     = neutral.N100,
+            CardText           = neutral.N700,
+            CardOutline        = neutral.N300,
+            CardDivider        = neutral.N200,
+
+            TabActiveText      = neutral.N900,
+            TabActiveBackground= neutral.N200,
+            TabInactiveText    = neutral.N600,
+            TabSectionText     = neutral.N600,
+            TabContentDivider  = neutral.N100,
+
+            ToggleInactiveBg   = neutral.N100,
+            ToggleInactivePill = neutral.N500,
+            ToggleActiveBg     = accent.Base,
+            ToggleActivePill   = Color3.new(1, 1, 1),
+
+            SliderPill         = Color3.new(1, 1, 1),
+            SliderInactiveLine = neutral.N200,
+            SliderActiveLine   = accent.Hover,
+            SliderValueBox     = neutral.N200,
+            SliderValueText    = neutral.N500,
+
+            DropdownBackground = neutral.N200,
+            DropdownText       = neutral.N500,
         }
+
+        -- Literal overrides: some themes (e.g. hand-tuned design specs) need
+        -- exact hex values that the procedural neutral/accent generator can't
+        -- reliably reproduce. Any key present in themeData.Overrides simply
+        -- replaces the generated value after the fact.
+        if themeData.Overrides then
+            for k, v in pairs(themeData.Overrides) do
+                built[k] = v
+            end
+        end
+
+        return built
     end
 
     -- Interpolate between two built theme tables for smooth transition
@@ -585,8 +698,8 @@ do
         return result
     end
 
-    ThemeEngine.CurrentScheme = ThemeEngine:Build(BuiltinThemes.Dark)
-    ThemeEngine.ActiveThemeName = "Dark"
+    ThemeEngine.CurrentScheme = ThemeEngine:Build(BuiltinThemes.Nexus)
+    ThemeEngine.ActiveThemeName = "Nexus"
 end
 
 -- ─── Spring Solver ─────────────────────────────────────────────────────────
@@ -3735,14 +3848,14 @@ function BaseGroupbox:AddDivider(info)
             Size       = UDim2.new(1, -20, 1, 0),
             Text       = info.Text,
             TextSize   = Tokens.FontSize.SM,
-            TextColor3 = "TextMuted",
+            TextColor3 = "CardText",
             ZIndex     = holder.ZIndex + 1,
             Parent     = holder,
         })
         -- Left line: from left edge up to 10 px before the text
         New("Frame", {
             AnchorPoint      = Vector2.new(0, 0.5),
-            BackgroundColor3 = "BorderColor",
+            BackgroundColor3 = "CardDivider",
             Position         = UDim2.fromOffset(0, 0),  -- vertically centred via AnchorPoint
             Size             = UDim2.new(0.5, -10 - (lbl.TextBounds.X / 2), 0, 1),
             Parent           = holder,
@@ -3750,7 +3863,7 @@ function BaseGroupbox:AddDivider(info)
         -- Right line: from 10 px after the text to right edge
         New("Frame", {
             AnchorPoint      = Vector2.new(1, 0.5),
-            BackgroundColor3 = "BorderColor",
+            BackgroundColor3 = "CardDivider",
             Position         = UDim2.new(1, 0, 0.5, 0),
             Size             = UDim2.new(0.5, -10 - (lbl.TextBounds.X / 2), 0, 1),
             Parent           = holder,
@@ -3771,7 +3884,7 @@ function BaseGroupbox:AddDivider(info)
         -- Plain line, full width, vertically centred
         New("Frame", {
             AnchorPoint      = Vector2.new(0.5, 0.5),
-            BackgroundColor3 = "BorderColor",
+            BackgroundColor3 = "CardDivider",
             Position         = UDim2.fromScale(0.5, 0.5),
             Size             = UDim2.new(1, 0, 0, 1),
             Parent           = holder,
@@ -3864,12 +3977,14 @@ function BaseGroupbox:AddToggle(idx, info)
         Parent = holder,
     })
 
-    -- Switch track — wider for easier clicking
+    -- Switch track — sized per V2 spec (30 length)
+    local TOGGLE_LEN = Tokens.V2.ToggleSize
+    local PILL_R     = Tokens.V2.TogglePillRadius
     local track = New("Frame", {
         AnchorPoint = Vector2.new(1, 0.5),
-        BackgroundColor3 = "SurfaceAltColor",
+        BackgroundColor3 = "ToggleInactiveBg",
         Position = UDim2.new(1, 0, 0.5, 0),
-        Size     = UDim2.fromOffset(38, 20),
+        Size     = UDim2.fromOffset(TOGGLE_LEN * 1.7, TOGGLE_LEN),
         Parent   = holder,
     })
     New("UICorner", { CornerRadius = UDim.new(1, 0), Parent = track })
@@ -3879,15 +3994,14 @@ function BaseGroupbox:AddToggle(idx, info)
         Parent = track,
     })
 
-    -- Knob with a subtle inner shadow ring
+    -- Knob — pill radius 6 per spec (not fully circular)
     local knob = New("Frame", {
-        BackgroundColor3 = Color3.new(1,1,1),
+        BackgroundColor3 = "ToggleInactivePill",
         Size     = UDim2.fromScale(1, 1),
         SizeConstraint = Enum.SizeConstraint.RelativeYY,
         Parent   = track,
     })
-    New("UICorner", { CornerRadius = UDim.new(1, 0), Parent = knob })
-    New("UIStroke", { Color = Color3.fromRGB(180,180,180), Thickness = 0.5, Transparency = 0.6, Parent = knob })
+    New("UICorner", { CornerRadius = UDim.new(0, PILL_R), Parent = knob })
 
     local Toggle = setmetatable({
         Text     = info.Text,
@@ -3912,13 +4026,14 @@ function BaseGroupbox:AddToggle(idx, info)
         if Library.Unloaded then return end
         local on       = Toggle.Value
         local disabled = Toggle.Disabled
+        local pillColor = on and Library.Scheme.ToggleActivePill or Library.Scheme.ToggleInactivePill
 
         if _cancelKnobSpring then _cancelKnobSpring() end
         if skipAnim then
             local v = on and 1 or 0
             knob.AnchorPoint = Vector2.new(v, 0)
             knob.Position    = UDim2.fromScale(v, 0)
-            knob.BackgroundColor3 = on and Color3.new(1,1,1) or Color3.fromRGB(170,170,170)
+            knob.BackgroundColor3 = pillColor
         else
             _cancelKnobSpring = AnimEngine.Spring({
                 from      = knob.Position.X.Scale,
@@ -3930,11 +4045,11 @@ function BaseGroupbox:AddToggle(idx, info)
                 end,
             })
             TweenService:Create(knob, TweenInfo.new(0.1, Enum.EasingStyle.Quad),
-                { BackgroundColor3 = on and Color3.new(1,1,1) or Color3.fromRGB(170,170,170) }):Play()
+                { BackgroundColor3 = pillColor }):Play()
         end
 
         if _toggleTweenTrack then _toggleTweenTrack:Cancel() end
-        local targetColor = on and Library.Scheme.AccentColor or Library.Scheme.SurfaceAltColor
+        local targetColor = on and Library.Scheme.ToggleActiveBg or Library.Scheme.ToggleInactiveBg
         if skipAnim then
             track.BackgroundColor3 = targetColor
         else
@@ -4061,69 +4176,80 @@ function BaseGroupbox:AddSlider(idx, info)
         Tooltip  = nil,
     })
 
-    local container = self.Container
-    local maid      = Maid.New()
+    local container  = self.Container
+    local maid       = Maid.New()
+    local LINE_LEN   = Tokens.V2.SliderLineLength   -- 85
+    local PILL_R     = Tokens.V2.SliderPillRadius   -- 5
+    local VALUE_BOX  = Tokens.V2.SliderValueBox      -- 40x20
+    local ROW_H      = Tokens.V2.ElementHeight        -- 30
 
+    -- Single row: Label (left, flexible) | Slider (middle, fixed width) | Value box (right, fixed)
     local holder = New("Frame", {
         BackgroundTransparency = 1,
-        Size    = UDim2.new(1, 0, 0, 34),
+        Size    = UDim2.new(1, 0, 0, ROW_H),
         Visible = info.Visible,
         Parent  = container,
     })
 
-    -- Label row
-    local topRow = New("Frame", {
-        BackgroundTransparency = 1,
-        Size = UDim2.new(1, 0, 0, 14),
-        Parent = holder,
-    })
     local nameLabel = New("TextLabel", {
         BackgroundTransparency = 1,
-        Size = UDim2.fromScale(0.6, 1),
+        Position = UDim2.fromOffset(0, 0),
+        Size = UDim2.new(1, -(LINE_LEN + VALUE_BOX.X + Tokens.V2.CardTextGap * 2), 1, 0),
         Text = info.Text,
         TextSize = Tokens.FontSize.MD,
         TextXAlignment = Enum.TextXAlignment.Left,
-        Parent = topRow,
-    })
-    local valueLabel = New("TextLabel", {
-        AnchorPoint = Vector2.new(1, 0),
-        BackgroundTransparency = 1,
-        Position = UDim2.fromScale(1, 0),
-        Size = UDim2.fromScale(0.4, 1),
-        Text = "",
-        TextSize = Tokens.FontSize.SM,
-        TextColor3 = "TextMuted",
-        TextXAlignment = Enum.TextXAlignment.Right,
-        Parent = topRow,
+        TextYAlignment = Enum.TextYAlignment.Center,
+        Parent = holder,
     })
 
-    -- Track
+    -- Value box sits flush right
+    local valueBoxFrame = New("Frame", {
+        AnchorPoint = Vector2.new(1, 0.5),
+        BackgroundColor3 = "SliderValueBox",
+        Position = UDim2.new(1, 0, 0.5, 0),
+        Size     = UDim2.fromOffset(VALUE_BOX.X, VALUE_BOX.Y),
+        Parent   = holder,
+    })
+    New("UICorner", { CornerRadius = UDim.new(0, Tokens.RadiusSM), Parent = valueBoxFrame })
+    local valueBox = New("TextBox", {
+        BackgroundTransparency = 1,
+        ClearTextOnFocus = false,
+        Size     = UDim2.fromScale(1, 1),
+        Text     = "",
+        TextSize = Tokens.FontSize.SM,
+        TextColor3 = "SliderValueText",
+        TextXAlignment = Enum.TextXAlignment.Center,
+        TextYAlignment = Enum.TextYAlignment.Center,
+        Parent   = valueBoxFrame,
+    })
+
+    -- Track sits just to the left of the value box, fixed 85px line length
     local track = New("TextButton", {
-        AnchorPoint = Vector2.new(0, 1),
-        BackgroundColor3 = "SurfaceAltColor",
-        Position = UDim2.fromScale(0, 1),
-        Size     = UDim2.new(1, 0, 0, 8),
+        AnchorPoint = Vector2.new(1, 0.5),
+        BackgroundColor3 = "SliderInactiveLine",
+        Position = UDim2.new(1, -(VALUE_BOX.X + Tokens.V2.CardTextGap), 0.5, 0),
+        Size     = UDim2.fromOffset(LINE_LEN, 6),
         Text     = "",
         Parent   = holder,
     })
     New("UICorner", { CornerRadius = UDim.new(1, 0), Parent = track })
 
     local fill = New("Frame", {
-        BackgroundColor3 = "AccentColor",
+        BackgroundColor3 = "SliderActiveLine",
         Size  = UDim2.fromScale(0, 1),
         Parent = track,
     })
     New("UICorner", { CornerRadius = UDim.new(1, 0), Parent = fill })
 
-    -- Knob
+    -- Knob — pill radius 5 per spec
     local knob = New("Frame", {
         AnchorPoint = Vector2.new(0.5, 0.5),
-        BackgroundColor3 = "TextPrimary",
+        BackgroundColor3 = "SliderPill",
         Position = UDim2.fromScale(0, 0.5),
-        Size     = UDim2.fromOffset(14, 14),
+        Size     = UDim2.fromOffset(PILL_R * 2, PILL_R * 2),
         Parent   = track,
     })
-    New("UICorner", { CornerRadius = UDim.new(1, 0), Parent = knob })
+    New("UICorner", { CornerRadius = UDim.new(0, PILL_R), Parent = knob })
 
     -- Drag state declared early so hover handlers can read it
     local dragging = false
@@ -4135,12 +4261,10 @@ function BaseGroupbox:AddSlider(idx, info)
     local tiKnob = TweenInfo.new(0.1, Enum.EasingStyle.Quad)
     maid:Connect(track.MouseEnter, function()
         TweenService:Create(knobScale, tiKnob, { Scale = 1.25 }):Play()
-        TweenService:Create(fill,     tiKnob, { BackgroundColor3 = Library.Scheme.AccentHover }):Play()
     end)
     maid:Connect(track.MouseLeave, function()
         if not dragging then
             TweenService:Create(knobScale, tiKnob, { Scale = 1.0 }):Play()
-            TweenService:Create(fill,     tiKnob, { BackgroundColor3 = Library.Scheme.AccentColor }):Play()
         end
     end)
 
@@ -4171,7 +4295,9 @@ function BaseGroupbox:AddSlider(idx, info)
         if _fillTween then _fillTween:Cancel() end
         fill.Size     = UDim2.fromScale(frac, 1)
         knob.Position = UDim2.fromScale(frac, 0.5)
-        valueLabel.Text = Slider.Prefix .. tostring(Slider.Value) .. Slider.Suffix
+        if not valueBox:IsFocused() then
+            valueBox.Text = Slider.Prefix .. tostring(Slider.Value) .. Slider.Suffix
+        end
     end
 
     local function setFillAnimated(frac)
@@ -4183,7 +4309,9 @@ function BaseGroupbox:AddSlider(idx, info)
         TweenService:Create(knob,
             TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
             { Position = UDim2.fromScale(frac, 0.5) }):Play()
-        valueLabel.Text = Slider.Prefix .. tostring(Slider.Value) .. Slider.Suffix
+        if not valueBox:IsFocused() then
+            valueBox.Text = Slider.Prefix .. tostring(Slider.Value) .. Slider.Suffix
+        end
     end
 
     function Slider:SetValue(v, fromDrag)
@@ -4209,7 +4337,9 @@ function BaseGroupbox:AddSlider(idx, info)
                     knob.Position = UDim2.fromScale(s, 0.5)
                 end,
             })
-            valueLabel.Text = self.Prefix .. tostring(self.Value) .. self.Suffix
+            if not valueBox:IsFocused() then
+                valueBox.Text = self.Prefix .. tostring(self.Value) .. self.Suffix
+            end
         end
         Library:SafeCallback(self.Callback, num)
         Library:SafeCallback(self.Changed,  num)
@@ -4218,6 +4348,7 @@ function BaseGroupbox:AddSlider(idx, info)
     function Slider:SetDisabled(v)
         self.Disabled = v
         track.Active  = not v
+        valueBox.TextEditable = not v
     end
 
     function Slider:SetVisible(v)
@@ -4261,22 +4392,26 @@ function BaseGroupbox:AddSlider(idx, info)
         if input.UserInputType == Enum.UserInputType.MouseButton1 and dragging then
             dragging = false
             TweenService:Create(knobScale, tiKnob, { Scale = 1.0 }):Play()
-            TweenService:Create(fill, tiKnob, { BackgroundColor3 = Library.Scheme.AccentColor }):Play()
+        end
+    end)
+
+    -- Editable value box: typing a number and confirming (Enter/focus-lost) commits it
+    maid:Connect(valueBox.FocusLost, function(enterPressed)
+        local num = tonumber(valueBox.Text:gsub("[^%d%.%-]", ""))
+        if num then
+            Slider:SetValue(num)
+        else
+            -- Invalid entry — restore current value display
+            valueBox.Text = Slider.Prefix .. tostring(Slider.Value) .. Slider.Suffix
         end
     end)
 
     -- Initial display (direct, no animation on load)
     local initFrac = (info.Default - info.Min) / math.max(1e-6, info.Max - info.Min)
     setFillDirect(initFrac)
-    valueLabel.Text = info.Prefix .. tostring(info.Default) .. info.Suffix
+    valueBox.Text = info.Prefix .. tostring(info.Default) .. info.Suffix
     Slider._groupbox = self
     self:Resize()
-
-    -- Refresh fill/knob colors when theme changes
-    maid:Give(EventBus:On("themeChange", function()
-        fill.BackgroundColor3 = Library.Scheme.AccentColor
-        knob.BackgroundColor3 = Library.Scheme.TextPrimary
-    end))
 
     if idx then Library.Options[idx] = Slider end
     table.insert(self.Elements, Slider)
@@ -4440,13 +4575,16 @@ function BaseGroupbox:AddDropdown(idx, info)
         MaxVisible = 6,
     })
 
-    local container = self.Container
-    local maid      = Maid.New()
-    local menuOpen  = false
+    local container  = self.Container
+    local maid       = Maid.New()
+    local menuOpen   = false
+    local DD_SIZE    = Tokens.V2.DropdownSize  -- 100x20
+    local ROW_H      = Tokens.V2.ElementHeight  -- 30
 
+    -- Single row: Label (left, flexible) | Dropdown (right, fixed 100x20)
     local holder = New("Frame", {
         BackgroundTransparency = 1,
-        Size    = UDim2.new(1, 0, 0, info.Text and 42 or 24),
+        Size    = UDim2.new(1, 0, 0, info.Text and ROW_H or DD_SIZE.Y),
         Visible = info.Visible,
         Parent  = container,
     })
@@ -4455,37 +4593,38 @@ function BaseGroupbox:AddDropdown(idx, info)
         New("TextLabel", {
             BackgroundTransparency = 1,
             Position = UDim2.fromOffset(0, 0),
-            Size = UDim2.new(1, 0, 0, 14),
+            Size = UDim2.new(1, -(DD_SIZE.X + Tokens.V2.CardTextGap), 1, 0),
             Text = info.Text,
             TextSize = Tokens.FontSize.MD,
             TextXAlignment = Enum.TextXAlignment.Left,
+            TextYAlignment = Enum.TextYAlignment.Center,
             Parent = holder,
         })
     end
 
     local displayBtn = New("TextButton", {
-        AnchorPoint = Vector2.new(0, 1),
-        BackgroundColor3 = "SurfaceColor",
-        Position = UDim2.fromScale(0, 1),
-        Size     = UDim2.new(1, 0, 0, 24),
+        AnchorPoint = Vector2.new(1, 0.5),
+        BackgroundColor3 = "DropdownBackground",
+        Position = UDim2.new(1, 0, 0.5, 0),
+        Size     = UDim2.fromOffset(DD_SIZE.X, DD_SIZE.Y),
         Text     = "",
         Parent   = holder,
     })
     New("UICorner", { CornerRadius = UDim.new(0, Tokens.RadiusSM), Parent = displayBtn })
-    New("UIStroke", { Color = "BorderColor", Thickness = 1, Parent = displayBtn })
     New("UIPadding", {
-        PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 8),
+        PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 6),
         Parent = displayBtn,
     })
 
     local displayLabel = New("TextLabel", {
         BackgroundTransparency = 1,
-        Size = UDim2.new(1, -18, 1, 0),
+        Size = UDim2.new(1, -14, 1, 0),
         Text = info.Multi and "Select..." or (info.Default or "Select..."),
-        TextSize = Tokens.FontSize.MD,
-        TextColor3 = "TextMuted",
+        TextSize = Tokens.FontSize.SM,
+        TextColor3 = "DropdownText",
         TextXAlignment = Enum.TextXAlignment.Left,
         TextYAlignment = Enum.TextYAlignment.Center,
+        TextTruncate = Enum.TextTruncate.AtEnd,
         Parent = displayBtn,
     })
 
@@ -4494,25 +4633,25 @@ function BaseGroupbox:AddDropdown(idx, info)
         AnchorPoint = Vector2.new(1, 0.5),
         BackgroundTransparency = 1,
         Position = UDim2.new(1, 0, 0.5, 0),
-        Size     = UDim2.fromOffset(16, 16),
+        Size     = UDim2.fromOffset(12, 12),
         Parent   = displayBtn,
     })
     -- Draw a simple "v" shape using two rotated frames
     local arrowL = New("Frame", {
         AnchorPoint = Vector2.new(0.5, 0.5),
-        BackgroundColor3 = "TextMuted",
+        BackgroundColor3 = "DropdownText",
         BorderSizePixel  = 0,
         Position = UDim2.new(0.5, -3, 0.5, 0),
-        Size     = UDim2.fromOffset(7, 1.5),
+        Size     = UDim2.fromOffset(6, 1.5),
         Rotation = 35,
         Parent   = arrowFrame,
     })
     local arrowR = New("Frame", {
         AnchorPoint = Vector2.new(0.5, 0.5),
-        BackgroundColor3 = "TextMuted",
+        BackgroundColor3 = "DropdownText",
         BorderSizePixel  = 0,
         Position = UDim2.new(0.5, 3, 0.5, 0),
-        Size     = UDim2.fromOffset(7, 1.5),
+        Size     = UDim2.fromOffset(6, 1.5),
         Rotation = -35,
         Parent   = arrowFrame,
     })
@@ -4542,18 +4681,18 @@ function BaseGroupbox:AddDropdown(idx, info)
             end
             if count == 0 then
                 displayLabel.Text = "Select…"
-                displayLabel.TextColor3 = Library.Scheme.TextMuted
+                displayLabel.TextColor3 = Library.Scheme.DropdownText
             else
                 displayLabel.Text = table.concat(parts, ", "):sub(1, 40)
-                displayLabel.TextColor3 = Library.Scheme.TextPrimary
+                displayLabel.TextColor3 = Library.Scheme.CardText
             end
         else
             if Dropdown.Value then
                 displayLabel.Text = tostring(Dropdown.Value)
-                displayLabel.TextColor3 = Library.Scheme.TextPrimary
+                displayLabel.TextColor3 = Library.Scheme.CardText
             else
                 displayLabel.Text = "Select…"
-                displayLabel.TextColor3 = Library.Scheme.TextMuted
+                displayLabel.TextColor3 = Library.Scheme.DropdownText
             end
         end
     end
@@ -4590,13 +4729,24 @@ function BaseGroupbox:AddDropdown(idx, info)
         InteractionManager.Push("dropdown:" .. (idx or "?"), closeMenu)
         TweenService:Create(arrowFrame, TweenInfo.new(0.12, Enum.EasingStyle.Quad), { Rotation = 180 }):Play()
 
-        -- Position popup - clamp to screen so it never clips off edge
+        -- Width: at least the control's own width, but grow to fit the
+        -- longest option so text never clips — capped at a sane max so it
+        -- never sprawls across the screen ("no excess empty space" cuts
+        -- both ways: don't pad it huge, but don't truncate either).
+        local longest = 0
+        for _, val in ipairs(Dropdown.Values) do
+            local w = Library:GetTextBounds(tostring(val), Library.Scheme.Font, Tokens.FontSize.SM, 1000)
+            longest = math.max(longest, w)
+        end
+        local absW = math.clamp(longest + 24, displayBtn.AbsoluteSize.X, 220)
+
+        -- Position popup - right-aligned to the control, clamp to screen so it never clips off edge
         local abs  = displayBtn.AbsolutePosition
-        local absW = displayBtn.AbsoluteSize.X
+        local ctrlW = displayBtn.AbsoluteSize.X
         local rowH = 22
         local maxH = math.min(#Dropdown.Values, info.MaxVisible) * rowH + 8
         local vp   = Camera.ViewportSize
-        local posX = math.clamp(abs.X, 4, vp.X - absW - 4)
+        local posX = math.clamp(abs.X + ctrlW - absW, 4, vp.X - absW - 4)
         local posY = abs.Y + displayBtn.AbsoluteSize.Y + 4
         -- Flip above if not enough room below
         if posY + maxH > vp.Y - 8 then
@@ -4604,7 +4754,7 @@ function BaseGroupbox:AddDropdown(idx, info)
         end
 
         local menuFrame = New("Frame", {
-            BackgroundColor3 = "SurfaceColor",
+            BackgroundColor3 = "DropdownBackground",
             Position = UDim2.fromOffset(posX, posY),
             Size     = UDim2.fromOffset(absW, maxH),
             ZIndex   = ZManager.Get("dropdown"),
@@ -4637,10 +4787,13 @@ function BaseGroupbox:AddDropdown(idx, info)
 
         for _, val in ipairs(Dropdown.Values) do
             local selected = Dropdown.Multi and Dropdown.Value[val] or Dropdown.Value == val
-            local selBg    = Color3.fromRGB(60, 60, 80)  -- dark readable bg for selected
+            local selBg    = Library.Scheme.AccentColor
             local selText  = Color3.new(1, 1, 1)
+            local idleBg   = Library.Scheme.DropdownBackground
+            local hoverBg  = Library.Scheme.CardOutline
+            local idleText = Library.Scheme.CardText
             local row = New("TextButton", {
-                BackgroundColor3       = selected and selBg or ThemeEngine.CurrentScheme.SurfaceColor,
+                BackgroundColor3       = selected and selBg or idleBg,
                 BackgroundTransparency = selected and 0 or 1,
                 Size   = UDim2.new(1, 0, 0, rowH),
                 Text   = "",
@@ -4652,30 +4805,30 @@ function BaseGroupbox:AddDropdown(idx, info)
                 BackgroundTransparency = 1,
                 Size = UDim2.fromScale(1, 1),
                 Text = tostring(val),
-                TextSize = Tokens.FontSize.MD,
+                TextSize = Tokens.FontSize.SM,
                 TextXAlignment = Enum.TextXAlignment.Left,
-                TextColor3 = selected and selText or ThemeEngine.CurrentScheme.TextPrimary,
+                TextColor3 = selected and selText or idleText,
                 Parent = row,
             })
             row.MouseEnter:Connect(function()
                 if not (Dropdown.Multi and Dropdown.Value[val] or Dropdown.Value == val) then
                     row.BackgroundTransparency = 0
-                    row.BackgroundColor3 = ThemeEngine.CurrentScheme.SurfaceAltColor
+                    row.BackgroundColor3 = hoverBg
                 end
             end)
             row.MouseLeave:Connect(function()
                 local isSel = Dropdown.Multi and Dropdown.Value[val] or Dropdown.Value == val
                 row.BackgroundTransparency = isSel and 0 or 1
-                row.BackgroundColor3 = isSel and selBg or ThemeEngine.CurrentScheme.SurfaceColor
-                rowLabel.TextColor3  = isSel and selText or ThemeEngine.CurrentScheme.TextPrimary
+                row.BackgroundColor3 = isSel and selBg or idleBg
+                rowLabel.TextColor3  = isSel and selText or idleText
             end)
             row.MouseButton1Click:Connect(function()
                 -- update visual immediately
                 if Dropdown.Multi then
                     local nowSel = not Dropdown.Value[val]
                     row.BackgroundTransparency = nowSel and 0 or 1
-                    row.BackgroundColor3 = nowSel and selBg or ThemeEngine.CurrentScheme.SurfaceColor
-                    rowLabel.TextColor3  = nowSel and selText or ThemeEngine.CurrentScheme.TextPrimary
+                    row.BackgroundColor3 = nowSel and selBg or idleBg
+                    rowLabel.TextColor3  = nowSel and selText or idleText
                 end
                 Dropdown:SetValue(val)
                 if not Dropdown.Multi then closeMenu() end
@@ -7065,15 +7218,15 @@ function Library:CreateWindow(info)
     LibraryMaid:Give(windowMaid)
 
     -- Layout constants
-    local TH  = 42   -- titlebar height
-    local SW  = 152  -- sidebar width
+    local TH  = Tokens.V2.HeaderHeight  -- 45 — header/titlebar height
+    local SW  = Tokens.V2.TabWidth      -- 175 — sidebar/tab column width
     local FH  = 22   -- footer height
     local CR  = info.CornerRadius
 
     -- ── Main Frame ───────────────────────────────────────────────────────
     local mainFrame = New("Frame", {
         AnchorPoint      = info.Center and Vector2.new(0.5, 0.5) or Vector2.zero,
-        BackgroundColor3 = "BackgroundColor",
+        BackgroundColor3 = "MenuBackground",
         BackgroundTransparency = 0.18,
         Position         = info.Center and UDim2.fromScale(0.5, 0.5) or info.Position,
         Size             = info.Size,
@@ -7082,7 +7235,7 @@ function Library:CreateWindow(info)
         Parent           = ScreenGui,
     })
     New("UICorner",  { CornerRadius = UDim.new(0, CR), Parent = mainFrame })
-    New("UIStroke",  { Color = "BorderColor", Thickness = 1, Transparency = 0.5, Parent = mainFrame })
+    New("UIStroke",  { Color = "CardOutline", Thickness = 1, Transparency = 0.5, Parent = mainFrame })
     ZManager.Apply(mainFrame, "float")
 
     -- DPI Scale — resize the window frame AND compensate TextSize so text
@@ -7174,224 +7327,159 @@ function Library:CreateWindow(info)
     frostGrad.Parent = frostLayer2
 
     -- ── Particle Network Field ──────────────────────────────────────────
-
-local particleField = New("Frame", {
-    BackgroundTransparency = 1,
-    Size = UDim2.fromScale(1, 1),
-    ZIndex = mainFrame.ZIndex,
-    ClipsDescendants = true,
-    Parent = mainFrame,
-})
-
-local PARTICLE_COUNT = 40
-local CONNECT_DIST = 120
-local DOT_SPEED = 28
-local DOT_MIN_SIZE = 2
-local DOT_MAX_SIZE = 4
-local DOT_ALPHA = 0.55
-local LINE_MAX_ALPHA = 0.72
-
-local _particlesSpawned = false
-local _heartbeatConn = nil
-local _dots = {}
-local _lines = {}
-
---------------------------------------------------------
--- Line pool
---------------------------------------------------------
-
-local function getLine()
-    for _, line in ipairs(_lines) do
-        if not line._inUse then
-            line._inUse = true
-            line.inst.Visible = true
-            return line
-        end
-    end
-
-    local inst = New("Frame", {
-        AnchorPoint = Vector2.new(0.5, 0.5),
-        BackgroundColor3 = "AccentColor",
-        BorderSizePixel = 0,
-        ZIndex = particleField.ZIndex,
-        Parent = particleField,
+    --[[
+        Connected-dots network effect: dots drift around and thin lines are
+        drawn between any two dots closer than CONNECT_DIST px. Line opacity
+        scales with proximity (closer = more opaque). Runs on Heartbeat so
+        positions and lines update every frame. Everything is destroyed (not
+        just hidden) when the menu closes or particles are toggled off.
+    ]]
+    local particleField = New("Frame", {
+        BackgroundTransparency = 1,
+        Size             = UDim2.fromScale(1, 1),
+        ZIndex           = mainFrame.ZIndex,
+        ClipsDescendants = true,
+        Parent           = mainFrame,
     })
 
-    local line = {
-        inst = inst,
-        _inUse = true
-    }
+    local PARTICLE_COUNT = 40       -- number of dots
+    local CONNECT_DIST   = 120      -- px — max distance to draw a line
+    local DOT_SPEED      = 28       -- px/s base speed
+    local DOT_MIN_SIZE   = 2
+    local DOT_MAX_SIZE   = 4
+    local DOT_ALPHA      = 0.55     -- dot transparency (lower = more visible)
+    local LINE_MAX_ALPHA = 0.72     -- line transparency at closest distance
 
-    table.insert(_lines, line)
+    local _particlesSpawned = false
+    local _heartbeatConn    = nil
+    local _dots             = {}    -- { inst, x, y, vx, vy, size }
+    local _lines            = {}    -- pool of line frames
 
-    return line
-end
-
-local function returnLines()
-    for _, line in ipairs(_lines) do
-        line._inUse = false
-        line.inst.Visible = false
-    end
-end
-
---------------------------------------------------------
--- Spawn particles
---------------------------------------------------------
-
-local function spawnParticles()
-    if _particlesSpawned then
-        return
-    end
-
-    _particlesSpawned = true
-
-    local fw = mainFrame.AbsoluteSize.X
-    local fh = mainFrame.AbsoluteSize.Y
-
-    for i = 1, PARTICLE_COUNT do
-        local size = math.random(DOT_MIN_SIZE, DOT_MAX_SIZE)
-
-        local speed = DOT_SPEED * (0.6 + math.random() * 0.8)
-        local angle = math.random() * math.pi * 2
-
-        local dot = New("Frame", {
+    -- Line pool: reuse frames instead of creating/destroying every frame
+    local function getLine()
+        for _, l in ipairs(_lines) do
+            if not l._inUse then
+                l._inUse = true
+                l.inst.Visible = true
+                return l
+            end
+        end
+        -- Allocate a new one
+        local inst = New("Frame", {
+            AnchorPoint      = Vector2.new(0, 0.5),
             BackgroundColor3 = "AccentColor",
-            BackgroundTransparency = DOT_ALPHA,
-            Size = UDim2.fromOffset(size, size),
-            ZIndex = particleField.ZIndex + 1,
-            Parent = particleField,
+            BorderSizePixel  = 0,
+            ZIndex           = particleField.ZIndex,
+            Parent           = particleField,
         })
-
-        New("UICorner", {
-            CornerRadius = UDim.new(1, 0),
-            Parent = dot,
-        })
-
-        _dots[i] = {
-            inst = dot,
-            x = math.random() * fw,
-            y = math.random() * fh,
-            vx = math.cos(angle) * speed,
-            vy = math.sin(angle) * speed,
-            size = size,
-        }
+        local l = { inst = inst, _inUse = true }
+        table.insert(_lines, l)
+        return l
     end
 
-    --------------------------------------------------------
-    -- Update
-    --------------------------------------------------------
+    local function returnLines()
+        for _, l in ipairs(_lines) do
+            l._inUse = false
+            l.inst.Visible = false
+        end
+    end
 
-    _heartbeatConn = RunService.Heartbeat:Connect(function(dt)
-        if not mainFrame.Parent then
-            return
+    local function spawnParticles()
+        if _particlesSpawned then return end
+        _particlesSpawned = true
+
+        local w = mainFrame.AbsoluteSize.X
+        local h = mainFrame.AbsoluteSize.Y
+
+        -- Create dots
+        for i = 1, PARTICLE_COUNT do
+            local sz  = math.random(DOT_MIN_SIZE, DOT_MAX_SIZE)
+            local spd = DOT_SPEED * (0.6 + math.random() * 0.8)
+            local ang = math.random() * math.pi * 2
+            local inst = New("Frame", {
+                BackgroundColor3       = "AccentColor",
+                BackgroundTransparency = DOT_ALPHA,
+                Size     = UDim2.fromOffset(sz, sz),
+                Position = UDim2.fromOffset(math.random() * w, math.random() * h),
+                ZIndex   = particleField.ZIndex + 1,
+                Parent   = particleField,
+            })
+            New("UICorner", { CornerRadius = UDim.new(1, 0), Parent = inst })
+            _dots[i] = {
+                inst = inst,
+                x    = math.random() * w,
+                y    = math.random() * h,
+                vx   = math.cos(ang) * spd,
+                vy   = math.sin(ang) * spd,
+                size = sz,
+            }
         end
 
-        local fw = mainFrame.AbsoluteSize.X
-        local fh = mainFrame.AbsoluteSize.Y
+        -- Heartbeat: move dots + redraw lines every frame
+        _heartbeatConn = RunService.Heartbeat:Connect(function(dt)
+            if not mainFrame or not mainFrame.Parent then return end
 
-        ----------------------------------------------------
-        -- Move particles
-        ----------------------------------------------------
+            local fw = mainFrame.AbsoluteSize.X
+            local fh = mainFrame.AbsoluteSize.Y
+            if fw < 10 or fh < 10 then return end
 
-        for _, p in ipairs(_dots) do
-            p.x += p.vx * dt
-            p.y += p.vy * dt
-
-            if p.x <= 0 then
-                p.x = 0
-                p.vx = math.abs(p.vx)
-            elseif p.x >= fw then
-                p.x = fw
-                p.vx = -math.abs(p.vx)
+            -- Move dots, bounce off edges
+            for _, d in ipairs(_dots) do
+                d.x = d.x + d.vx * dt
+                d.y = d.y + d.vy * dt
+                -- Bounce
+                if d.x < 0       then d.x = 0;        d.vx = math.abs(d.vx)  end
+                if d.x > fw      then d.x = fw;        d.vx = -math.abs(d.vx) end
+                if d.y < 0       then d.y = 0;         d.vy = math.abs(d.vy)  end
+                if d.y > fh      then d.y = fh;        d.vy = -math.abs(d.vy) end
+                -- Apply position
+                d.inst.Position = UDim2.fromOffset(d.x - d.size * 0.5, d.y - d.size * 0.5)
             end
 
-            if p.y <= 0 then
-                p.y = 0
-                p.vy = math.abs(p.vy)
-            elseif p.y >= fh then
-                p.y = fh
-                p.vy = -math.abs(p.vy)
-            end
-
-            p.inst.Position = UDim2.fromOffset(
-                p.x - p.size / 2,
-                p.y - p.size / 2
-            )
-        end
-
-        ----------------------------------------------------
-        -- Draw lines
-        ----------------------------------------------------
-
-        returnLines()
-
-        local maxDistSq = CONNECT_DIST * CONNECT_DIST
-        local n = #_dots
-
-        for i = 1, n - 1 do
-            local a = _dots[i]
-
-            for j = i + 1, n do
-                local b = _dots[j]
-
-                local dx = b.x - a.x
-                local dy = b.y - a.y
-
-                local distSq = dx * dx + dy * dy
-
-                if distSq < maxDistSq then
-                    local dist = math.sqrt(distSq)
-
-                    local alpha =
-                        LINE_MAX_ALPHA +
-                        (1 - LINE_MAX_ALPHA) * (dist / CONNECT_DIST)
-
-                    local line = getLine()
-
-                    local mx = (a.x + b.x) * 0.5
-                    local my = (a.y + b.y) * 0.5
-
-                    line.inst.Position = UDim2.fromOffset(mx, my)
-                    line.inst.Size = UDim2.fromOffset(dist, 1)
-                    line.inst.Rotation = math.deg(math.atan(dy, dx))
-                    line.inst.BackgroundTransparency = alpha
+            -- Draw lines between close pairs
+            returnLines()
+            local n = #_dots
+            for i = 1, n - 1 do
+                local a = _dots[i]
+                for j = i + 1, n do
+                    local b  = _dots[j]
+                    local dx = b.x - a.x
+                    local dy = b.y - a.y
+                    local dist = math.sqrt(dx * dx + dy * dy)
+                    if dist < CONNECT_DIST then
+                        local alpha = LINE_MAX_ALPHA + (1 - LINE_MAX_ALPHA) * (dist / CONNECT_DIST)
+                        local l = getLine()
+                        local angle = math.deg(math.atan2(dy, dx))
+                        l.inst.Position            = UDim2.fromOffset(a.x, a.y)
+                        l.inst.Size                = UDim2.fromOffset(dist, 1)
+                        l.inst.Rotation            = angle
+                        l.inst.BackgroundTransparency = alpha
+                    end
                 end
             end
-        end
-    end)
+        end)
 
-    windowMaid:Give(function()
+        -- clearParticles handles disconnect; also register with maid for safety
+        windowMaid:Give(function() if _heartbeatConn then _heartbeatConn:Disconnect() end end)
+    end
+
+    local function clearParticles()
         if _heartbeatConn then
             _heartbeatConn:Disconnect()
+            _heartbeatConn = nil
         end
-    end)
-end
-
---------------------------------------------------------
--- Cleanup
---------------------------------------------------------
-
-local function clearParticles()
-    if _heartbeatConn then
-        _heartbeatConn:Disconnect()
-        _heartbeatConn = nil
+        for _, d in ipairs(_dots) do
+            if d.inst and d.inst.Parent then d.inst:Destroy() end
+        end
+        _dots = {}
+        for _, l in ipairs(_lines) do
+            if l.inst and l.inst.Parent then l.inst:Destroy() end
+        end
+        _lines = {}
+        _particlesSpawned = false
     end
 
-    for _, dot in ipairs(_dots) do
-        dot.inst:Destroy()
-    end
-
-    for _, line in ipairs(_lines) do
-        line.inst:Destroy()
-    end
-
-    table.clear(_dots)
-    table.clear(_lines)
-
-    _particlesSpawned = false
-end
-
-Library.ParticlesEnabled = true
+    Library.ParticlesEnabled = true
 
     -- ── Titlebar ─────────────────────────────────────────────────────────
     local titleBar = New("Frame", {
@@ -7534,13 +7622,16 @@ Library.ParticlesEnabled = true
         ZIndex           = mainFrame.ZIndex + 1,
         Parent           = mainFrame,
     })
-    New("Frame", {  -- right border
-        AnchorPoint      = Vector2.new(1, 0),
-        BackgroundColor3 = "BorderColor",
-        Position         = UDim2.fromScale(1, 0),
+    -- Tabs ↔ content divider — spans the FULL height of the UI, including
+    -- the header, per the V2 spec ("Divider must span FULL height of UI").
+    -- Parented to mainFrame (not sidebar) so it's independent of where the
+    -- sidebar frame itself starts/ends.
+    New("Frame", {
+        Position         = UDim2.fromOffset(SW, 0),
+        BackgroundColor3 = "CardDivider",
         Size             = UDim2.new(0, 1, 1, 0),
-        ZIndex           = sidebar.ZIndex,
-        Parent           = sidebar,
+        ZIndex           = mainFrame.ZIndex + 3,
+        Parent           = mainFrame,
     })
 
     -- Tab button list: leaves 42px at bottom for settings button + separator
@@ -7685,6 +7776,28 @@ Library.ParticlesEnabled = true
         end
     end
 
+    -- Non-clickable section label used to group tabs in the sidebar list,
+    -- e.g. Window:AddTabSection("Visuals") followed by a few AddTab calls.
+    -- Purely cosmetic — LayoutOrder follows insertion order into tabList so
+    -- it sits correctly relative to tabs added before/after it.
+    function Window:AddTabSection(name)
+        local sectionLabel = New("TextLabel", {
+            BackgroundTransparency = 1,
+            Size       = UDim2.new(1, 0, 0, 22),
+            Text       = string.upper(name or ""),
+            TextSize   = Tokens.FontSize.XS,
+            TextColor3 = "TabSectionText",
+            FontFace   = Font.new("rbxasset://fonts/families/GothamSSm.json",
+                Enum.FontWeight.Medium, Enum.FontStyle.Normal),
+            TextXAlignment = Enum.TextXAlignment.Left,
+            Active     = false,
+            Selectable = false,
+            Parent     = tabList,
+        })
+        New("UIPadding", { PaddingLeft = UDim.new(0, 2), Parent = sectionLabel })
+        return { Type = "TabSection", Holder = sectionLabel }
+    end
+
     function Window:AddTab(name, icon)
         local tab = {
             Name       = name,
@@ -7696,9 +7809,9 @@ Library.ParticlesEnabled = true
 
         -- Tab button in sidebar tab list
         local tabBtn = New("TextButton", {
-            BackgroundColor3       = "AccentColor",
+            BackgroundColor3       = "TabActiveBackground",
             BackgroundTransparency = 1,
-            Size                   = UDim2.new(1, 0, 0, 32),
+            Size                   = UDim2.new(1, 0, 0, Tokens.V2.TabHeight),
             Text                   = "",
             ClipsDescendants       = true,
             Parent                 = tabList,
@@ -7716,13 +7829,40 @@ Library.ParticlesEnabled = true
         })
         New("UICorner", { CornerRadius = UDim.new(0, 2), Parent = activeBar })
 
+        -- Optional icon, with a soft glow shown only while the tab is active
+        local iconGlow, iconImg
+        local textOffsetX = 14
+        if icon then
+            textOffsetX = 36
+            iconGlow = New("ImageLabel", {
+                Image            = "rbxasset://textures/ui/GuiImagePlaceholder.png",
+                ImageColor3      = "AccentGlow",
+                ImageTransparency = 1,
+                BackgroundTransparency = 1,
+                AnchorPoint      = Vector2.new(0, 0.5),
+                Position         = UDim2.new(0, 6, 0.5, 0),
+                Size             = UDim2.fromOffset(22, 22),
+                ScaleType        = Enum.ScaleType.Fit,
+                Parent           = tabBtn,
+            })
+            iconImg = New("ImageLabel", {
+                Image       = icon,
+                BackgroundTransparency = 1,
+                AnchorPoint = Vector2.new(0, 0.5),
+                Position    = UDim2.new(0, 8, 0.5, 0),
+                Size        = UDim2.fromOffset(16, 16),
+                ImageTransparency = 0.45,
+                Parent      = tabBtn,
+            })
+        end
+
         local tabBtnLabel = New("TextLabel", {
             BackgroundTransparency = 1,
-            Position         = UDim2.fromOffset(14, 0),
-            Size             = UDim2.new(1, -14, 1, 0),
+            Position         = UDim2.fromOffset(textOffsetX, 0),
+            Size             = UDim2.new(1, -textOffsetX, 1, 0),
             Text             = name,
             TextSize         = Tokens.FontSize.SM,
-            TextTransparency = 0.45,
+            TextColor3       = "TabInactiveText",
             FontFace         = Font.new("rbxasset://fonts/families/GothamSSm.json",
                 Enum.FontWeight.Medium, Enum.FontStyle.Normal),
             TextXAlignment   = Enum.TextXAlignment.Left,
@@ -7841,7 +7981,9 @@ Library.ParticlesEnabled = true
             -- Deactivate settings button visuals
             if Window.Settings and Window.Settings._btn then
                 TweenService:Create(Window.Settings._btn,   tiNorm, { BackgroundTransparency = 1 }):Play()
-                TweenService:Create(Window.Settings._label, tiNorm, { TextTransparency = 0.45 }):Play()
+                TweenService:Create(Window.Settings._label, tiNorm, {
+                    TextColor3 = Library.Scheme.TabInactiveText,
+                }):Play()
                 if Window.Settings._bar then
                     TweenService:Create(Window.Settings._bar, tiFast, { Size = UDim2.fromOffset(0, 14) }):Play()
                 end
@@ -7850,14 +7992,30 @@ Library.ParticlesEnabled = true
             for _, t in pairs(Window.Tabs) do
                 if t ~= tab then
                     TweenService:Create(t._btn,   tiNorm, { BackgroundTransparency = 1 }):Play()
-                    TweenService:Create(t._label, tiNorm, { TextTransparency = 0.45 }):Play()
+                    TweenService:Create(t._label, tiNorm, {
+                        TextColor3 = Library.Scheme.TabInactiveText,
+                    }):Play()
                     TweenService:Create(t._bar,   tiFast, { Size = UDim2.fromOffset(0, 14) }):Play()
+                    if t._iconGlow then
+                        TweenService:Create(t._iconGlow, tiNorm, { ImageTransparency = 1 }):Play()
+                    end
+                    if t._iconImg then
+                        TweenService:Create(t._iconImg, tiNorm, { ImageTransparency = 0.45 }):Play()
+                    end
                 end
             end
 
-            TweenService:Create(tabBtn,      tiNorm, { BackgroundTransparency = 0.88 }):Play()
-            TweenService:Create(tabBtnLabel, tiNorm, { TextTransparency = 0 }):Play()
+            TweenService:Create(tabBtn,      tiNorm, { BackgroundTransparency = 0 }):Play()
+            TweenService:Create(tabBtnLabel, tiNorm, {
+                TextColor3 = Library.Scheme.TabActiveText,
+            }):Play()
             TweenService:Create(activeBar,   tiFast, { Size = UDim2.fromOffset(3, 18) }):Play()
+            if iconGlow then
+                TweenService:Create(iconGlow, tiNorm, { ImageTransparency = 0.55 }):Play()
+            end
+            if iconImg then
+                TweenService:Create(iconImg, tiNorm, { ImageTransparency = 0 }):Play()
+            end
 
             showTabContent(tab, prev)
             Library.ActiveTab = tab
@@ -7869,21 +8027,23 @@ Library.ParticlesEnabled = true
             if Window.ActiveTab ~= tab then
                 TweenService:Create(tabBtnLabel,
                     TweenInfo.new(0.1, Enum.EasingStyle.Quad),
-                    { TextTransparency = 0.2 }):Play()
+                    { TextColor3 = Library.Scheme.TabActiveText }):Play()
             end
         end)
         windowMaid:Connect(tabBtn.MouseLeave, function()
             if Window.ActiveTab ~= tab then
                 TweenService:Create(tabBtnLabel,
                     TweenInfo.new(0.1, Enum.EasingStyle.Quad),
-                    { TextTransparency = 0.5 }):Play()
+                    { TextColor3 = Library.Scheme.TabInactiveText }):Play()
             end
         end)
 
-        tab._btn   = tabBtn
-        tab._label = tabBtnLabel
-        tab._bar   = activeBar
-        tab.Show   = showTab
+        tab._btn      = tabBtn
+        tab._label    = tabBtnLabel
+        tab._bar      = activeBar
+        tab._iconGlow = iconGlow
+        tab._iconImg  = iconImg
+        tab.Show      = showTab
 
         -- AddGroupbox for tab
         function tab:AddGroupbox(gbInfo)
@@ -7896,67 +8056,53 @@ Library.ParticlesEnabled = true
             end
             refreshColumnLayout()
 
-            local boxHolder = New("Frame", {
-                BackgroundColor3 = "SurfaceColor",
-                BackgroundTransparency = 0.4,
+            -- Outer wrapper: title row ABOVE the card, then the card itself.
+            -- Kept as a single child of the scroll column so the existing
+            -- UIListLayout there still spaces one "card unit" per groupbox.
+            local outer = New("Frame", {
+                BackgroundTransparency = 1,
                 Size = UDim2.new(1, 0, 0, 0),
                 AutomaticSize = Enum.AutomaticSize.Y,
                 Parent = scroll,
             })
-            New("UICorner", { CornerRadius = UDim.new(0, Tokens.RadiusMD), Parent = boxHolder })
-            New("UIStroke", {
-                Color = "BorderColor",
-                Thickness = 1,
-                Transparency = 0.4,
-                Parent = boxHolder,
+            New("UIListLayout", {
+                Padding = UDim.new(0, Tokens.V2.CardTextGap),
+                SortOrder = Enum.SortOrder.LayoutOrder,
+                Parent = outer,
             })
 
-            -- Header row
-            local header = New("Frame", {
+            -- Title — sits above the card, not inside it
+            local titleLabel = New("TextLabel", {
+                LayoutOrder = 1,
                 BackgroundTransparency = 1,
-                Size = UDim2.new(1, 0, 0, 32),
-                Parent = boxHolder,
-            })
-            -- Accent left bar on header
-            New("Frame", {
-                BackgroundColor3 = "AccentColor",
-                Position = UDim2.fromOffset(-9, 7.5),
-                Size     = UDim2.fromOffset(3, 16),
-                ZIndex   = boxHolder.ZIndex + 1,
-                Parent   = header,
-            })
-            New("UICorner", { CornerRadius = UDim.new(1, 0),
-                Parent = header:FindFirstChildOfClass("Frame") })
-            New("UIPadding", {
-                PaddingLeft = UDim.new(0, 14), PaddingRight = UDim.new(0, 8),
-                Parent = header,
-            })
-            New("TextLabel", {
-                BackgroundTransparency = 1,
-                Size = UDim2.fromScale(1, 1),
+                Size = UDim2.new(1, 0, 0, 16),
                 Text = gbInfo.Name or "",
                 TextSize = Tokens.FontSize.SM,
                 FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json",
                     Enum.FontWeight.SemiBold, Enum.FontStyle.Normal),
-                TextColor3 = "TextSecondary",
+                TextColor3 = "CardText",
                 TextXAlignment = Enum.TextXAlignment.Left,
-                Parent = header,
+                Visible = (gbInfo.Name or "") ~= "",
+                Parent = outer,
             })
 
-            -- Divider under header
-            New("Frame", {
-                AnchorPoint = Vector2.new(0, 0),
-                BackgroundColor3 = "BorderColor",
-                BackgroundTransparency = 0.5,
-                Position = UDim2.fromOffset(0, 32),
-                Size = UDim2.new(1, 0, 0, 1),
+            local boxHolder = New("Frame", {
+                LayoutOrder = 2,
+                BackgroundColor3 = "CardBackground",
+                Size = UDim2.new(1, 0, 0, 0),
+                AutomaticSize = Enum.AutomaticSize.Y,
+                Parent = outer,
+            })
+            New("UICorner", { CornerRadius = UDim.new(0, Tokens.RadiusMD), Parent = boxHolder })
+            New("UIStroke", {
+                Color = "CardOutline",
+                Thickness = 1,
                 Parent = boxHolder,
             })
 
-            -- Content
+            -- Content (card body — title now lives outside, so content starts at the top)
             local gbContainer = New("Frame", {
                 BackgroundTransparency = 1,
-                Position = UDim2.fromOffset(0, 33),
                 Size = UDim2.new(1, 0, 0, 0),
                 AutomaticSize = Enum.AutomaticSize.Y,
                 Parent = boxHolder,
@@ -7964,8 +8110,8 @@ Library.ParticlesEnabled = true
             New("UIPadding", {
                 PaddingLeft   = UDim.new(0, 10),
                 PaddingRight  = UDim.new(0, 10),
-                PaddingTop    = UDim.new(0, 7),
-                PaddingBottom = UDim.new(0, 9),
+                PaddingTop    = UDim.new(0, Tokens.V2.ElementPaddingV),
+                PaddingBottom = UDim.new(0, Tokens.V2.ElementPaddingV),
                 Parent = gbContainer,
             })
             New("UIListLayout", {
@@ -7979,6 +8125,7 @@ Library.ParticlesEnabled = true
                 DependencyBoxes = {},
                 Container       = gbContainer,
                 BoxHolder       = boxHolder,
+                TitleLabel      = titleLabel,
                 Visible         = true,
             }, BaseGroupbox)
 
@@ -7987,7 +8134,7 @@ Library.ParticlesEnabled = true
                     if not gbContainer or not gbContainer.Parent then return end
                     local list = gbContainer:FindFirstChildOfClass("UIListLayout")
                     if list then
-                        gbContainer.Size = UDim2.new(1, 0, 0, list.AbsoluteContentSize.Y + 16)
+                        gbContainer.Size = UDim2.new(1, 0, 0, list.AbsoluteContentSize.Y + Tokens.V2.ElementPaddingV * 2)
                     end
                 end)
             end
