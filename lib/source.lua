@@ -355,7 +355,7 @@ local Tokens = {
     V2 = {
         TabHeight         = 30,
         ElementHeight     = 30,
-        ToggleSize        = 15,   -- track length (toggle is square-ish, length = height)
+        ToggleSize        = 24,   -- track length (toggle is square-ish, length = height)
         TogglePillRadius  = 6,
         SliderLineLength  = 85,
         SliderPillRadius  = 5,
