@@ -355,7 +355,7 @@ local Tokens = {
     V2 = {
         TabHeight         = 30,
         ElementHeight     = 30,
-        ToggleSize        = 30,   -- track length (toggle is square-ish, length = height)
+        ToggleSize        = 15,   -- track length (toggle is square-ish, length = height)
         TogglePillRadius  = 6,
         SliderLineLength  = 85,
         SliderPillRadius  = 5,
@@ -4976,7 +4976,7 @@ function BaseGroupbox:AddButton(idx, info)
     local btn = New("TextButton", {
         BackgroundColor3 = bg,
         BackgroundTransparency = bgT,
-        Size     = UDim2.new(1, 0, 0, 14),
+        Size     = UDim2.new(1, 0, 0, 22),
         Text     = info.Text,
         TextColor3 = tc,
         TextSize = Tokens.FontSize.MD,
