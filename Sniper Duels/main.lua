@@ -145,7 +145,9 @@ local state = {
     },
     debugShotCount = 0,
     debugLastShot = 0,
-    trajectoryLines = {}
+    trajectoryLines = {},
+    hrpHistory = {},
+    silentAimHooked = false
 }
 
 local MAX_TRAJECTORIES = 10
@@ -338,8 +340,9 @@ local function IsPositionVisible(position, character)
     rayParams.FilterType = Enum.RaycastFilterType.Exclude
     rayParams.FilterDescendantsInstances = ignoreList
     
-    local direction = position - Camera.CFrame.Position
-    local result = Workspace:Raycast(Camera.CFrame.Position, direction, rayParams)
+    local origin = Camera.CFrame.Position + Camera.CFrame.LookVector * 0.1
+    local direction = position - origin
+    local result = Workspace:Raycast(origin, direction, rayParams)
     return not result or result.Instance:IsDescendantOf(character)
 end
 
@@ -349,29 +352,88 @@ local function IsPartVisible(part, character, visCheck)
 end
 
 -- ========================================================
--- FOOLPROOF PREDICTION FOR SILENT AIM
+-- FOOLPROOF PREDICTION (HRP-BASED, SMOOTHED, HORIZONTAL)
 -- ========================================================
 local function GetPredictedPosition(part, character)
     local hrp = character:FindFirstChild("HumanoidRootPart")
     if not hrp then return part.Position end
     
     local currentPos = part.Position
-    local velocity = hrp.AssemblyLinearVelocity
+    local hrpPos = hrp.Position
+    local now = tick()
     
-    local currentVisible = IsPositionVisible(currentPos, character)
+    if not state.hrpHistory[character] then
+        state.hrpHistory[character] = {
+            lastPos = hrpPos,
+            lastTime = now,
+            smoothedVel = Vector3.zero
+        }
+        return IsPositionVisible(currentPos, character) and currentPos or nil
+    end
     
-    if velocity.Magnitude < 2 then
-        return currentVisible and currentPos or nil
+    local history = state.hrpHistory[character]
+    local dt = now - history.lastTime
+    
+    if dt < 0.016 then
+        local vel = history.smoothedVel
+        if vel.Magnitude < 1 then
+            return IsPositionVisible(currentPos, character) and currentPos or nil
+        end
+        
+        local predictionTime = math.clamp(state.currentPing / 1000 * 1.2, 0.03, 0.2)
+        local offset = part.Position - hrpPos
+        local predictedHRP = hrpPos + (vel * predictionTime)
+        local predictedPos = predictedHRP + offset
+        
+        if IsPositionVisible(predictedPos, character) then
+            return predictedPos
+        end
+        
+        if IsPositionVisible(currentPos, character) then
+            return currentPos
+        end
+        
+        return nil
+    end
+    
+    local rawVel = (hrpPos - history.lastPos) / dt
+    local horizontalVel = Vector3.new(rawVel.X, 0, rawVel.Z)
+    local smoothedVel = history.smoothedVel * 0.9 + horizontalVel * 0.1
+    
+    if math.abs(rawVel.Y) > 5 then
+        smoothedVel = Vector3.new(smoothedVel.X, rawVel.Y, smoothedVel.Z)
+    end
+    
+    history.lastPos = hrpPos
+    history.lastTime = now
+    history.smoothedVel = smoothedVel
+    
+    if #state.hrpHistory > 20 then
+        local toRemove = {}
+        for char, _ in pairs(state.hrpHistory) do
+            if not char.Parent then
+                table.insert(toRemove, char)
+            end
+        end
+        for _, char in ipairs(toRemove) do
+            state.hrpHistory[char] = nil
+        end
+    end
+    
+    if smoothedVel.Magnitude < 1 then
+        return IsPositionVisible(currentPos, character) and currentPos or nil
     end
     
     local predictionTime = math.clamp(state.currentPing / 1000 * 1.2, 0.03, 0.2)
-    local predictedPos = currentPos + (velocity * predictionTime)
+    local offset = part.Position - hrpPos
+    local predictedHRP = hrpPos + (smoothedVel * predictionTime)
+    local predictedPos = predictedHRP + offset
     
     if IsPositionVisible(predictedPos, character) then
         return predictedPos
     end
     
-    if currentVisible then
+    if IsPositionVisible(currentPos, character) then
         return currentPos
     end
     
@@ -749,9 +811,13 @@ local function ProcessLegitAimbot()
 end
 
 -- ========================================================
--- SILENT AIM HOOK (WITH TRAJECTORIES)
+-- SILENT AIM HOOK (LAZY LOADED - ONLY WHEN ENABLED)
 -- ========================================================
-local function SetupSilentAim()
+local silentAimOrig = nil
+
+local function EnableSilentAim()
+    if state.silentAimHooked then return end
+    
     local s, gunMod = pcall(function()
         return require(ReplicatedStorage.Modules.Controllers.WeaponController.Gun)
     end)
@@ -765,9 +831,8 @@ local function SetupSilentAim()
     local fireFunc = theTable[12]
     if type(fireFunc) ~= "function" then return end
     
-    local orig
     s = pcall(function()
-        orig = hookfunction(fireFunc, newcclosure(function(...)
+        silentAimOrig = hookfunction(fireFunc, newcclosure(function(...)
             local args = {...}
             
             -- Ragebot
@@ -783,8 +848,8 @@ local function SetupSilentAim()
                             args[6] = tgt
                             
                             if config.Visuals.Trajectories then
-                                local screenFrom, _ = Camera:WorldToViewportPoint(Camera.CFrame.Position)
-                                local screenTo, _ = Camera:WorldToViewportPoint(predictedPos)
+                                local screenFrom = Camera:WorldToViewportPoint(Camera.CFrame.Position)
+                                local screenTo = Camera:WorldToViewportPoint(predictedPos)
                                 if screenFrom and screenTo then
                                     CreateTrajectory(
                                         Vector2.new(screenFrom.X, screenFrom.Y),
@@ -794,7 +859,7 @@ local function SetupSilentAim()
                                 end
                             end
                             
-                            return orig(unpack(args))
+                            return silentAimOrig(unpack(args))
                         end
                     end
                 end
@@ -810,8 +875,8 @@ local function SetupSilentAim()
                         args[6] = tgt
                         
                         if config.Visuals.Trajectories then
-                            local screenFrom, _ = Camera:WorldToViewportPoint(Camera.CFrame.Position)
-                            local screenTo, _ = Camera:WorldToViewportPoint(tgt.Position)
+                            local screenFrom = Camera:WorldToViewportPoint(Camera.CFrame.Position)
+                            local screenTo = Camera:WorldToViewportPoint(tgt.Position)
                             if screenFrom and screenTo then
                                 CreateTrajectory(
                                     Vector2.new(screenFrom.X, screenFrom.Y),
@@ -828,12 +893,20 @@ local function SetupSilentAim()
                 end
             end
             
-            return orig(unpack(args))
+            return silentAimOrig(unpack(args))
         end))
     end)
+    
+    if s then
+        state.silentAimHooked = true
+    end
 end
 
-pcall(SetupSilentAim)
+local function CheckAndHookSilentAim()
+    if (config.Legit.SilentAim.Enabled or config.Rage.Enabled) and not state.silentAimHooked then
+        EnableSilentAim()
+    end
+end
 
 -- ========================================================
 -- ESP
@@ -1019,7 +1092,10 @@ local LegitSilentAimBox = LegitTab:AddGroupbox({ Name = "Silent Aim", Side = 1 }
 LegitSilentAimBox:AddToggle("LegitSilentAimEnabled", {
     Text     = "Enabled",
     Default  = config.Legit.SilentAim.Enabled,
-    Callback = function(v) config.Legit.SilentAim.Enabled = v end,
+    Callback = function(v) 
+        config.Legit.SilentAim.Enabled = v
+        CheckAndHookSilentAim()
+    end,
 })
 LegitSilentAimBox:AddDropdown("LegitSilentAimTarget", {
     Text     = "Target",
@@ -1133,7 +1209,10 @@ local RageMainBox = RageTab:AddGroupbox({ Name = "Ragebot", Side = 1 })
 RageMainBox:AddToggle("RageEnabled", {
     Text     = "Enabled",
     Default  = config.Rage.Enabled,
-    Callback = function(v) config.Rage.Enabled = v end,
+    Callback = function(v) 
+        config.Rage.Enabled = v
+        CheckAndHookSilentAim()
+    end,
 })
 RageMainBox:AddToggle("RageTeamCheck", {
     Text     = "Team Check",
