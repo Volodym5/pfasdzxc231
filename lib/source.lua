@@ -55,12 +55,12 @@
 
     ── 4. SLIDER ────────────────────────────────────────────────────────────────
         Box:AddSlider("mySlider", {
-            Text     = "Walk Speed",
+            Text     = "example",
             Default  = 16,
             Min      = 0,
             Max      = 100,
             Rounding = 0,           -- decimal places (0 = integer)
-            Suffix   = " studs",    -- optional unit label shown after value
+            Suffix   = " x",    -- optional unit label shown after value
             Disabled = false,
             Callback = function(value)
                 print("Slider value:", value)
@@ -89,7 +89,7 @@
 
     ── 6. COLOR PICKER ──────────────────────────────────────────────────────────
         Box:AddColorPicker("myColor", {
-            Text     = "Highlight Color",
+            Text     = "Color",
             Default  = Color3.fromRGB(108, 82, 246),
             Callback = function(color)
                 print("Color changed:", color)
@@ -138,10 +138,10 @@
     ── 9. MULTI-DROPDOWN ────────────────────────────────────────────────────────
         Box:AddDropdown("myMulti", {
             Text   = "Select Features",
-            Values = { "Aimbot", "ESP", "Wallhack", "Speedhack" },
+            Values = { "a", "b", "c", "d" },
             Multi  = true,          -- enables multi-select mode
             Callback = function(selectedTable)
-                -- selectedTable is a dict: { ["ESP"] = true, ... }
+                -- selectedTable is a dict: { ["b"] = true, ... }
                 for name, enabled in pairs(selectedTable) do
                     print(name, enabled)
                 end
@@ -149,7 +149,7 @@
         })
 
         -- Default selection must be set manually for Multi dropdowns:
-        UI.Options.myMulti:SetValue("ESP")
+        UI.Options.myMulti:SetValue("b")
 
         -- Read current selections:
         for name, enabled in pairs(UI.Options.myMulti.Value) do
@@ -189,7 +189,7 @@
     ── 14. TABBOX (sub-tabs inside a groupbox) ──────────────────────────────────
         local TBox   = Tab:AddTabbox({ Side = 2 })
         local SubTab = TBox:AddTab("Combat")
-        SubTab:AddToggle("aimbot", { Text = "Aimbot", Default = false, Callback = function() end })
+        SubTab:AddToggle("x", { Text = "x", Default = false, Callback = function() end })
 
     ── 15. CONFIGS ──────────────────────────────────────────────────────────────
     Configs save all toggles, sliders, dropdowns, color pickers, keybinds and
