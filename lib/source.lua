@@ -363,7 +363,7 @@ local Tokens = {
         CardTextGap       = 10,
         ElementPaddingV   = 10,   -- top/bottom
         SliderValueBox    = Vector2.new(40, 20),
-        DropdownSize      = Vector2.new(100, 25),
+        DropdownSize      = Vector2.new(100, 20),
         TabWidth          = 175,
         HeaderHeight      = 45,
         GapDividerToCards = 10,
@@ -3977,7 +3977,8 @@ function BaseGroupbox:AddToggle(idx, info)
         Parent = holder,
     })
 
-    -- Switch track — sized per V2 spec (30 length)
+    -- Switch track — sized per V2 spec (shrunk from 30 to 20 so the pill
+    -- radius reads as a near-circle instead of a barely-rounded square)
     local TOGGLE_LEN = Tokens.V2.ToggleSize
     local PILL_R     = Tokens.V2.TogglePillRadius
     local track = New("Frame", {
@@ -3994,7 +3995,7 @@ function BaseGroupbox:AddToggle(idx, info)
         Parent = track,
     })
 
-    -- Knob — pill radius 6 per spec (not fully circular)
+    -- Knob — pill radius 6 per spec
     local knob = New("Frame", {
         BackgroundColor3 = "ToggleInactivePill",
         Size     = UDim2.fromScale(1, 1),
@@ -7326,13 +7327,14 @@ function Library:CreateWindow(info)
     })
     frostGrad.Parent = frostLayer2
 
-    -- ── Particle Network Field ──────────────────────────────────────────
+    -- ── Ambient Particle Field ───────────────────────────────────────────
     --[[
-        Connected-dots network effect: dots drift around and thin lines are
-        drawn between any two dots closer than CONNECT_DIST px. Line opacity
-        scales with proximity (closer = more opaque). Runs on Heartbeat so
-        positions and lines update every frame. Everything is destroyed (not
-        just hidden) when the menu closes or particles are toggled off.
+        Simple floating dots: each drifts slowly in a fixed direction and
+        fades in/out over a lifecycle, wrapping to a new random position
+        when it finishes fading out. No pairwise distance checks, no
+        rotation math — just per-dot position + alpha updates on Heartbeat.
+        Cheap, reliable, and matches the spec's "subtle, no visual noise"
+        guidance much better than a connected-dot network would.
     ]]
     local particleField = New("Frame", {
         BackgroundTransparency = 1,
@@ -7342,124 +7344,93 @@ function Library:CreateWindow(info)
         Parent           = mainFrame,
     })
 
-    local PARTICLE_COUNT = 40       -- number of dots
-    local CONNECT_DIST   = 120      -- px — max distance to draw a line
-    local DOT_SPEED      = 28       -- px/s base speed
+    local PARTICLE_COUNT = 22       -- number of dots
+    local DOT_SPEED_MIN  = 6        -- px/s
+    local DOT_SPEED_MAX  = 16       -- px/s
     local DOT_MIN_SIZE   = 2
-    local DOT_MAX_SIZE   = 4
-    local DOT_ALPHA      = 0.55     -- dot transparency (lower = more visible)
-    local LINE_MAX_ALPHA = 0.72     -- line transparency at closest distance
+    local DOT_MAX_SIZE   = 3
+    local DOT_MAX_ALPHA  = 0.6      -- peak transparency target (1 = invisible)
+    local FADE_IN_T      = 1.4      -- seconds to fade in
+    local FADE_OUT_T     = 1.8      -- seconds to fade out
+    local LIFETIME_MIN   = 6        -- seconds visible before fading out
+    local LIFETIME_MAX   = 12
 
     local _particlesSpawned = false
     local _heartbeatConn    = nil
-    local _dots             = {}    -- { inst, x, y, vx, vy, size }
-    local _lines            = {}    -- pool of line frames
+    local _dots             = {}    -- { inst, x, y, vx, vy, age, life, fadeOutAt }
 
-    -- Line pool: reuse frames instead of creating/destroying every frame
-    local function getLine()
-        for _, l in ipairs(_lines) do
-            if not l._inUse then
-                l._inUse = true
-                l.inst.Visible = true
-                return l
-            end
-        end
-        -- Allocate a new one
-        local inst = New("Frame", {
-            AnchorPoint      = Vector2.new(0, 0.5),
-            BackgroundColor3 = "AccentColor",
-            BorderSizePixel  = 0,
-            ZIndex           = particleField.ZIndex,
-            Parent           = particleField,
-        })
-        local l = { inst = inst, _inUse = true }
-        table.insert(_lines, l)
-        return l
-    end
-
-    local function returnLines()
-        for _, l in ipairs(_lines) do
-            l._inUse = false
-            l.inst.Visible = false
-        end
+    local function resetDot(d, w, h, freshSpawn)
+        d.x   = math.random() * w
+        d.y   = math.random() * h
+        local ang = math.random() * math.pi * 2
+        local spd = DOT_SPEED_MIN + math.random() * (DOT_SPEED_MAX - DOT_SPEED_MIN)
+        d.vx  = math.cos(ang) * spd
+        d.vy  = math.sin(ang) * spd
+        d.age = 0
+        d.life = LIFETIME_MIN + math.random() * (LIFETIME_MAX - LIFETIME_MIN)
+        -- Stagger initial fade-in so dots don't all pulse in sync
+        d.fadeDelay = freshSpawn and (math.random() * (FADE_IN_T + d.life)) or 0
+        d.inst.Position = UDim2.fromOffset(d.x, d.y)
     end
 
     local function spawnParticles()
         if _particlesSpawned then return end
         _particlesSpawned = true
 
-        local w = mainFrame.AbsoluteSize.X
-        local h = mainFrame.AbsoluteSize.Y
+        local w = math.max(mainFrame.AbsoluteSize.X, 100)
+        local h = math.max(mainFrame.AbsoluteSize.Y, 100)
 
-        -- Create dots
         for i = 1, PARTICLE_COUNT do
-            local sz  = math.random(DOT_MIN_SIZE, DOT_MAX_SIZE)
-            local spd = DOT_SPEED * (0.6 + math.random() * 0.8)
-            local ang = math.random() * math.pi * 2
+            local sz = math.random(DOT_MIN_SIZE, DOT_MAX_SIZE)
             local inst = New("Frame", {
                 BackgroundColor3       = "AccentColor",
-                BackgroundTransparency = DOT_ALPHA,
+                BackgroundTransparency = 1,
                 Size     = UDim2.fromOffset(sz, sz),
-                Position = UDim2.fromOffset(math.random() * w, math.random() * h),
                 ZIndex   = particleField.ZIndex + 1,
                 Parent   = particleField,
             })
             New("UICorner", { CornerRadius = UDim.new(1, 0), Parent = inst })
-            _dots[i] = {
-                inst = inst,
-                x    = math.random() * w,
-                y    = math.random() * h,
-                vx   = math.cos(ang) * spd,
-                vy   = math.sin(ang) * spd,
-                size = sz,
-            }
+            local d = { inst = inst, size = sz }
+            resetDot(d, w, h, true)
+            _dots[i] = d
         end
 
-        -- Heartbeat: move dots + redraw lines every frame
         _heartbeatConn = RunService.Heartbeat:Connect(function(dt)
             if not mainFrame or not mainFrame.Parent then return end
-
             local fw = mainFrame.AbsoluteSize.X
             local fh = mainFrame.AbsoluteSize.Y
             if fw < 10 or fh < 10 then return end
 
-            -- Move dots, bounce off edges
             for _, d in ipairs(_dots) do
-                d.x = d.x + d.vx * dt
-                d.y = d.y + d.vy * dt
-                -- Bounce
-                if d.x < 0       then d.x = 0;        d.vx = math.abs(d.vx)  end
-                if d.x > fw      then d.x = fw;        d.vx = -math.abs(d.vx) end
-                if d.y < 0       then d.y = 0;         d.vy = math.abs(d.vy)  end
-                if d.y > fh      then d.y = fh;        d.vy = -math.abs(d.vy) end
-                -- Apply position
-                d.inst.Position = UDim2.fromOffset(d.x - d.size * 0.5, d.y - d.size * 0.5)
-            end
+                if d.fadeDelay and d.fadeDelay > 0 then
+                    d.fadeDelay = d.fadeDelay - dt
+                else
+                    d.fadeDelay = nil
+                    d.age = d.age + dt
 
-            -- Draw lines between close pairs
-            returnLines()
-            local n = #_dots
-            for i = 1, n - 1 do
-                local a = _dots[i]
-                for j = i + 1, n do
-                    local b  = _dots[j]
-                    local dx = b.x - a.x
-                    local dy = b.y - a.y
-                    local dist = math.sqrt(dx * dx + dy * dy)
-                    if dist < CONNECT_DIST then
-                        local alpha = LINE_MAX_ALPHA + (1 - LINE_MAX_ALPHA) * (dist / CONNECT_DIST)
-                        local l = getLine()
-                        local angle = math.deg(math.atan2(dy, dx))
-                        l.inst.Position            = UDim2.fromOffset(a.x, a.y)
-                        l.inst.Size                = UDim2.fromOffset(dist, 1)
-                        l.inst.Rotation            = angle
-                        l.inst.BackgroundTransparency = alpha
+                    -- Drift, wrapping around the edges (no bounce math needed)
+                    d.x = (d.x + d.vx * dt) % fw
+                    d.y = (d.y + d.vy * dt) % fh
+                    d.inst.Position = UDim2.fromOffset(d.x - d.size * 0.5, d.y - d.size * 0.5)
+
+                    -- Fade in, hold, fade out, then respawn elsewhere
+                    local alpha
+                    if d.age < FADE_IN_T then
+                        alpha = 1 - (d.age / FADE_IN_T) * (1 - DOT_MAX_ALPHA)
+                    elseif d.age < d.life then
+                        alpha = DOT_MAX_ALPHA
+                    elseif d.age < d.life + FADE_OUT_T then
+                        local t = (d.age - d.life) / FADE_OUT_T
+                        alpha = DOT_MAX_ALPHA + t * (1 - DOT_MAX_ALPHA)
+                    else
+                        resetDot(d, fw, fh, false)
+                        alpha = 1
                     end
+                    d.inst.BackgroundTransparency = alpha
                 end
             end
         end)
 
-        -- clearParticles handles disconnect; also register with maid for safety
         windowMaid:Give(function() if _heartbeatConn then _heartbeatConn:Disconnect() end end)
     end
 
@@ -7472,10 +7443,6 @@ function Library:CreateWindow(info)
             if d.inst and d.inst.Parent then d.inst:Destroy() end
         end
         _dots = {}
-        for _, l in ipairs(_lines) do
-            if l.inst and l.inst.Parent then l.inst:Destroy() end
-        end
-        _lines = {}
         _particlesSpawned = false
     end
 
@@ -8059,9 +8026,12 @@ function Library:CreateWindow(info)
             -- Outer wrapper: title row ABOVE the card, then the card itself.
             -- Kept as a single child of the scroll column so the existing
             -- UIListLayout there still spaces one "card unit" per groupbox.
+            -- Fixed width per spec (220px) — cards do NOT stretch to fill
+            -- the column, which was making everything inside them
+            -- (buttons especially) look oversized.
             local outer = New("Frame", {
                 BackgroundTransparency = 1,
-                Size = UDim2.new(1, 0, 0, 0),
+                Size = UDim2.new(0, Tokens.V2.CardWidth, 0, 0),
                 AutomaticSize = Enum.AutomaticSize.Y,
                 Parent = scroll,
             })
@@ -8071,11 +8041,13 @@ function Library:CreateWindow(info)
                 Parent = outer,
             })
 
-            -- Title — sits above the card, not inside it
+            -- Title — sits above the card, not inside it.
+            -- Nudged 5px down / 4px right per feedback.
             local titleLabel = New("TextLabel", {
                 LayoutOrder = 1,
                 BackgroundTransparency = 1,
-                Size = UDim2.new(1, 0, 0, 16),
+                Position = UDim2.fromOffset(4, 5),
+                Size = UDim2.new(1, -4, 0, 16),
                 Text = gbInfo.Name or "",
                 TextSize = Tokens.FontSize.SM,
                 FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json",
