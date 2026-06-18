@@ -77,6 +77,8 @@ local config = {
         ShootDelay = 0.01,
         SpawnProtectionTime = 2.5,
         AutoShoot = true,
+        AutoScope = false,
+        ScopeDelay = 0.05,
         HitboxMultiplier = 1.2,
         DynamicPrediction = true,
         PingUpdateInterval = 0.1
@@ -125,6 +127,7 @@ local state = {
     aimStartTime = 0,
     rageActive = false,
     rageLastFire = 0,
+    rageScoped = false,
     silentFovTrackTarget = nil,
     silentFovTrackPart = nil,
     silentFovTrackTime = 0,
@@ -656,7 +659,7 @@ local function UpdateSilentFOVTracking()
 end
 
 -- ========================================================
--- RAGEBOT
+-- RAGEBOT (WITH AUTO SCOPE)
 -- ========================================================
 local function HandleRagebot(Window)
     if not config.Rage.Enabled then
@@ -681,6 +684,14 @@ local function HandleRagebot(Window)
     
     if config.Rage.AutoShoot then
         if now - state.rageLastFire > config.Rage.ShootDelay then
+            
+            -- Auto Scope - hold right mouse button
+            if config.Rage.AutoScope and not state.isAiming then
+                VIM:SendMouseButtonEvent(1, 0, 0, true, game, 0)
+                task.wait(config.Rage.ScopeDelay)
+                state.rageScoped = true
+            end
+            
             state.rageLastFire = now
             state.debugShotCount = state.debugShotCount + 1
             
@@ -691,9 +702,17 @@ local function HandleRagebot(Window)
                 end)
             end
             
-            VIM:SendMouseButtonEvent(0, 0, 0, true, game, 0)
+            -- Shoot
+            VIM:SendMouseButtonEvent(1, 0, 0, true, game, 0)
             task.wait(0.01)
-            VIM:SendMouseButtonEvent(0, 0, 0, false, game, 0)
+            VIM:SendMouseButtonEvent(1, 0, 0, false, game, 0)
+            
+            -- Release scope if we activated it
+            if state.rageScoped then
+                task.wait(0.05)
+                VIM:SendMouseButtonEvent(1, 0, 0, false, game, 0)
+                state.rageScoped = false
+            end
         end
     end
 end
@@ -1064,7 +1083,7 @@ end)
 -- ========================================================
 local Window = UI:CreateWindow({
     Title          = "nexus.gg",
-    Size           = UDim2.fromOffset(520, 540),
+    Size           = UDim2.fromOffset(520, 560),
     Center         = true,
     Resizable      = true,
     ToggleKeybind  = Enum.KeyCode.RightShift,
@@ -1243,6 +1262,19 @@ RageMainBox:AddToggle("RageAutoShoot", {
     Default  = config.Rage.AutoShoot,
     Callback = function(v) config.Rage.AutoShoot = v end,
 })
+RageMainBox:AddToggle("RageAutoScope", {
+    Text     = "Auto Scope",
+    Default  = config.Rage.AutoScope,
+    Callback = function(v) config.Rage.AutoScope = v end,
+})
+RageMainBox:AddSlider("RageScopeDelay", {
+    Text     = "Scope Delay (ms)",
+    Default  = config.Rage.ScopeDelay * 1000,
+    Min      = 0,
+    Max      = 200,
+    Rounding = 0,
+    Callback = function(v) config.Rage.ScopeDelay = v / 1000 end,
+})
 RageMainBox:AddSlider("RageShootDelay", {
     Text     = "Fire Rate (ms)",
     Default  = config.Rage.ShootDelay * 1000,
@@ -1416,3 +1448,5 @@ LocalPlayer.CharacterAdded:Connect(function()
     state.team = GetTeam()
 end)
 state.team = GetTeam()
+
+print("✅ nexus.gg loaded! RightShift to toggle menu")
