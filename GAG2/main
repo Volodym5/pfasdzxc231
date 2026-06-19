@@ -13,6 +13,7 @@ local Window = UI:CreateWindow({
 local player = game.Players.LocalPlayer
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
 local Networking = require(game.ReplicatedStorage.SharedModules.Networking)
 local CollectionService = game:GetService("CollectionService")
 
@@ -57,19 +58,23 @@ local buyGearIndex = 0
 local lastSell = 0
 local sellDelay = 2
 local lastSeedPack = 0
-local seedPackDelay = 0.0002
+local seedPackDelay = 0.005
 local lastAutoBuySeed = 0
 local lastAutoBuyGear = 0
-local autoBuyDelay = 0.05
+local autoBuyDelay = 0.07
 local ignoredSeeds = {}
 
--- Harvest - scan every 4s, collect every 0.1s
+-- Harvest
 local harvestCache = {}
 local lastHarvestScan = 0
 local harvestScanDelay = 4
 local harvestIndex = 0
-local harvestCollectDelay = 0.18
+local harvestSpeed = 50 -- 1-100, higher = faster
 local lastHarvestCollect = 0
+
+-- Steal settings
+local tweenSpeed = 32
+local hoverHeight = 20
 
 local antiCactusEnabled = false
 local noErrorSoundEnabled = false
@@ -161,26 +166,6 @@ local function stopFly()
     end
 end
 
-local function freezeCharacter()
-    local char = player.Character
-    if char then
-        local humanoid = char:FindFirstChild("Humanoid")
-        local root = char:FindFirstChild("HumanoidRootPart")
-        if humanoid then humanoid.PlatformStand = true end
-        if root then root.Anchored = true end
-    end
-end
-
-local function unfreezeCharacter()
-    local char = player.Character
-    if char then
-        local humanoid = char:FindFirstChild("Humanoid")
-        local root = char:FindFirstChild("HumanoidRootPart")
-        if root then root.Anchored = false end
-        if humanoid then humanoid.PlatformStand = false end
-    end
-end
-
 local function isPlotUnlocked(plotNum)
     local plotGui = player.PlayerGui:FindFirstChild("Plot" .. plotNum)
     if plotGui then
@@ -194,35 +179,23 @@ local function isPlotUnlocked(plotNum)
 end
 
 local function getMyPlotMidpoint()
-    local myUserId = player.UserId
     for _, plot in ipairs(workspace.Gardens:GetChildren()) do
-        if plot.Name:find("^Plot%d+$") then
-            local ownerId = plot:GetAttribute("OwnerUserId")
-            if ownerId == myUserId then
-                local visual = plot:FindFirstChild("Visual")
-                if visual then
-                    local col1 = visual:FindFirstChild("PlantAreaColumn1")
-                    local col2 = visual:FindFirstChild("PlantAreaColumn2")
-                    if col1 and col2 and col1:IsA("BasePart") and col2:IsA("BasePart") then
-                        return (col1.Position + col2.Position) / 2
-                    end
+        local owner = plot:GetAttribute("Owner")
+        if owner == player.Name then
+            local visual = plot:FindFirstChild("Visual")
+            if visual then
+                local col1 = visual:FindFirstChild("PlantAreaColumn1")
+                local col2 = visual:FindFirstChild("PlantAreaColumn2")
+                if col1 and col2 and col1:IsA("BasePart") and col2:IsA("BasePart") then
+                    return (col1.Position + col2.Position) / 2
                 end
             end
         end
     end
-    return nil
 end
 
 local function goHome()
-    local char = player.Character
-    if not char then return end
-    local root = char:FindFirstChild("HumanoidRootPart")
-    if not root then return end
-    local homePos = getMyPlotMidpoint()
-    if homePos then
-        root.CFrame = CFrame.new(homePos + Vector3.new(0, 3, 0))
-        root.AssemblyLinearVelocity = Vector3.zero
-    end
+    Networking.TeleportButton.Request:Fire("Garden")
 end
 
 local function collectSeedPack()
@@ -241,7 +214,6 @@ local function collectSeedPack()
     end
 end
 
--- Scan for harvestable fruits
 local function scanHarvest()
     table.clear(harvestCache)
     for _, plot in ipairs(workspace.Gardens:GetChildren()) do
@@ -261,56 +233,43 @@ local function scanHarvest()
     harvestIndex = 0
 end
 
--- Collect one fruit from cache
 local function doHarvest()
     local char = player.Character
     if not char then return end
     local root = char:FindFirstChild("HumanoidRootPart")
     if not root then return end
-    
     if #harvestCache == 0 then return end
-    
     harvestIndex = harvestIndex + 1
-    if harvestIndex > #harvestCache then
-        harvestIndex = 1
-    end
-    
+    if harvestIndex > #harvestCache then harvestIndex = 1 end
     local target = harvestCache[harvestIndex]
     if not target or not target.part or not target.part.Parent then
         table.remove(harvestCache, harvestIndex)
         harvestIndex = harvestIndex - 1
         return
     end
-    
     fireproximityprompt(target.prompt)
     firetouchinterest(root, target.part, 0)
     firetouchinterest(root, target.part, 1)
 end
 
--- Check if plot has fruits worth stealing
+-- Steal functions
 local function plotHasStealableFruits(plot)
     local plants = plot:FindFirstChild("Plants")
     if not plants then return false end
-    
     for _, plant in ipairs(plants:GetChildren()) do
         local userId = plant:GetAttribute("UserId")
         if userId and userId ~= player.UserId then
             local seedName = plant:GetAttribute("SeedName")
             if not seedName or not ignoredSeeds[seedName] then
                 local fruits = plant:FindFirstChild("Fruits")
-                if fruits and #fruits:GetChildren() > 0 then
-                    return true
-                end
-                if plant:FindFirstChild("HarvestPart") then
-                    return true
-                end
+                if fruits and #fruits:GetChildren() > 0 then return true end
+                if plant:FindFirstChild("HarvestPart") then return true end
             end
         end
     end
     return false
 end
 
--- Steal
 local function getUnlockedPlots()
     local myUserId = player.UserId
     local plots = {}
@@ -326,7 +285,11 @@ local function getUnlockedPlots()
                         local col2 = visual:FindFirstChild("PlantAreaColumn2")
                         if col1 and col2 and col1:IsA("BasePart") and col2:IsA("BasePart") then
                             local midPoint = (col1.Position + col2.Position) / 2
-                            table.insert(plots, {plotNum = plotNum, position = midPoint + Vector3.new(0, -7, 0)})
+                            table.insert(plots, {
+                                plotNum = plotNum,
+                                position = midPoint + Vector3.new(0, hoverHeight, 0),
+                                plot = plot
+                            })
                         end
                     end
                 end
@@ -341,10 +304,8 @@ local function collectFruitsOnPlot(plot)
     if not char then return end
     local root = char:FindFirstChild("HumanoidRootPart")
     if not root then return end
-    
     local plants = plot:FindFirstChild("Plants")
     if not plants then return end
-    
     for _, plant in ipairs(plants:GetChildren()) do
         local userId = plant:GetAttribute("UserId")
         if userId and userId ~= player.UserId then
@@ -360,9 +321,6 @@ local function collectFruitsOnPlot(plot)
                                 fireproximityprompt(prompt)
                                 firetouchinterest(root, hp, 0)
                                 firetouchinterest(root, hp, 1)
-                                if prompt.HoldDuration > 0 then
-                                    fireproximityprompt(prompt)
-                                end
                             end
                         end
                     end
@@ -374,9 +332,6 @@ local function collectFruitsOnPlot(plot)
                         fireproximityprompt(prompt)
                         firetouchinterest(root, hp, 0)
                         firetouchinterest(root, hp, 1)
-                        if prompt.HoldDuration > 0 then
-                            fireproximityprompt(prompt)
-                        end
                     end
                 end
             end
@@ -384,53 +339,68 @@ local function collectFruitsOnPlot(plot)
     end
 end
 
+local function tweenBoth(root, platform, targetPos, speed)
+    local dist = (targetPos - root.Position).Magnitude
+    local duration = dist / speed
+    local tweenChar = TweenService:Create(root, TweenInfo.new(duration, Enum.EasingStyle.Linear), {CFrame = CFrame.new(targetPos)})
+    local tweenPlatform = TweenService:Create(platform, TweenInfo.new(duration, Enum.EasingStyle.Linear), {CFrame = CFrame.new(targetPos - Vector3.new(0, 3.5, 0))})
+    tweenChar:Play()
+    tweenPlatform:Play()
+    tweenChar.Completed:Wait()
+end
+
 local function doStealCycle()
     local plots = getUnlockedPlots()
     if #plots == 0 then return end
+    
     for i = #plots, 2, -1 do
         local j = math.random(1, i)
         plots[i], plots[j] = plots[j], plots[i]
     end
     
+    local char = player.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+    
+    -- Create platform
+    local platform = Instance.new("Part")
+    platform.Size = Vector3.new(10, 0.5, 10)
+    platform.CFrame = CFrame.new(root.Position - Vector3.new(0, 3.5, 0))
+    platform.Anchored = true
+    platform.CanCollide = true
+    platform.Transparency = 1
+    platform.Parent = workspace
+    
+    -- Go up to hover height
+    tweenBoth(root, platform, root.Position + Vector3.new(0, hoverHeight, 0), tweenSpeed)
+    
+    -- Visit each unlocked plot
     for _, plotData in ipairs(plots) do
         if not stealEnabled then break end
+        if not isPlotUnlocked(plotData.plotNum) then continue end
         
-        local plot = workspace.Gardens:FindFirstChild("Plot" .. plotData.plotNum)
-        if not plot then continue end
+        tweenBoth(root, platform, plotData.position, tweenSpeed)
         
-        local char = player.Character
-        local root = char and char:FindFirstChild("HumanoidRootPart")
-        if not root then break end
+        if not isPlotUnlocked(plotData.plotNum) then continue end
         
-        -- Unfreeze for teleport
-        unfreezeCharacter()
-        task.wait(0.05)
-        
-        -- Teleport to plot
-        root.CFrame = CFrame.new(plotData.position)
-        root.AssemblyLinearVelocity = Vector3.zero
-        task.wait(0.1)
-        
-        -- Freeze at their plot
-        freezeCharacter()
-        
-        -- Sit there for 10 seconds constantly trying to steal
-        local endTime = tick() + 10
+        local endTime = tick() + 7
         while tick() < endTime and stealEnabled do
-            if not isPlotUnlocked(plotData.plotNum) then
-                break
-            end
-            collectFruitsOnPlot(plot)
+            if not isPlotUnlocked(plotData.plotNum) then break end
+            collectFruitsOnPlot(plotData.plot)
             task.wait(0.1)
         end
     end
     
-    -- Unfreeze and go home
-    unfreezeCharacter()
-    task.wait(0.05)
-    if stealEnabled then
-        goHome()
+    -- Go home
+    Networking.TeleportButton.Request:Fire("Garden")
+    task.wait(0.1)
+    
+    local homePos = getMyPlotMidpoint()
+    if homePos then
+        tweenBoth(root, platform, homePos + Vector3.new(0, 3, 0), tweenSpeed)
     end
+    
+    platform:Destroy()
 end
 
 local function doSell()
@@ -459,7 +429,6 @@ local function doAutoBuyGears()
     pcall(function() Networking.GearShop.PurchaseGear:Fire(buyList[buyGearIndex]) end)
 end
 
--- Block error sound
 game.DescendantAdded:Connect(function(obj)
     if noErrorSoundEnabled and obj:IsA("Sound") then
         if obj.SoundId == "rbxassetid://550209561" then
@@ -468,23 +437,20 @@ game.DescendantAdded:Connect(function(obj)
     end
 end)
 
--- Anti Ghost Pepper (cached)
+-- Anti Ghost Pepper
 local function scanGhostPeppers()
     for _, obj in ipairs(CollectionService:GetTagged("GhostPepper")) do
         ghostPepperParts[obj] = true
     end
 end
-
 workspace.DescendantAdded:Connect(function(obj)
     if obj:IsA("BasePart") and CollectionService:HasTag(obj, "GhostPepper") then
         ghostPepperParts[obj] = true
     end
 end)
-
 workspace.DescendantRemoving:Connect(function(obj)
     ghostPepperParts[obj] = nil
 end)
-
 scanGhostPeppers()
 
 local function processGhostPeppers()
@@ -497,23 +463,20 @@ local function processGhostPeppers()
     end
 end
 
--- Anti Dragon (cached)
+-- Anti Dragon
 local function scanDragons()
     for _, obj in ipairs(CollectionService:GetTagged("DragonBreath")) do
         dragonParts[obj] = true
     end
 end
-
 workspace.DescendantAdded:Connect(function(obj)
     if obj:IsA("Model") and CollectionService:HasTag(obj, "DragonBreath") then
         dragonParts[obj] = true
     end
 end)
-
 workspace.DescendantRemoving:Connect(function(obj)
     dragonParts[obj] = nil
 end)
-
 scanDragons()
 
 local function processDragons()
@@ -547,20 +510,21 @@ local function processDragons()
     end
 end
 
+-- Convert harvest speed (1-100) to delay (1.0s - 0.001s)
+local function getHarvestDelay()
+    return 1.0 / harvestSpeed
+end
+
 RunService.Heartbeat:Connect(function()
     local now = tick()
-    
     if harvestEnabled then
         if now - lastHarvestScan > harvestScanDelay then
-            lastHarvestScan = now
-            scanHarvest()
+            lastHarvestScan = now; scanHarvest()
         end
-        if now - lastHarvestCollect > harvestCollectDelay then
-            lastHarvestCollect = now
-            doHarvest()
+        if now - lastHarvestCollect > getHarvestDelay() then
+            lastHarvestCollect = now; doHarvest()
         end
     end
-    
     if sellEnabled and now - lastSell > sellDelay then
         lastSell = now; doSell()
     end
@@ -573,12 +537,8 @@ RunService.Heartbeat:Connect(function()
     if autoBuyGearsEnabled and now - lastAutoBuyGear > autoBuyDelay then
         lastAutoBuyGear = now; doAutoBuyGears()
     end
-    if antiGhostPepperEnabled then
-        processGhostPeppers()
-    end
-    if antiDragonEnabled then
-        processDragons()
-    end
+    if antiGhostPepperEnabled then processGhostPeppers() end
+    if antiDragonEnabled then processDragons() end
     if antiCactusEnabled then
         local char = player.Character
         if char then
@@ -623,17 +583,14 @@ local MainTab = Window:AddTab("Main")
 
 local FarmBox = MainTab:AddGroupbox({ Name = "Auto Farm", Side = 1 })
 FarmBox:AddToggle("Harvest", { Text = "Auto Harvest", Default = false, Callback = function(value) harvestEnabled = value end })
+FarmBox:AddSlider("HarvestSpeed", { Text = "Harvest Speed", Default = 50, Min = 1, Max = 100, Rounding = 0, Callback = function(value) harvestSpeed = value end })
 FarmBox:AddToggle("Sell", { Text = "Auto Sell", Default = false, Callback = function(value) sellEnabled = value end })
+FarmBox:AddSlider("SellDelay", { Text = "Sell Delay (s)", Default = 2, Min = 0.1, Max = 60, Rounding = 1, Callback = function(value) sellDelay = value end })
 FarmBox:AddToggle("SeedPack", { Text = "Auto Seed Pack", Default = false, Callback = function(value) seedPackEnabled = value end })
 
 local StealBox = MainTab:AddGroupbox({ Name = "Steal", Side = 2 })
-StealBox:AddToggle("Steal", { Text = "Auto Steal", Default = false, Risky = false, Callback = function(value) 
-    stealEnabled = value
-    if not value then 
-        unfreezeCharacter()
-        goHome() 
-    end
-end })
+StealBox:AddToggle("Steal", { Text = "Auto Steal", Default = false, Risky = false, Callback = function(value) stealEnabled = value end })
+StealBox:AddSlider("TweenSpeed", { Text = "Tween Speed", Default = 32, Min = 10, Max = 50, Rounding = 0, Callback = function(value) tweenSpeed = value end })
 StealBox:AddDropdown("IgnoreList", { Text = "Ignore List", Values = fruitNames, Multi = true, Callback = function(selected) ignoredSeeds = selected end })
 
 local AntiBox = MainTab:AddGroupbox({ Name = "Anti", Side = 2 })
@@ -644,11 +601,9 @@ AntiBox:AddToggle("NoErrorSound", { Text = "No Error Sound", Default = false, Ca
 
 -- Auto Buy Tab
 local BuyTab = Window:AddTab("Auto Buy")
-
 local SeedBuyBox = BuyTab:AddGroupbox({ Name = "Seeds", Side = 1 })
 SeedBuyBox:AddToggle("AutoBuySeeds", { Text = "Auto Buy Seeds", Default = false, Callback = function(value) autoBuySeedsEnabled = value end })
 SeedBuyBox:AddDropdown("BuySeed", { Text = "Seeds", Values = fruitNames, Multi = true, Callback = function(selected) autoBuySeeds = selected end })
-
 local GearBuyBox = BuyTab:AddGroupbox({ Name = "Gears", Side = 2 })
 GearBuyBox:AddToggle("AutoBuyGears", { Text = "Auto Buy Gears", Default = false, Callback = function(value) autoBuyGearsEnabled = value end })
 GearBuyBox:AddDropdown("BuyGear", { Text = "Gears", Values = gearNames, Multi = true, Callback = function(selected) autoBuyGears = selected end })
@@ -656,7 +611,6 @@ GearBuyBox:AddDropdown("BuyGear", { Text = "Gears", Values = gearNames, Multi = 
 -- Player Tab
 local PlayerTab = Window:AddTab("Player")
 local MovementBox = PlayerTab:AddGroupbox({ Name = "Movement", Side = 1 })
-
 MovementBox:AddToggle("WalkSpeed", { Text = "WalkSpeed", Default = false, Callback = function(value) walkSpeedEnabled = value; if value then startWalkSpeed() else stopWalkSpeed() end end })
 MovementBox:AddSlider("WalkSpeedValue", { Text = "Walk Speed", Default = 24, Min = 16, Max = 200, Rounding = 0, Callback = function(value) walkSpeedValue = value end })
 MovementBox:AddKeyPicker("WalkSpeedKey", { Text = "WalkSpeed", Default = "V", Mode = "Toggle", Callback = function() walkSpeedEnabled = not walkSpeedEnabled; UI.Toggles.WalkSpeed:SetValue(walkSpeedEnabled); if walkSpeedEnabled then startWalkSpeed() else stopWalkSpeed() end end })
