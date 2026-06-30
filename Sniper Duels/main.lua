@@ -9,20 +9,45 @@ local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 local UIS = game:GetService("UserInputService")
 local VIM = game:GetService("VirtualInputManager")
-local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local TweenService = game:GetService("TweenService")
 local Stats = game:GetService("Stats")
 
 -- Load UI library
-local UI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Volodym5/pfasdzxc231/main/lib/source.lua"))()
+local success = pcall(function()
+    loadstring(game:HttpGet("https://raw.githubusercontent.com/Volodym5/pfasdzxc231/main/lib/source.lua"))()
+end)
+
+if not success or not getgenv().Library then
+    warn("Failed to load UI library")
+    return
+end
+
+local Library = getgenv().Library
+local SaveManager = Library.SaveManager
+local ThemeManager = Library.ThemeManager
+
+SaveManager:SetLibrary(Library)
+ThemeManager:SetLibrary(Library)
+SaveManager:IgnoreThemeSettings()
+
+-- ========================================================
+-- EXECUTOR DETECTION
+-- ========================================================
+local executorName = "Unknown"
+pcall(function() executorName = identifyexecutor() end)
+local isXeno = (executorName:lower():find("xeno") ~= nil)
+local silentAimDisabled = isXeno
+
+if isXeno then
+    Library:Notify(string.format("⚠️ Xeno detected - Silent Aim disabled to avoid detection"), 4)
+end
 
 -- ========================================================
 -- GLOBAL SETTINGS
 -- ========================================================
 local Global = {
     Legit = {
-        VisCheck = true,
+        VisCheck = false,
         TeamCheck = false
     },
     Rage = {
@@ -35,7 +60,7 @@ local Global = {
 
 local config = {
     ESP = {
-        Enabled = true,
+        Enabled = false,
         Enemy = {Fill = Color3.fromRGB(255, 60, 60), Outline = Color3.fromRGB(255, 60, 60)},
         Teammate = {Fill = Color3.fromRGB(60, 160, 255), Outline = Color3.fromRGB(60, 160, 255)},
         Transparency = {Fill = 0.75, Outline = 0.55}
@@ -47,20 +72,20 @@ local config = {
             FOV = 212,
             HitPart = "Nearest",
             HitChance = 100,
-            DynamicFOV = true,
+            DynamicFOV = false,
             FOVFollowTime = 3.0,
-            FOVFollowEnabled = true,
+            FOVFollowEnabled = false,
             FOVSpawnDelay = 0.8
         },
         Aimbot = {
             Enabled = false,
             FOV = 333,
             Smoothness = 0.6,
-            Humanize = true,
+            Humanize = false,
             AimDelay = 0.115,
             EasingCurve = 0.22,
             TargetPart = "Nearest",
-            DynamicFOV = true
+            DynamicFOV = false
         },
         Triggerbot = {
             Enabled = false,
@@ -73,28 +98,23 @@ local config = {
         Enabled = false,
         FOV = 300,
         HitPart = "Head",
-        DynamicFOV = true,
+        DynamicFOV = false,
         ShootDelay = 0.01,
         SpawnProtectionTime = 2.5,
-        AutoShoot = true,
+        AutoShoot = false,
         AutoScope = false,
         ScopeDelay = 0.05,
         HitboxMultiplier = 1.2,
-        DynamicPrediction = true,
+        DynamicPrediction = false,
         PingUpdateInterval = 0.1
     },
     
     FOV = {
-        Show = true,
+        Show = false,
         Transparency = 0.45,
         Color = Color3.fromRGB(255, 255, 255),
         SilentColor = Color3.fromRGB(255, 100, 100),
         Thickness = 1.5
-    },
-    
-    Visuals = {
-        Trajectories = true,
-        TrajectoryTime = 2
     },
     
     Movement = {
@@ -109,11 +129,6 @@ local config = {
             Enabled = false,
             Value = 0.5
         }
-    },
-    
-    Debug = {
-        Enabled = false,
-        NotifyKill = true
     }
 }
 
@@ -146,55 +161,9 @@ local state = {
         lastAdjustTime = 0,
         aimSmoothness = 0
     },
-    debugShotCount = 0,
-    debugLastShot = 0,
-    trajectoryLines = {},
     hrpHistory = {},
     silentAimHooked = false
 }
-
-local MAX_TRAJECTORIES = 10
-
--- ========================================================
--- TRAJECTORY FUNCTIONS
--- ========================================================
-local function CreateTrajectory(from, to, color)
-    local line = Drawing.new("Line")
-    line.From = Vector2.new(from.X, from.Y)
-    line.To = Vector2.new(to.X, to.Y)
-    line.Color = color or Color3.fromRGB(255, 255, 0)
-    line.Thickness = 2
-    line.Transparency = 0.8
-    line.Visible = true
-    
-    table.insert(state.trajectoryLines, {
-        line = line,
-        created = tick(),
-        from = from,
-        to = to
-    })
-    
-    while #state.trajectoryLines > MAX_TRAJECTORIES do
-        local old = table.remove(state.trajectoryLines, 1)
-        pcall(function() old.line:Remove() end)
-    end
-end
-
-local function UpdateTrajectories()
-    local now = tick()
-    for i = #state.trajectoryLines, 1, -1 do
-        local traj = state.trajectoryLines[i]
-        local age = now - traj.created
-        
-        if age > config.Visuals.TrajectoryTime then
-            pcall(function() traj.line:Remove() end)
-            table.remove(state.trajectoryLines, i)
-        else
-            traj.line.Transparency = 0.8 + (age / config.Visuals.TrajectoryTime) * 0.2
-            traj.line.Thickness = 2 - (age / config.Visuals.TrajectoryTime)
-        end
-    end
-end
 
 -- ========================================================
 -- SPAWN PROTECTION TRACKING
@@ -203,9 +172,7 @@ local function OnPlayerAdded(player)
     player.CharacterAdded:Connect(function(char)
         state.spawnTimes[player] = tick()
         local hum = char:WaitForChild("Humanoid", 5)
-        if hum then
-            hum.Died:Connect(function() end)
-        end
+        if hum then hum.Died:Connect(function() end) end
         char.AncestryChanged:Connect(function()
             if not char.Parent then
                 task.delay(10, function()
@@ -219,15 +186,11 @@ local function OnPlayerAdded(player)
 end
 
 for _, player in ipairs(Players:GetPlayers()) do
-    if player ~= LocalPlayer then
-        OnPlayerAdded(player)
-    end
+    if player ~= LocalPlayer then OnPlayerAdded(player) end
 end
 
 Players.PlayerAdded:Connect(function(player)
-    if player ~= LocalPlayer then
-        OnPlayerAdded(player)
-    end
+    if player ~= LocalPlayer then OnPlayerAdded(player) end
 end)
 
 local function IsSpawnProtected(player)
@@ -254,9 +217,7 @@ local function UpdatePing()
         local perfStats = Stats:FindFirstChild("PerformanceStats")
         if perfStats then
             local ping = perfStats:FindFirstChild("Ping")
-            if ping then
-                state.currentPing = ping:GetValue()
-            end
+            if ping then state.currentPing = ping:GetValue() end
         end
     end)
     
@@ -355,7 +316,7 @@ local function IsPartVisible(part, character, visCheck)
 end
 
 -- ========================================================
--- FOOLPROOF PREDICTION (HRP-BASED, SMOOTHED, HORIZONTAL)
+-- FOOLPROOF PREDICTION
 -- ========================================================
 local function GetPredictedPosition(part, character)
     local hrp = character:FindFirstChild("HumanoidRootPart")
@@ -388,14 +349,8 @@ local function GetPredictedPosition(part, character)
         local predictedHRP = hrpPos + (vel * predictionTime)
         local predictedPos = predictedHRP + offset
         
-        if IsPositionVisible(predictedPos, character) then
-            return predictedPos
-        end
-        
-        if IsPositionVisible(currentPos, character) then
-            return currentPos
-        end
-        
+        if IsPositionVisible(predictedPos, character) then return predictedPos end
+        if IsPositionVisible(currentPos, character) then return currentPos end
         return nil
     end
     
@@ -411,18 +366,6 @@ local function GetPredictedPosition(part, character)
     history.lastTime = now
     history.smoothedVel = smoothedVel
     
-    if #state.hrpHistory > 20 then
-        local toRemove = {}
-        for char, _ in pairs(state.hrpHistory) do
-            if not char.Parent then
-                table.insert(toRemove, char)
-            end
-        end
-        for _, char in ipairs(toRemove) do
-            state.hrpHistory[char] = nil
-        end
-    end
-    
     if smoothedVel.Magnitude < 1 then
         return IsPositionVisible(currentPos, character) and currentPos or nil
     end
@@ -432,14 +375,8 @@ local function GetPredictedPosition(part, character)
     local predictedHRP = hrpPos + (smoothedVel * predictionTime)
     local predictedPos = predictedHRP + offset
     
-    if IsPositionVisible(predictedPos, character) then
-        return predictedPos
-    end
-    
-    if IsPositionVisible(currentPos, character) then
-        return currentPos
-    end
-    
+    if IsPositionVisible(predictedPos, character) then return predictedPos end
+    if IsPositionVisible(currentPos, character) then return currentPos end
     return nil
 end
 
@@ -509,7 +446,7 @@ local function FindTargetLegit(baseFOV, targetMode, visCheck, teamCheck, useDyna
 end
 
 -- ========================================================
--- FIND BEST RAGE TARGET (FIXED - ALL PARTS, MODE PRIORITY)
+-- FIND BEST RAGE TARGET
 -- ========================================================
 local function FindBestRageTarget(baseFOV, targetMode, teamCheck, useDynamicFOV)
     local fov = useDynamicFOV and GetDynamicFOV(baseFOV) or baseFOV
@@ -540,15 +477,13 @@ local function FindBestRageTarget(baseFOV, targetMode, teamCheck, useDynamicFOV)
                     if vis then
                         local d = (Vector2.new(sp.X, sp.Y) - center).Magnitude / hitboxMult
                         
-                        -- Priority bonuses based on targetMode
                         if targetMode == "Head" and partName == "Head" then
-                            d = d * 0.3 -- Heavy priority for head
+                            d = d * 0.3
                         elseif targetMode == "Torso" and (partName == "UpperTorso" or partName == "LowerTorso") then
-                            d = d * 0.5 -- Priority for torso parts
+                            d = d * 0.5
                         elseif targetMode == "Nearest" then
-                            -- No bonus, closest part wins
+                            -- no bonus
                         else
-                            -- Non-preferred part - still check it with penalty
                             d = d * 2.0
                         end
                         
@@ -567,45 +502,6 @@ local function FindBestRageTarget(baseFOV, targetMode, teamCheck, useDynamicFOV)
 end
 
 -- ========================================================
--- CHECK IF CROSSHAIR IS ON ENEMY
--- ========================================================
-local function IsCrosshairOnEnemy(hitboxMultiplier, visCheck, teamCheck)
-    local center = Camera.ViewportSize / 2
-    
-    for _, player in ipairs(Players:GetPlayers()) do
-        if player == LocalPlayer then continue end
-        if not IsEnemy(player, teamCheck) then continue end
-        local char = player.Character
-        if not char then continue end
-        local hum = char:FindFirstChildOfClass("Humanoid")
-        if not hum or hum.Health <= 0 then continue end
-        if visCheck then
-            local head = char:FindFirstChild("Head") or char:FindFirstChild("HumanoidRootPart") or char.PrimaryPart
-            if head and not IsPartVisible(head, char, visCheck) then continue end
-        end
-        
-        for _, part in ipairs(char:GetChildren()) do
-            if part:IsA("BasePart") and part.Transparency < 0.95 then
-                local sp, vis = Camera:WorldToViewportPoint(part.Position)
-                if vis then
-                    local radius = math.max(part.Size.X, part.Size.Y) * 0.5 * hitboxMultiplier
-                    local dist = (Camera.CFrame.Position - part.Position).Magnitude
-                    local fovRad = math.rad(Camera.FieldOfView)
-                    local screenRadius = (radius * Camera.ViewportSize.Y) / (2 * dist * math.tan(fovRad / 2))
-                    screenRadius = math.max(screenRadius, 5)
-                    
-                    if (Vector2.new(sp.X, sp.Y) - center).Magnitude <= screenRadius then
-                        return true
-                    end
-                end
-            end
-        end
-    end
-    
-    return false
-end
-
--- ========================================================
 -- TRIGGERBOT
 -- ========================================================
 local function HandleTriggerbot()
@@ -614,11 +510,40 @@ local function HandleTriggerbot()
     local now = tick()
     if now - state.lastTrigger < config.Legit.Triggerbot.Delay then return end
     
-    if IsCrosshairOnEnemy(config.Legit.Triggerbot.HitboxMultiplier, Global.Legit.VisCheck, Global.Legit.TeamCheck) then
-        VIM:SendMouseButtonEvent(0, 0, 0, true, game, 0)
-        task.wait(0.02)
-        VIM:SendMouseButtonEvent(0, 0, 0, false, game, 0)
-        state.lastTrigger = now
+    local center = Camera.ViewportSize / 2
+    
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player == LocalPlayer then continue end
+        if not IsEnemy(player, Global.Legit.TeamCheck) then continue end
+        local char = player.Character
+        if not char then continue end
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if not hum or hum.Health <= 0 then continue end
+        if Global.Legit.VisCheck then
+            local head = char:FindFirstChild("Head") or char:FindFirstChild("HumanoidRootPart")
+            if head and not IsPartVisible(head, char, true) then continue end
+        end
+        
+        for _, part in ipairs(char:GetChildren()) do
+            if part:IsA("BasePart") and part.Transparency < 0.95 then
+                local sp, vis = Camera:WorldToViewportPoint(part.Position)
+                if vis then
+                    local radius = math.max(part.Size.X, part.Size.Y) * 0.5 * config.Legit.Triggerbot.HitboxMultiplier
+                    local dist = (Camera.CFrame.Position - part.Position).Magnitude
+                    local fovRad = math.rad(Camera.FieldOfView)
+                    local screenRadius = (radius * Camera.ViewportSize.Y) / (2 * dist * math.tan(fovRad / 2))
+                    screenRadius = math.max(screenRadius, 5)
+                    
+                    if (Vector2.new(sp.X, sp.Y) - center).Magnitude <= screenRadius then
+                        VIM:SendMouseButtonEvent(0, 0, 0, true, game, 0)
+                        task.wait(0.02)
+                        VIM:SendMouseButtonEvent(0, 0, 0, false, game, 0)
+                        state.lastTrigger = now
+                        return
+                    end
+                end
+            end
+        end
     end
 end
 
@@ -634,9 +559,7 @@ local function UpdateSilentFOVTracking()
         state.silentFovTrackTime = tick()
         
         local sp, vis = Camera:WorldToViewportPoint(part.Position)
-        if vis then
-            state.fovTrackScreenPos = Vector2.new(sp.X, sp.Y)
-        end
+        if vis then state.fovTrackScreenPos = Vector2.new(sp.X, sp.Y) end
     elseif state.silentFovTrackTarget then
         local hum = state.silentFovTrackTarget:FindFirstChildOfClass("Humanoid")
         local isDead = not hum or hum.Health <= 0
@@ -650,11 +573,7 @@ local function UpdateSilentFOVTracking()
             state.fovTrackScreenPos = nil
         elseif state.silentFovTrackPart then
             local sp, vis = Camera:WorldToViewportPoint(state.silentFovTrackPart.Position)
-            if vis then
-                state.fovTrackScreenPos = Vector2.new(sp.X, sp.Y)
-            else
-                state.fovTrackScreenPos = nil
-            end
+            if vis then state.fovTrackScreenPos = Vector2.new(sp.X, sp.Y) else state.fovTrackScreenPos = nil end
         end
     end
     
@@ -667,9 +586,9 @@ local function UpdateSilentFOVTracking()
 end
 
 -- ========================================================
--- RAGEBOT (WITH AUTO SCOPE, FIXED TARGETING)
+-- RAGEBOT
 -- ========================================================
-local function HandleRagebot(Window)
+local function HandleRagebot()
     if not config.Rage.Enabled then
         state.rageActive = false
         state.silentTarget = nil
@@ -693,29 +612,21 @@ local function HandleRagebot(Window)
     if config.Rage.AutoShoot then
         if now - state.rageLastFire > config.Rage.ShootDelay then
             
-            -- Auto Scope - hold right mouse button
             if config.Rage.AutoScope and not state.isAiming then
                 VIM:SendMouseButtonEvent(1, 0, 0, true, game, 0)
-                task.wait(config.Rage.ScopeDelay)
                 state.rageScoped = true
             end
             
-            state.rageLastFire = now
-            state.debugShotCount = state.debugShotCount + 1
-            
-            if config.Debug.Enabled and config.Debug.NotifyKill and now - state.debugLastShot > 0.5 then
-                state.debugLastShot = now
-                pcall(function()
-                    Window:Notify(string.format("💀 Killing %s", bestPlayer.Name), 1)
-                end)
+            if state.rageScoped then
+                task.wait(config.Rage.ScopeDelay)
             end
             
-            -- Shoot
+            state.rageLastFire = now
+            
             VIM:SendMouseButtonEvent(0, 0, 0, true, game, 0)
             task.wait(0.01)
             VIM:SendMouseButtonEvent(0, 0, 0, false, game, 0)
             
-            -- Release scope if we activated it
             if state.rageScoped then
                 task.wait(0.05)
                 VIM:SendMouseButtonEvent(1, 0, 0, false, game, 0)
@@ -745,8 +656,7 @@ local function ApplyHumanization(aimPos, target, elapsedTime)
     local distance = (Camera.CFrame.Position - target.Position).Magnitude
     
     if state.humanizer.lastTarget ~= target.Parent then
-        if now - state.humanizer.lastSwitch < 0.1 + math.random() * 0.05 then
-            return aimPos
+        if now - state.humanizer.lastSwitch < 0.1 + math.random() * 0.05 then return aimPos
         else
             state.humanizer.lastTarget = target.Parent
             state.humanizer.lastSwitch = now
@@ -766,8 +676,7 @@ local function ApplyHumanization(aimPos, target, elapsedTime)
     for i = #state.humanizer.microAdjustments, 1, -1 do
         local adj = state.humanizer.microAdjustments[i]
         local age = now - adj.time
-        if age > 0.3 then
-            table.remove(state.humanizer.microAdjustments, i)
+        if age > 0.3 then table.remove(state.humanizer.microAdjustments, i)
         else
             local decay = 1 - (age / 0.3)
             totalOffset = totalOffset + Vector3.new(adj.x, adj.y, 0) * decay
@@ -829,8 +738,7 @@ local function ProcessLegitAimbot()
     local easingStrength = config.Legit.Aimbot.EasingCurve
     local smoothFactor = SmoothEase(state.humanizer.aimSmoothness, easingStrength)
     
-    if distance > 150 then smoothFactor = smoothFactor * 0.85
-    elseif distance < 30 then smoothFactor = smoothFactor * 1.15 end
+    if distance > 150 then smoothFactor = smoothFactor * 0.85 elseif distance < 30 then smoothFactor = smoothFactor * 1.15 end
     
     local finalAlpha = math.clamp(smoothFactor, 0.008, 0.95)
     local lookAt = CFrame.new(Camera.CFrame.Position, aimPos)
@@ -838,12 +746,13 @@ local function ProcessLegitAimbot()
 end
 
 -- ========================================================
--- SILENT AIM HOOK (LAZY LOADED - ONLY WHEN ENABLED)
+-- SILENT AIM HOOK (DISABLED ON XENO)
 -- ========================================================
 local silentAimOrig = nil
 
 local function EnableSilentAim()
     if state.silentAimHooked then return end
+    if silentAimDisabled then return end
     
     local s, gunMod = pcall(function()
         return require(ReplicatedStorage.Modules.Controllers.WeaponController.Gun)
@@ -862,7 +771,6 @@ local function EnableSilentAim()
         silentAimOrig = hookfunction(fireFunc, newcclosure(function(...)
             local args = {...}
             
-            -- Ragebot
             if config.Rage.Enabled and state.silentTarget then
                 local tgt = state.silentTarget
                 if tgt and tgt.Parent then
@@ -873,26 +781,12 @@ local function EnableSilentAim()
                         if predictedPos then
                             args[5] = predictedPos
                             args[6] = tgt
-                            
-                            if config.Visuals.Trajectories then
-                                local screenFrom = Camera:WorldToViewportPoint(Camera.CFrame.Position)
-                                local screenTo = Camera:WorldToViewportPoint(predictedPos)
-                                if screenFrom and screenTo then
-                                    CreateTrajectory(
-                                        Vector2.new(screenFrom.X, screenFrom.Y),
-                                        Vector2.new(screenTo.X, screenTo.Y),
-                                        Color3.fromRGB(255, 0, 0)
-                                    )
-                                end
-                            end
-                            
                             return silentAimOrig(unpack(args))
                         end
                     end
                 end
             end
             
-            -- Legit Silent Aim
             if config.Legit.SilentAim.Enabled and not config.Rage.Enabled then
                 if math.random(1, 100) <= config.Legit.SilentAim.HitChance then
                     local tgt = FindTargetLegit(config.Legit.SilentAim.FOV, config.Legit.SilentAim.HitPart, Global.Legit.VisCheck, Global.Legit.TeamCheck, config.Legit.SilentAim.DynamicFOV)
@@ -900,18 +794,6 @@ local function EnableSilentAim()
                         state.silentTarget = tgt
                         args[5] = tgt.Position
                         args[6] = tgt
-                        
-                        if config.Visuals.Trajectories then
-                            local screenFrom = Camera:WorldToViewportPoint(Camera.CFrame.Position)
-                            local screenTo = Camera:WorldToViewportPoint(tgt.Position)
-                            if screenFrom and screenTo then
-                                CreateTrajectory(
-                                    Vector2.new(screenFrom.X, screenFrom.Y),
-                                    Vector2.new(screenTo.X, screenTo.Y),
-                                    Color3.fromRGB(255, 255, 0)
-                                )
-                            end
-                        end
                     else
                         state.silentTarget = nil
                     end
@@ -924,12 +806,11 @@ local function EnableSilentAim()
         end))
     end)
     
-    if s then
-        state.silentAimHooked = true
-    end
+    if s then state.silentAimHooked = true end
 end
 
 local function CheckAndHookSilentAim()
+    if silentAimDisabled then return end
     if (config.Legit.SilentAim.Enabled or config.Rage.Enabled) and not state.silentAimHooked then
         EnableSilentAim()
     end
@@ -1029,8 +910,6 @@ end
 -- ========================================================
 -- MOVEMENT SYSTEM
 -- ========================================================
-
--- Air Jump
 UIS.InputBegan:Connect(function(input, gameProcessed)
     if gameProcessed then return end
     if not config.Movement.AirJump.Enabled then return end
@@ -1048,7 +927,6 @@ UIS.InputBegan:Connect(function(input, gameProcessed)
     end
 end)
 
--- Gravity loop
 task.spawn(function()
     while true do
         task.wait(0.5)
@@ -1058,7 +936,6 @@ task.spawn(function()
     end
 end)
 
--- WalkSpeed loop
 task.spawn(function()
     while true do
         task.wait(0.1)
@@ -1074,7 +951,6 @@ task.spawn(function()
     end
 end)
 
--- Reset gravity when disabled
 task.spawn(function()
     local wasEnabled = false
     while true do
@@ -1089,48 +965,50 @@ end)
 -- ========================================================
 -- CREATE UI WINDOW
 -- ========================================================
-local Window = UI:CreateWindow({
-    Title          = "nexus.gg",
-    Size           = UDim2.fromOffset(520, 560),
-    Center         = true,
-    Resizable      = true,
-    ToggleKeybind  = Enum.KeyCode.RightShift,
-    AutoShow       = true,
+local Window = Library:CreateWindow({
+    Title         = "Sniper Duels",
+    Size          = UDim2.fromOffset(660, 580),
+    Center        = true,
+    AutoShow      = true,
+    ToggleKeybind = Enum.KeyCode.RightShift,
+    ConfigFolder  = "Sniper Duels"
 })
 
 -- ========================================================
 -- LEGIT TAB
 -- ========================================================
-local LegitTab = Window:AddTab("🎯 Legit")
+local LegitTab = Window:AddTab("Legit", "crosshair")
 
-local LegitGlobalBox = LegitTab:AddGroupbox({ Name = "Global", Side = 2 })
-LegitGlobalBox:AddToggle("LegitVisCheck", {
+local LegitGlobal = LegitTab:AddLeftGroupbox("Global")
+LegitGlobal:AddToggle("LegitVisCheck", {
     Text     = "Visible Only",
     Default  = Global.Legit.VisCheck,
     Callback = function(v) Global.Legit.VisCheck = v end,
 })
-LegitGlobalBox:AddToggle("LegitTeamCheck", {
+LegitGlobal:AddToggle("LegitTeamCheck", {
     Text     = "Team Check",
     Default  = Global.Legit.TeamCheck,
     Callback = function(v) Global.Legit.TeamCheck = v end,
 })
 
-local LegitSilentAimBox = LegitTab:AddGroupbox({ Name = "Silent Aim", Side = 1 })
-LegitSilentAimBox:AddToggle("LegitSilentAimEnabled", {
+local LegitSilentAim = LegitTab:AddLeftGroupbox("Silent Aim")
+LegitSilentAim:AddToggle("LegitSilentAimEnabled", {
     Text     = "Enabled",
     Default  = config.Legit.SilentAim.Enabled,
-    Callback = function(v) 
+    Disabled = silentAimDisabled,
+    Tooltip  = silentAimDisabled and "Disabled on Xeno" or nil,
+    Callback = function(v)
         config.Legit.SilentAim.Enabled = v
         CheckAndHookSilentAim()
     end,
 })
-LegitSilentAimBox:AddDropdown("LegitSilentAimTarget", {
-    Text     = "Target",
-    Values   = { "Nearest", "Head", "Torso" },
-    Default  = config.Legit.SilentAim.HitPart,
+LegitSilentAim:AddDropdown("LegitSilentAimTarget", {
+    Text    = "Target",
+    Default = config.Legit.SilentAim.HitPart,
+    Values  = { "Nearest", "Head", "Torso" },
     Callback = function(v) config.Legit.SilentAim.HitPart = v end,
 })
-LegitSilentAimBox:AddSlider("LegitSilentAimFOV", {
+LegitSilentAim:AddSlider("LegitSilentAimFOV", {
     Text     = "FOV",
     Default  = 212,
     Min      = 10,
@@ -1138,7 +1016,7 @@ LegitSilentAimBox:AddSlider("LegitSilentAimFOV", {
     Rounding = 0,
     Callback = function(v) config.Legit.SilentAim.FOV = v end,
 })
-LegitSilentAimBox:AddSlider("LegitSilentAimHitChance", {
+LegitSilentAim:AddSlider("LegitSilentAimHitChance", {
     Text     = "Hit Chance",
     Default  = config.Legit.SilentAim.HitChance,
     Min      = 0,
@@ -1146,17 +1024,17 @@ LegitSilentAimBox:AddSlider("LegitSilentAimHitChance", {
     Rounding = 0,
     Callback = function(v) config.Legit.SilentAim.HitChance = v end,
 })
-LegitSilentAimBox:AddToggle("LegitSilentAimDynamicFOV", {
+LegitSilentAim:AddToggle("LegitSilentAimDynamicFOV", {
     Text     = "Dynamic FOV",
     Default  = config.Legit.SilentAim.DynamicFOV,
     Callback = function(v) config.Legit.SilentAim.DynamicFOV = v end,
 })
-LegitSilentAimBox:AddToggle("LegitSilentAimFOVFollow", {
+LegitSilentAim:AddToggle("LegitSilentAimFOVFollow", {
     Text     = "FOV Follow Target",
     Default  = config.Legit.SilentAim.FOVFollowEnabled,
     Callback = function(v) config.Legit.SilentAim.FOVFollowEnabled = v end,
 })
-LegitSilentAimBox:AddSlider("LegitSilentAimFollowTime", {
+LegitSilentAim:AddSlider("LegitSilentAimFollowTime", {
     Text     = "Follow Time",
     Default  = config.Legit.SilentAim.FOVFollowTime,
     Min      = 0.5,
@@ -1165,19 +1043,19 @@ LegitSilentAimBox:AddSlider("LegitSilentAimFollowTime", {
     Callback = function(v) config.Legit.SilentAim.FOVFollowTime = v end,
 })
 
-local LegitAimbotBox = LegitTab:AddGroupbox({ Name = "Aimbot", Side = 2 })
-LegitAimbotBox:AddToggle("AimbotEnabled", {
+local LegitAimbot = LegitTab:AddRightGroupbox("Aimbot")
+LegitAimbot:AddToggle("AimbotEnabled", {
     Text     = "Enabled",
     Default  = config.Legit.Aimbot.Enabled,
     Callback = function(v) config.Legit.Aimbot.Enabled = v end,
 })
-LegitAimbotBox:AddDropdown("AimbotTarget", {
-    Text     = "Target",
-    Values   = { "Nearest", "Head", "Torso" },
-    Default  = config.Legit.Aimbot.TargetPart,
+LegitAimbot:AddDropdown("AimbotTarget", {
+    Text    = "Target",
+    Default = config.Legit.Aimbot.TargetPart,
+    Values  = { "Nearest", "Head", "Torso" },
     Callback = function(v) config.Legit.Aimbot.TargetPart = v end,
 })
-LegitAimbotBox:AddSlider("AimbotFOV", {
+LegitAimbot:AddSlider("AimbotFOV", {
     Text     = "FOV",
     Default  = 333,
     Min      = 10,
@@ -1185,7 +1063,7 @@ LegitAimbotBox:AddSlider("AimbotFOV", {
     Rounding = 0,
     Callback = function(v) config.Legit.Aimbot.FOV = v end,
 })
-LegitAimbotBox:AddSlider("AimbotSmoothness", {
+LegitAimbot:AddSlider("AimbotSmoothness", {
     Text     = "Smoothness",
     Default  = config.Legit.Aimbot.Smoothness * 100,
     Min      = 1,
@@ -1193,18 +1071,18 @@ LegitAimbotBox:AddSlider("AimbotSmoothness", {
     Rounding = 0,
     Callback = function(v) config.Legit.Aimbot.Smoothness = v / 100 end,
 })
-LegitAimbotBox:AddToggle("AimbotHumanize", {
+LegitAimbot:AddToggle("AimbotHumanize", {
     Text     = "Humanize",
     Default  = config.Legit.Aimbot.Humanize,
     Callback = function(v) config.Legit.Aimbot.Humanize = v end,
 })
-LegitAimbotBox:AddToggle("AimbotDynamicFOV", {
+LegitAimbot:AddToggle("AimbotDynamicFOV", {
     Text     = "Dynamic FOV",
     Default  = config.Legit.Aimbot.DynamicFOV,
     Callback = function(v) config.Legit.Aimbot.DynamicFOV = v end,
 })
 
-local TriggerbotBox = LegitTab:AddGroupbox({ Name = "Triggerbot", Side = 2 })
+local TriggerbotBox = LegitTab:AddRightGroupbox("Triggerbot")
 TriggerbotBox:AddToggle("TriggerbotEnabled", {
     Text     = "Enabled",
     Default  = config.Legit.Triggerbot.Enabled,
@@ -1216,6 +1094,7 @@ TriggerbotBox:AddSlider("TriggerbotDelay", {
     Min      = 10,
     Max      = 300,
     Rounding = 0,
+    Suffix   = "ms",
     Callback = function(v) config.Legit.Triggerbot.Delay = v / 1000 end,
 })
 TriggerbotBox:AddSlider("TriggerbotHitbox", {
@@ -1224,35 +1103,38 @@ TriggerbotBox:AddSlider("TriggerbotHitbox", {
     Min      = 1.0,
     Max      = 3.0,
     Rounding = 1,
+    Suffix   = "x",
     Callback = function(v) config.Legit.Triggerbot.HitboxMultiplier = v end,
 })
 
 -- ========================================================
 -- RAGE TAB
 -- ========================================================
-local RageTab = Window:AddTab("💀 Rage")
+local RageTab = Window:AddTab("Rage", "skull")
 
-local RageMainBox = RageTab:AddGroupbox({ Name = "Ragebot", Side = 1 })
-RageMainBox:AddToggle("RageEnabled", {
+local RageMain = RageTab:AddLeftGroupbox("Ragebot")
+RageMain:AddToggle("RageEnabled", {
     Text     = "Enabled",
     Default  = config.Rage.Enabled,
-    Callback = function(v) 
+    Disabled = silentAimDisabled,
+    Tooltip  = silentAimDisabled and "Disabled on Xeno" or nil,
+    Callback = function(v)
         config.Rage.Enabled = v
         CheckAndHookSilentAim()
     end,
 })
-RageMainBox:AddToggle("RageTeamCheck", {
+RageMain:AddToggle("RageTeamCheck", {
     Text     = "Team Check",
     Default  = Global.Rage.TeamCheck,
     Callback = function(v) Global.Rage.TeamCheck = v end,
 })
-RageMainBox:AddDropdown("RageTarget", {
-    Text     = "Target",
-    Values   = { "Head", "Nearest", "Torso" },
-    Default  = config.Rage.HitPart,
+RageMain:AddDropdown("RageTarget", {
+    Text    = "Target",
+    Default = config.Rage.HitPart,
+    Values  = { "Head", "Nearest", "Torso" },
     Callback = function(v) config.Rage.HitPart = v end,
 })
-RageMainBox:AddSlider("RageFOV", {
+RageMain:AddSlider("RageFOV", {
     Text     = "FOV",
     Default  = config.Rage.FOV,
     Min      = 10,
@@ -1260,88 +1142,69 @@ RageMainBox:AddSlider("RageFOV", {
     Rounding = 0,
     Callback = function(v) config.Rage.FOV = v end,
 })
-RageMainBox:AddToggle("RageDynamicFOV", {
+RageMain:AddToggle("RageDynamicFOV", {
     Text     = "Dynamic FOV",
     Default  = config.Rage.DynamicFOV,
     Callback = function(v) config.Rage.DynamicFOV = v end,
 })
-RageMainBox:AddToggle("RageAutoShoot", {
+RageMain:AddToggle("RageAutoShoot", {
     Text     = "Auto Shoot",
     Default  = config.Rage.AutoShoot,
     Callback = function(v) config.Rage.AutoShoot = v end,
 })
-RageMainBox:AddToggle("RageAutoScope", {
+RageMain:AddToggle("RageAutoScope", {
     Text     = "Auto Scope",
     Default  = config.Rage.AutoScope,
     Callback = function(v) config.Rage.AutoScope = v end,
 })
-RageMainBox:AddSlider("RageScopeDelay", {
-    Text     = "Scope Delay (ms)",
+RageMain:AddSlider("RageScopeDelay", {
+    Text     = "Scope Delay",
     Default  = config.Rage.ScopeDelay * 1000,
     Min      = 0,
-    Max      = 200,
+    Max      = 300,
     Rounding = 0,
+    Suffix   = "ms",
     Callback = function(v) config.Rage.ScopeDelay = v / 1000 end,
 })
-RageMainBox:AddSlider("RageShootDelay", {
-    Text     = "Fire Rate (ms)",
+RageMain:AddSlider("RageShootDelay", {
+    Text     = "Fire Rate",
     Default  = config.Rage.ShootDelay * 1000,
     Min      = 0,
     Max      = 500,
     Rounding = 0,
+    Suffix   = "ms",
     Callback = function(v) config.Rage.ShootDelay = v / 1000 end,
 })
-RageMainBox:AddSlider("RageHitboxMultiplier", {
+RageMain:AddSlider("RageHitboxMultiplier", {
     Text     = "Hitbox Size",
     Default  = config.Rage.HitboxMultiplier,
     Min      = 1.0,
     Max      = 3.0,
     Rounding = 1,
+    Suffix   = "x",
     Callback = function(v) config.Rage.HitboxMultiplier = v end,
 })
-RageMainBox:AddSlider("RageSpawnProtect", {
-    Text     = "Spawn Protect (s)",
+RageMain:AddSlider("RageSpawnProtect", {
+    Text     = "Spawn Protect",
     Default  = config.Rage.SpawnProtectionTime,
     Min      = 0,
     Max      = 5,
     Rounding = 1,
+    Suffix   = "s",
     Callback = function(v) config.Rage.SpawnProtectionTime = v end,
 })
-RageMainBox:AddToggle("RageDynamicPrediction", {
+RageMain:AddToggle("RageDynamicPrediction", {
     Text     = "Dynamic Prediction",
     Default  = config.Rage.DynamicPrediction,
     Callback = function(v) config.Rage.DynamicPrediction = v end,
 })
 
-local RageInfoBox = RageTab:AddGroupbox({ Name = "Info", Side = 2 })
-local pingLabel = RageInfoBox:AddLabel({ Text = "Ping: --" })
-local predictionLabel = RageInfoBox:AddLabel({ Text = "Prediction: --ms" })
-local targetLabel = RageInfoBox:AddLabel({ Text = "Target: None" })
-local shotLabel = RageInfoBox:AddLabel({ Text = "Shots: 0" })
-
-task.spawn(function()
-    while true do
-        task.wait(0.2)
-        if config.Rage.Enabled then
-            pingLabel:SetText(string.format("Ping: %dms", state.currentPing))
-            predictionLabel:SetText(string.format("Prediction: %.0fms", state.dynamicPrediction * 1000))
-            shotLabel:SetText(string.format("Shots: %d", state.debugShotCount))
-            if state.silentTarget and state.silentTarget.Parent then
-                local player = Players:GetPlayerFromCharacter(state.silentTarget.Parent)
-                targetLabel:SetText(string.format("Target: %s", player and player.Name or "?"))
-            else
-                targetLabel:SetText("Target: None")
-            end
-        end
-    end
-end)
-
 -- ========================================================
 -- MOVEMENT TAB
 -- ========================================================
-local MovementTab = Window:AddTab("🏃 Movement")
+local MovementTab = Window:AddTab("Movement", "wind")
 
-local WalkSpeedBox = MovementTab:AddGroupbox({ Name = "Walk Speed", Side = 1 })
+local WalkSpeedBox = MovementTab:AddLeftGroupbox("Walk Speed")
 WalkSpeedBox:AddToggle("WalkSpeedEnabled", {
     Text     = "Enabled",
     Default  = config.Movement.WalkSpeed.Enabled,
@@ -1356,14 +1219,14 @@ WalkSpeedBox:AddSlider("WalkSpeedValue", {
     Callback = function(v) config.Movement.WalkSpeed.Speed = v end,
 })
 
-local AirJumpBox = MovementTab:AddGroupbox({ Name = "Air Jump", Side = 1 })
+local AirJumpBox = MovementTab:AddLeftGroupbox("Air Jump")
 AirJumpBox:AddToggle("AirJumpEnabled", {
     Text     = "Enabled",
     Default  = config.Movement.AirJump.Enabled,
     Callback = function(v) config.Movement.AirJump.Enabled = v end,
 })
 
-local GravityBox = MovementTab:AddGroupbox({ Name = "Gravity", Side = 2 })
+local GravityBox = MovementTab:AddRightGroupbox("Gravity")
 GravityBox:AddToggle("GravityEnabled", {
     Text     = "Enabled",
     Default  = config.Movement.Gravity.Enabled,
@@ -1375,32 +1238,16 @@ GravityBox:AddSlider("GravityValue", {
     Min      = 10,
     Max      = 100,
     Rounding = 0,
+    Suffix   = "%",
     Callback = function(v) config.Movement.Gravity.Value = v / 100 end,
-})
-
--- ========================================================
--- DEBUG TAB
--- ========================================================
-local DebugTab = Window:AddTab("🔍 Debug")
-
-local DebugMainBox = DebugTab:AddGroupbox({ Name = "Notifications", Side = 1 })
-DebugMainBox:AddToggle("DebugEnabled", {
-    Text     = "Enabled",
-    Default  = config.Debug.Enabled,
-    Callback = function(v) config.Debug.Enabled = v end,
-})
-DebugMainBox:AddToggle("DebugNotifyKill", {
-    Text     = "Kill Notifications",
-    Default  = config.Debug.NotifyKill,
-    Callback = function(v) config.Debug.NotifyKill = v end,
 })
 
 -- ========================================================
 -- VISUALS TAB
 -- ========================================================
-local VisualsTab = Window:AddTab("👁️ Visuals")
+local VisualsTab = Window:AddTab("Visuals", "eye")
 
-local ESPBox = VisualsTab:AddGroupbox({ Name = "ESP", Side = 1 })
+local ESPBox = VisualsTab:AddLeftGroupbox("ESP")
 ESPBox:AddToggle("ESPEnabled", {
     Text     = "Enabled",
     Default  = config.ESP.Enabled,
@@ -1412,27 +1259,14 @@ ESPBox:AddToggle("ESPTeamCheck", {
     Callback = function(v) Global.ESP.TeamCheck = v end,
 })
 
-local FOVBox = VisualsTab:AddGroupbox({ Name = "FOV Circle", Side = 1 })
+local FOVBox = VisualsTab:AddLeftGroupbox("FOV Circle")
 FOVBox:AddToggle("FOVShow", {
     Text     = "Show",
     Default  = config.FOV.Show,
     Callback = function(v) config.FOV.Show = v end,
 })
 
-local TrajectoryBox = VisualsTab:AddGroupbox({ Name = "Trajectories", Side = 1 })
-TrajectoryBox:AddToggle("TrajectoryEnabled", {
-    Text     = "Show Trajectories",
-    Default  = config.Visuals.Trajectories,
-    Callback = function(v) config.Visuals.Trajectories = v end,
-})
-TrajectoryBox:AddSlider("TrajectoryTime", {
-    Text     = "Fade Time (s)",
-    Default  = config.Visuals.TrajectoryTime,
-    Min      = 0.5,
-    Max      = 5,
-    Rounding = 1,
-    Callback = function(v) config.Visuals.TrajectoryTime = v end,
-})
+SaveManager:LoadAutoloadConfig()
 
 -- ========================================================
 -- RENDER LOOP
@@ -1443,10 +1277,9 @@ RunService.RenderStepped:Connect(function()
         if not state.isAiming then state.aimStartTime = 0 end
         UpdateSilentFOVTracking()
         UpdateFOVCircles()
-        UpdateTrajectories()
         ProcessLegitAimbot()
         HandleTriggerbot()
-        HandleRagebot(Window)
+        HandleRagebot()
         UpdateESP()
     end)
 end)
