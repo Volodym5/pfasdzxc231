@@ -991,7 +991,7 @@ LegitGlobal:AddToggle("LegitTeamCheck", {
     Callback = function(v) Global.Legit.TeamCheck = v end,
 })
 
-local LegitSilentAim = LegitTab:AddLeftGroupbox("Silent Aim")
+local LegitSilentAim = LegitTab:AddRightGroupbox("Silent Aim")
 LegitSilentAim:AddToggle("LegitSilentAimEnabled", {
     Text     = "Enabled",
     Default  = config.Legit.SilentAim.Enabled,
@@ -1043,7 +1043,7 @@ LegitSilentAim:AddSlider("LegitSilentAimFollowTime", {
     Callback = function(v) config.Legit.SilentAim.FOVFollowTime = v end,
 })
 
-local LegitAimbot = LegitTab:AddRightGroupbox("Aimbot")
+local LegitAimbot = LegitTab:AddLeftGroupbox("Aimbot")
 LegitAimbot:AddToggle("AimbotEnabled", {
     Text     = "Enabled",
     Default  = config.Legit.Aimbot.Enabled,
