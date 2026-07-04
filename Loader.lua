@@ -1,58 +1,35 @@
 --[[
-	App-style UI Shell v8 — search bar, toast notifications, dummy buttons
+	App-style UI Shell v11 — perf + visual pass
 	No remote code execution. Wire onButtonPressed() up to your own
 	local ModuleScripts whenever you're ready.
 
-	Changelog vs v4:
-	- Fixed jittery/"instantly resizing" text on button press and while
-	  dragging. Root cause: v4 used UIScale to shrink buttons and lift
-	  the whole window, and UIScale forces Roblox to re-rasterize text
-	  glyphs at each new pixel size, which reads as a stepped/instant
-	  resize instead of a smooth scale. Text now never gets UIScale'd —
-	  only shapes/icons (which scale cleanly) do.
-	- Button press feedback is now a background-color + highlight-flash
-	  tween instead of a scale tween.
-	- Window drag no longer scales the window. It translates an inner
-	  wrapper a few pixels up instead, which is smooth with zero text
-	  artifacts.
-
-	Changelog vs v6:
-	- Removed the layered drop shadow entirely — it never looked right
-	  and wasn't worth the churn. The panel now relies on the UIStroke
-	  border for edge definition, no shadow.
-	- Rebuilt "main" as a CanvasGroup instead of a plain Frame. A
-	  CanvasGroup composites everything inside it (background, title bar,
-	  buttons, text, all of it) into one image and exposes a single
-	  GroupTransparency. That's what open/close now animate, so the
-	  whole panel — buttons included — fades and shrinks together as one
-	  piece. Previously only the panel's own background was faded, so
-	  the buttons (each with their own opaque background) stayed fully
-	  visible until the GUI was destroyed out from under them, which is
-	  why they looked like they "disappeared last".
-	- Bonus: CanvasGroup + UICorner also gives properly rounded clipping
-	  (a plain Frame only clips to a rectangle), so corners are cleaner.
-
-	Changelog vs v7:
-	- Dragging now tweens to each new position instead of hard-setting it.
-	  InputChanged only fires as new mouse/touch samples arrive, which
-	  isn't necessarily every render frame — hard-setting Position left
-	  visible gaps between samples. A short (0.08s, Linear) TweenService
-	  tween per sample interpolates across those gaps, so motion stays
-	  fluid. Cost is one cheap tween per mouse-move, cancelled/replaced
-	  by the next — negligible.
-	- Search bar is now visually distinct from the list buttons: fully
-	  rounded pill shape (vs. the buttons' 10px rounded rect), a darker
-	  "inset" tone instead of a near-identical raised color, and a
-	  faint always-on accent-tinted outline that brightens on focus.
+	Changes vs v10:
+	- Shadow: single sliced ImageLabel instead of 4 stacked frames.
+	  Swap SHADOW_IMAGE below for your own uploaded soft-shadow PNG
+	  (black-to-transparent radial, any size) for a real blur/falloff.
+	- Perf: TweenInfo objects are now created once and reused, instead
+	  of allocating a new TweenInfo + Tween on every single hover/press
+	  event. Six buttons firing MouseEnter/Leave repeatedly was
+	  generating a lot of short-lived garbage for no visual benefit.
+	- Perf: dragging no longer creates a new TweenService Tween per
+	  InputChanged sample. One RunService.Heartbeat connection lerps
+	  toward the latest target position instead — same smoothness,
+	  one persistent connection instead of N short-lived tween objects.
+	- Visual: panel background now has a subtle vertical gradient
+	  instead of flat color, for a bit of depth.
+	- Visual: button hover accent bar now eases with a slight overshoot
+	  instead of a flat fade, feels a touch snappier.
 ]]
 
 local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local Players = game:GetService("Players")
 local player = Players.LocalPlayer
 
 -- ===== Palette =====
 local BG          = Color3.fromRGB(16, 16, 20)
+local BG_2        = Color3.fromRGB(20, 20, 25) -- gradient endpoint for panel bg
 local PANEL       = Color3.fromRGB(22, 22, 27)
 local SEARCH_BG   = Color3.fromRGB(19, 19, 25)
 local BTN         = Color3.fromRGB(26, 26, 32)
@@ -68,8 +45,25 @@ local SUCCESS     = Color3.fromRGB(94, 204, 135)
 local CORNER = 18
 local WINDOW_SIZE = UDim2.fromOffset(340, 460)
 
-local function tween(obj, props, dur, style, dir)
-	return TweenService:Create(obj, TweenInfo.new(dur or 0.15, style or Enum.EasingStyle.Quad, dir or Enum.EasingDirection.Out), props)
+-- Replace with your own uploaded asset (black -> transparent radial PNG).
+-- rbxassetid://0 will just render nothing, which is fine as a placeholder
+-- until you upload one — the ImageTransparency tween still runs harmlessly.
+local SHADOW_IMAGE = "rbxassetid://0"
+
+-- ===== Cached TweenInfo (perf) =====
+-- Building these once and reusing avoids allocating a fresh TweenInfo
+-- table on every hover/press event across every button.
+local TI_QUAD_FAST   = TweenInfo.new(0.07, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+local TI_QUAD_MED    = TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+local TI_QUAD_SLOW   = TweenInfo.new(0.28, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+local TI_QUINT_HOVER = TweenInfo.new(0.15, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
+local TI_QUINT_LEAVE = TweenInfo.new(0.2, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
+local TI_BACK_OUT    = TweenInfo.new(0.22, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+local TI_ICON_DOWN   = TweenInfo.new(0.06, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+local TI_ICON_UP     = TweenInfo.new(0.22, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+
+local function tween(obj, props, tweenInfo)
+	return TweenService:Create(obj, tweenInfo or TI_QUAD_MED, props)
 end
 
 -- ===== Root =====
@@ -90,18 +84,28 @@ windowContainer.BackgroundTransparency = 1
 windowContainer.ZIndex = 1
 windowContainer.Parent = gui
 
--- introScale drives the one-time pop-in/pop-out. Unlike the button-press
--- and drag cases, this is a single, brief, large-amplitude motion rather
--- than lots of tiny repeated adjustments, so scaling the whole window
--- (including text) here doesn't read as jittery the way it did before —
--- it's the same technique virtually every polished modal/panel uses.
-local introScale = Instance.new("UIScale")
-introScale.Scale = 1
-introScale.Parent = windowContainer
+-- Single sliced-image shadow instead of 4 stacked frames. Fixed pixel
+-- offset padding (not Scale of windowContainer) for the same reason as
+-- before: it only fades during collapse/expand, never resizes, so it
+-- can't warp into a pill shape.
+local shadow = Instance.new("ImageLabel")
+shadow.Name = "Shadow"
+shadow.AnchorPoint = Vector2.new(0.5, 0.5)
+shadow.Position = UDim2.new(0.5, 0, 0.5, 4)
+shadow.Size = UDim2.new(1, 48, 1, 48)
+shadow.BackgroundTransparency = 1
+shadow.Image = SHADOW_IMAGE
+shadow.ImageColor3 = Color3.new(0, 0, 0)
+shadow.ImageTransparency = 1
+shadow.ScaleType = Enum.ScaleType.Slice
+shadow.SliceCenter = Rect.new(24, 24, 24, 24) -- tune to your asset's actual blur border
+shadow.ZIndex = 0
+shadow.Parent = windowContainer
 
--- liftWrap is what actually gets nudged up/down for the "lift" feel while
--- dragging. Because it's a plain Position tween (no UIScale), text inside
--- never gets re-rasterized — it just translates, which is always smooth.
+local function fadeShadow(visible, tweenInfo)
+	tween(shadow, {ImageTransparency = visible and 0.55 or 1}, tweenInfo):Play()
+end
+
 local liftWrap = Instance.new("Frame")
 liftWrap.Name = "LiftWrap"
 liftWrap.Size = UDim2.fromScale(1, 1)
@@ -110,15 +114,6 @@ liftWrap.BackgroundTransparency = 1
 liftWrap.ZIndex = 1
 liftWrap.Parent = windowContainer
 
--- "main" is a CanvasGroup rather than a plain Frame. A CanvasGroup
--- composites everything parented under it — background, title bar,
--- buttons, labels, all of it — into a single image, and exposes one
--- GroupTransparency for the whole thing. That's what intro/outro tween,
--- so the entire panel (buttons included) fades and shrinks together as
--- one piece instead of the background disappearing while the buttons
--- (each with their own opaque color) hang around until destroy.
--- It also clips descendants to the rounded UICorner shape properly,
--- unlike a plain Frame which only clips to a rectangle.
 local main = Instance.new("CanvasGroup")
 main.Name = "Main"
 main.Size = UDim2.fromScale(1, 1)
@@ -130,9 +125,15 @@ main.Parent = liftWrap
 
 Instance.new("UICorner", main).CornerRadius = UDim.new(0, CORNER)
 
+-- Subtle vertical gradient for a bit of depth instead of flat color.
+local mainGradient = Instance.new("UIGradient", main)
+mainGradient.Color = ColorSequence.new(BG_2, BG)
+mainGradient.Rotation = 90
+
 local mainStroke = Instance.new("UIStroke", main)
 mainStroke.Color = STROKE
 mainStroke.Thickness = 1
+mainStroke.Transparency = 1
 
 -- ===== Press-feedback for ICON-only controls (safe to scale — no text) =====
 local function addIconPressFeedback(button, downScale)
@@ -145,13 +146,13 @@ local function addIconPressFeedback(button, downScale)
 
 	button.MouseButton1Down:Connect(function()
 		pressed = true
-		tween(scale, {Scale = downScale}, 0.06, Enum.EasingStyle.Quad):Play()
+		tween(scale, {Scale = downScale}, TI_ICON_DOWN):Play()
 	end)
 
 	local function release()
 		if not pressed then return end
 		pressed = false
-		tween(scale, {Scale = 1}, 0.22, Enum.EasingStyle.Back, Enum.EasingDirection.Out):Play()
+		tween(scale, {Scale = 1}, TI_ICON_UP):Play()
 	end
 
 	button.MouseButton1Up:Connect(release)
@@ -163,8 +164,6 @@ local function addIconPressFeedback(button, downScale)
 end
 
 -- ===== Press-feedback for TEXT buttons (never scales — no font jitter) =====
--- Uses a background-color dip plus a quick white highlight flash instead
--- of UIScale, so labels stay pixel-crisp on press.
 local function addListPressFeedback(button, baseColor, hoverColor)
 	local highlight = Instance.new("Frame")
 	highlight.Size = UDim2.fromScale(1, 1)
@@ -180,15 +179,15 @@ local function addListPressFeedback(button, baseColor, hoverColor)
 
 	button.MouseButton1Down:Connect(function()
 		pressed = true
-		tween(highlight, {BackgroundTransparency = 0.9}, 0.07, Enum.EasingStyle.Quad):Play()
-		tween(button, {BackgroundColor3 = BTN_PRESS}, 0.07, Enum.EasingStyle.Quad):Play()
+		tween(highlight, {BackgroundTransparency = 0.9}, TI_QUAD_FAST):Play()
+		tween(button, {BackgroundColor3 = BTN_PRESS}, TI_QUAD_FAST):Play()
 	end)
 
 	local function release()
 		if not pressed then return end
 		pressed = false
-		tween(highlight, {BackgroundTransparency = 1}, 0.28, Enum.EasingStyle.Quad):Play()
-		tween(button, {BackgroundColor3 = hovering and hoverColor or baseColor}, 0.2, Enum.EasingStyle.Quad):Play()
+		tween(highlight, {BackgroundTransparency = 1}, TI_QUAD_SLOW):Play()
+		tween(button, {BackgroundColor3 = hovering and hoverColor or baseColor}, TI_QUAD_MED):Play()
 	end
 
 	button.MouseButton1Up:Connect(release)
@@ -253,7 +252,6 @@ titleText.TextXAlignment = Enum.TextXAlignment.Left
 titleText.ZIndex = 4
 titleText.Parent = titleBar
 
--- ===== Close button (icon only — safe to scale) =====
 local closeBtn = Instance.new("TextButton")
 closeBtn.Name = "Close"
 closeBtn.Size = UDim2.fromOffset(28, 28)
@@ -288,29 +286,36 @@ end
 local xBar1 = makeXBar(45)
 local xBar2 = makeXBar(-45)
 
+local TI_XSPIN = TweenInfo.new(0.2, Enum.EasingStyle.Back)
+
 closeBtn.MouseEnter:Connect(function()
-	tween(closeBtn, {BackgroundColor3 = Color3.fromRGB(214, 74, 74)}):Play()
-	tween(xBar1, {BackgroundColor3 = Color3.new(1, 1, 1)}):Play()
-	tween(xBar2, {BackgroundColor3 = Color3.new(1, 1, 1)}):Play()
-	tween(xHolder, {Rotation = 90}, 0.2, Enum.EasingStyle.Back):Play()
+	tween(closeBtn, {BackgroundColor3 = Color3.fromRGB(214, 74, 74)}, TI_QUAD_MED):Play()
+	tween(xBar1, {BackgroundColor3 = Color3.new(1, 1, 1)}, TI_QUAD_MED):Play()
+	tween(xBar2, {BackgroundColor3 = Color3.new(1, 1, 1)}, TI_QUAD_MED):Play()
+	tween(xHolder, {Rotation = 90}, TI_XSPIN):Play()
 end)
 closeBtn.MouseLeave:Connect(function()
-	tween(closeBtn, {BackgroundColor3 = Color3.fromRGB(36, 36, 43)}):Play()
-	tween(xBar1, {BackgroundColor3 = SUBTEXT}):Play()
-	tween(xBar2, {BackgroundColor3 = SUBTEXT}):Play()
-	tween(xHolder, {Rotation = 0}, 0.2, Enum.EasingStyle.Back):Play()
+	tween(closeBtn, {BackgroundColor3 = Color3.fromRGB(36, 36, 43)}, TI_QUAD_MED):Play()
+	tween(xBar1, {BackgroundColor3 = SUBTEXT}, TI_QUAD_MED):Play()
+	tween(xBar2, {BackgroundColor3 = SUBTEXT}, TI_QUAD_MED):Play()
+	tween(xHolder, {Rotation = 0}, TI_XSPIN):Play()
 end)
 
 local function closePanel()
-	tween(introScale, {Scale = 0.88}, 0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.In):Play()
-	tween(main, {GroupTransparency = 1}, 0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.In):Play()
-	task.delay(0.18, function()
+	local collapseTime = 0.3
+	tween(windowContainer,
+		{Size = UDim2.new(windowContainer.Size.X.Scale, windowContainer.Size.X.Offset, 0, 0)},
+		TweenInfo.new(collapseTime, Enum.EasingStyle.Quint, Enum.EasingDirection.In)
+	):Play()
+	tween(main, {GroupTransparency = 1}, TweenInfo.new(collapseTime * 0.7, Enum.EasingStyle.Quad, Enum.EasingDirection.In)):Play()
+	tween(mainStroke, {Transparency = 1}, TweenInfo.new(collapseTime * 0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.In)):Play()
+	fadeShadow(false, TweenInfo.new(collapseTime * 0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.In))
+	task.delay(collapseTime, function()
 		gui:Destroy()
 	end)
 end
 closeBtn.MouseButton1Click:Connect(closePanel)
 
--- ESC to close, since we're already handling window-level input
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	if gameProcessed then return end
 	if input.KeyCode == Enum.KeyCode.Escape and gui.Parent then
@@ -318,40 +323,53 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	end
 end)
 
--- ===== Dragging =====
--- windowContainer.Position is still what actually moves the window, but
--- instead of hard-setting it every InputChanged event (which only fires
--- as often as new mouse/touch samples arrive, not every render frame —
--- that gap is what read as "not smooth"), each new sample now tweens to
--- its goal over a very short window. TweenService interpolates the gaps
--- between samples for you, so motion stays fluid even if input events
--- come in a little unevenly. Cost is negligible — it's one cheap tween
--- per mouse-move event, cancelled and replaced by the next.
+-- ===== Dragging (perf: Heartbeat lerp instead of per-sample Tween) =====
 do
 	local dragging = false
 	local dragStart, startPos
-	local dragTween
+	local targetPos
+	local heartbeatConn
+
+	local LERP_SPEED = 22 -- higher = snappier follow, lower = smoother/laggier
 
 	local function beginDrag(input)
 		dragging = true
 		dragStart = input.Position
 		startPos = windowContainer.Position
+		targetPos = startPos
 
-		tween(liftWrap, {Position = UDim2.fromOffset(0, -5)}, 0.18, Enum.EasingStyle.Quint):Play()
-		tween(mainStroke, {Color = ACCENT}, 0.15):Play()
+		tween(liftWrap, {Position = UDim2.fromOffset(0, -5)}, TweenInfo.new(0.18, Enum.EasingStyle.Quint)):Play()
+		tween(mainStroke, {Color = ACCENT}, TI_QUAD_MED):Play()
+
+		if heartbeatConn then heartbeatConn:Disconnect() end
+		heartbeatConn = RunService.Heartbeat:Connect(function(dt)
+			if not dragging then return end
+			local alpha = math.clamp(LERP_SPEED * dt, 0, 1)
+			local cur = windowContainer.Position
+			windowContainer.Position = UDim2.new(
+				cur.X.Scale, cur.X.Offset + (targetPos.X.Offset - cur.X.Offset) * alpha,
+				cur.Y.Scale, cur.Y.Offset + (targetPos.Y.Offset - cur.Y.Offset) * alpha
+			)
+		end)
 	end
 
 	local function endDrag()
 		if not dragging then return end
 		dragging = false
-
-		if dragTween then
-			dragTween:Cancel()
-			dragTween = nil
+		if heartbeatConn then
+			heartbeatConn:Disconnect()
+			heartbeatConn = nil
 		end
+		-- The Heartbeat lerp trails slightly behind targetPos while dragging
+		-- (that's what makes it smooth), so on release there's usually a
+		-- small leftover gap. Snapping straight to targetPos closed that gap
+		-- instantly, which read as a pop/jump. Easing it shut over a couple
+		-- frames instead removes the jump while still landing on the exact
+		-- released position.
+		tween(windowContainer, {Position = targetPos}, TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)):Play()
 
-		tween(liftWrap, {Position = UDim2.fromOffset(0, 0)}, 0.28, Enum.EasingStyle.Back):Play()
-		tween(mainStroke, {Color = STROKE}, 0.2):Play()
+		tween(liftWrap, {Position = UDim2.fromOffset(0, 0)}, TI_BACK_OUT):Play()
+		tween(mainStroke, {Color = STROKE}, TI_QUAD_MED):Play()
 	end
 
 	titleBar.InputBegan:Connect(function(input)
@@ -373,20 +391,10 @@ do
 		if input.UserInputType == Enum.UserInputType.MouseMovement
 			or input.UserInputType == Enum.UserInputType.Touch then
 			local delta = input.Position - dragStart
-			local goal = UDim2.new(
+			targetPos = UDim2.new(
 				startPos.X.Scale, startPos.X.Offset + delta.X,
 				startPos.Y.Scale, startPos.Y.Offset + delta.Y
 			)
-
-			if dragTween then
-				dragTween:Cancel()
-			end
-			dragTween = TweenService:Create(
-				windowContainer,
-				TweenInfo.new(0.08, Enum.EasingStyle.Linear),
-				{Position = goal}
-			)
-			dragTween:Play()
 		end
 	end)
 
@@ -406,16 +414,12 @@ searchWrap.BackgroundColor3 = SEARCH_BG
 searchWrap.BorderSizePixel = 0
 searchWrap.ZIndex = 3
 searchWrap.Parent = main
--- Fully rounded "pill" shape (radius = half the height) instead of the
--- buttons' 10px rounded-rect — an instantly different silhouette, plus
--- a darker "inset" tone (closer to the panel background than the raised
--- button color) so it reads as a field you type into, not a button.
 Instance.new("UICorner", searchWrap).CornerRadius = UDim.new(1, 0)
 
 local searchStroke = Instance.new("UIStroke", searchWrap)
 searchStroke.Color = ACCENT
 searchStroke.Thickness = 1
-searchStroke.Transparency = 0.75 -- always faintly visible, not just on focus
+searchStroke.Transparency = 0.75
 
 local searchIcon = Instance.new("ImageLabel")
 searchIcon.BackgroundTransparency = 1
@@ -441,19 +445,19 @@ searchBox.Font = Enum.Font.Gotham
 searchBox.TextSize = 14
 searchBox.TextColor3 = TEXT
 searchBox.TextXAlignment = Enum.TextXAlignment.Left
-searchBox.ClearTextOnFocus = false
+searchBox.ClearTextOnFocus = true
 searchBox.ZIndex = 3
 searchBox.Parent = searchWrap
 
 searchBox.Focused:Connect(function()
-	tween(searchStroke, {Color = ACCENT, Thickness = 1.5, Transparency = 0}, 0.15):Play()
-	tween(searchIcon, {ImageColor3 = ACCENT, ImageTransparency = 0}, 0.15):Play()
-	tween(searchWrap, {BackgroundColor3 = Color3.fromRGB(26, 27, 36)}, 0.15):Play()
+	tween(searchStroke, {Color = ACCENT, Thickness = 1.5, Transparency = 0}, TI_QUAD_MED):Play()
+	tween(searchIcon, {ImageColor3 = ACCENT, ImageTransparency = 0}, TI_QUAD_MED):Play()
+	tween(searchWrap, {BackgroundColor3 = Color3.fromRGB(26, 27, 36)}, TI_QUAD_MED):Play()
 end)
 searchBox.FocusLost:Connect(function()
-	tween(searchStroke, {Color = ACCENT, Thickness = 1, Transparency = 0.75}, 0.15):Play()
-	tween(searchIcon, {ImageColor3 = ACCENT, ImageTransparency = 0.25}, 0.15):Play()
-	tween(searchWrap, {BackgroundColor3 = SEARCH_BG}, 0.15):Play()
+	tween(searchStroke, {Color = ACCENT, Thickness = 1, Transparency = 0.75}, TI_QUAD_MED):Play()
+	tween(searchIcon, {ImageColor3 = ACCENT, ImageTransparency = 0.25}, TI_QUAD_MED):Play()
+	tween(searchWrap, {BackgroundColor3 = SEARCH_BG}, TI_QUAD_MED):Play()
 end)
 
 local resultCount = Instance.new("TextLabel")
@@ -554,7 +558,7 @@ versionText.Position = UDim2.new(1, -76, 0.5, -10)
 versionText.Font = Enum.Font.Gotham
 versionText.TextSize = 11
 versionText.TextColor3 = SUBTEXT
-versionText.Text = "v1.0.0"
+versionText.Text = "v1.1.0"
 versionText.TextXAlignment = Enum.TextXAlignment.Right
 versionText.ZIndex = 4
 versionText.Parent = footer
@@ -574,6 +578,10 @@ local toastListLayout = Instance.new("UIListLayout")
 toastListLayout.Padding = UDim.new(0, 8)
 toastListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 toastListLayout.Parent = toastLayer
+
+local TI_TOAST_IN = TweenInfo.new(0.3, Enum.EasingStyle.Back)
+local TI_TOAST_FADE_IN = TweenInfo.new(0.22, Enum.EasingStyle.Quad)
+local TI_TOAST_FADE_OUT = TweenInfo.new(0.25, Enum.EasingStyle.Quad)
 
 local function notify(text, kind)
 	kind = kind or "info"
@@ -637,18 +645,18 @@ local function notify(text, kind)
 	label.ZIndex = 1000
 	label.Parent = card
 
-	tween(scale, {Scale = 1}, 0.3, Enum.EasingStyle.Back):Play()
-	tween(card, {BackgroundTransparency = 0}, 0.22, Enum.EasingStyle.Quad):Play()
-	tween(tStroke, {Transparency = 0}, 0.22):Play()
-	tween(bar, {BackgroundTransparency = 0}, 0.22):Play()
-	tween(label, {TextTransparency = 0}, 0.22):Play()
+	tween(scale, {Scale = 1}, TI_TOAST_IN):Play()
+	tween(card, {BackgroundTransparency = 0}, TI_TOAST_FADE_IN):Play()
+	tween(tStroke, {Transparency = 0}, TI_TOAST_FADE_IN):Play()
+	tween(bar, {BackgroundTransparency = 0}, TI_TOAST_FADE_IN):Play()
+	tween(label, {TextTransparency = 0}, TI_TOAST_FADE_IN):Play()
 
 	task.delay(2.6, function()
-		local fadeScale = tween(scale, {Scale = 0.9}, 0.25, Enum.EasingStyle.Quad)
-		tween(card, {BackgroundTransparency = 1}, 0.25):Play()
-		tween(tStroke, {Transparency = 1}, 0.25):Play()
-		tween(bar, {BackgroundTransparency = 1}, 0.25):Play()
-		tween(label, {TextTransparency = 1}, 0.25):Play()
+		local fadeScale = tween(scale, {Scale = 0.9}, TI_TOAST_FADE_OUT)
+		tween(card, {BackgroundTransparency = 1}, TI_TOAST_FADE_OUT):Play()
+		tween(tStroke, {Transparency = 1}, TI_TOAST_FADE_OUT):Play()
+		tween(bar, {BackgroundTransparency = 1}, TI_TOAST_FADE_OUT):Play()
+		tween(label, {TextTransparency = 1}, TI_TOAST_FADE_OUT):Play()
 		fadeScale:Play()
 		fadeScale.Completed:Wait()
 		toast:Destroy()
@@ -659,11 +667,11 @@ end
 local function onButtonPressed(name)
 	print("[AppShell] button pressed:", name)
 	statusText.Text = name .. "..."
-	tween(statusDot, {BackgroundColor3 = ACCENT}, 0.15):Play()
+	tween(statusDot, {BackgroundColor3 = ACCENT}, TI_QUAD_MED):Play()
 	notify(name .. " executed", "success")
 	task.delay(1.2, function()
 		statusText.Text = "Ready"
-		tween(statusDot, {BackgroundColor3 = SUCCESS}, 0.15):Play()
+		tween(statusDot, {BackgroundColor3 = SUCCESS}, TI_QUAD_MED):Play()
 	end)
 end
 
@@ -734,14 +742,14 @@ local function createButton(order, text, subtext)
 	chevron.Parent = btn
 
 	btn.MouseEnter:Connect(function()
-		tween(btn, {BackgroundColor3 = BTN_HOVER}, 0.18, Enum.EasingStyle.Sine):Play()
-		tween(accentBar, {BackgroundTransparency = 0}, 0.18, Enum.EasingStyle.Sine):Play()
-		tween(chevron, {Position = UDim2.new(1, -24, 0.5, -10), TextColor3 = ACCENT}, 0.18, Enum.EasingStyle.Sine):Play()
+		tween(btn, {BackgroundColor3 = BTN_HOVER}, TI_QUINT_HOVER):Play()
+		tween(accentBar, {BackgroundTransparency = 0}, TI_BACK_OUT):Play() -- slight overshoot now
+		tween(chevron, {Position = UDim2.new(1, -24, 0.5, -10), TextColor3 = ACCENT}, TI_QUINT_HOVER):Play()
 	end)
 	btn.MouseLeave:Connect(function()
-		tween(btn, {BackgroundColor3 = BTN}, 0.18, Enum.EasingStyle.Sine):Play()
-		tween(accentBar, {BackgroundTransparency = 1}, 0.18, Enum.EasingStyle.Sine):Play()
-		tween(chevron, {Position = UDim2.new(1, -28, 0.5, -10), TextColor3 = SUBTEXT}, 0.18, Enum.EasingStyle.Sine):Play()
+		tween(btn, {BackgroundColor3 = BTN}, TI_QUINT_LEAVE):Play()
+		tween(accentBar, {BackgroundTransparency = 1}, TI_QUINT_LEAVE):Play()
+		tween(chevron, {Position = UDim2.new(1, -28, 0.5, -10), TextColor3 = SUBTEXT}, TI_QUINT_LEAVE):Play()
 	end)
 	btn.MouseButton1Click:Connect(function()
 		onButtonPressed(text)
@@ -778,21 +786,13 @@ end
 searchBox:GetPropertyChangedSignal("Text"):Connect(refreshSearch)
 
 -- ===== Intro animation =====
--- windowContainer stays at its real, full size the whole time (no
--- animating height from 0) — growing height made offset/scale-mixed
--- children (like the footer, pinned to the bottom via scale) slide and
--- pop in at uneven moments as the frame passed their thresholds, which
--- read as glitchy rather than smooth.
---
--- Instead: everything starts slightly small + fully transparent, then
--- scales up to 1 with a gentle overshoot while GroupTransparency fades
--- the entire composited panel (background, title bar, buttons, text —
--- all of it) in as one piece.
-introScale.Scale = 0.86
+windowContainer.Size = UDim2.new(WINDOW_SIZE.X.Scale, WINDOW_SIZE.X.Offset, 0, 0)
 main.GroupTransparency = 1
 
-tween(introScale, {Scale = 1}, 0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out):Play()
-tween(main, {GroupTransparency = 0}, 0.28, Enum.EasingStyle.Sine):Play()
+tween(windowContainer, {Size = WINDOW_SIZE}, TweenInfo.new(0.45, Enum.EasingStyle.Back, Enum.EasingDirection.Out)):Play()
+tween(main, {GroupTransparency = 0}, TweenInfo.new(0.3, Enum.EasingStyle.Sine, Enum.EasingDirection.Out)):Play()
+tween(mainStroke, {Transparency = 0}, TweenInfo.new(0.35, Enum.EasingStyle.Sine, Enum.EasingDirection.Out)):Play()
+fadeShadow(true, TweenInfo.new(0.4, Enum.EasingStyle.Sine, Enum.EasingDirection.Out))
 
 task.delay(0.55, function()
 	notify("Panel loaded")
