@@ -452,7 +452,7 @@ local AimbotBox = AimbotTab:AddLeftGroupbox("Aimbot")
 AimbotBox:AddToggle("aimbot_enabled", {Text="Enabled",Default=false,Callback=function(v)Settings.Aimbot.Enabled=v end})
 AimbotBox:AddToggle("aimbot_teamcheck", {Text="Team Check",Default=true,Callback=function(v)Settings.Aimbot.TeamCheck=v end})
 AimbotBox:AddToggle("aimbot_vischeck", {Text="Visible Only",Default=false,Callback=function(v)Settings.Aimbot.VisCheck=v end})
-AimbotBox:AddSlider("aimbot_smoothness", {Text="Smoothness",Default=5,Min=1,Max=20,Rounding=0,Callback=function(v)Settings.Aimbot.Smoothness=v end})
+AimbotBox:AddSlider("aimbot_smoothness", {Text="Smoothness",Default=5,Min=1,Max=50,Rounding=0,Callback=function(v)Settings.Aimbot.Smoothness=v end})
 AimbotBox:AddSlider("aimbot_fov", {Text="FOV",Default=200,Min=50,Max=500,Rounding=0,Suffix="px",Callback=function(v)Settings.Aimbot.FOV=v end})
 AimbotBox:AddLabel("Aim Key:"):AddKeyPicker("aimbot_key",{Default="MB2",Mode="Hold",Text="Aim Key",Callback=function(v)end})
 
