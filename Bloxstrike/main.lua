@@ -20,8 +20,7 @@ local Settings = {
     Bunnyhop = { Enabled = false },
     NoRecoil = { Enabled = false },
     Ragebot = { Enabled = false },
-    Wallbang = { Enabled = false },
-    DeleteMap = { Enabled = false }
+    Wallbang = { Enabled = false }
 }
 
 -- ===== OPTIMIZED CACHE =====
@@ -30,6 +29,7 @@ local myTeam = nil
 local lastTeamCheck = 0
 local lastTargetScan = 0
 local lastESPUpdate = 0
+local lastMapCheck = 0
 local lastPlatformUpdate = 0
 local cachedTargets = {}
 local espCache = {}
@@ -41,14 +41,12 @@ local playerModule = nil
 local crouchOffset = 0
 local platform = nil
 local recoilData = {}
+local ragebotStarted = false
 local removedParts = {}
 local wasWallbanging = false
 local rageShotCount = 0
 local rageLastShot = 0
 local kicked = false
-local geometryBackup = nil
-local geometryDeleted = false
-local mapTrashDeleted = false
 
 -- Staff list
 local StaffList = {
@@ -338,63 +336,20 @@ local function UpdatePlatform()
     platform.CFrame = CFrame.new(hrp.Position - Vector3.new(0, 3.25 + crouchOffset, 0))
 end
 
--- ===== DELETE MAP TRASH (always deleted when ragebot/wallbang/deletemap is on, never restored) =====
-local trashFolders = {"Ambience", "Barriers", "DeathBarriers"}
-
-local function DeleteMapTrash()
-    if mapTrashDeleted then return end
+-- ===== DELETE MAP (every 5s only when ragebot on) =====
+local function DeleteMapFolders()
+    if not Settings.Ragebot.Enabled then return end
     local map = Workspace:FindFirstChild("Map")
     if not map then return end
-    for _, name in ipairs(trashFolders) do
-        local folder = map:FindFirstChild(name)
-        if folder then
-            pcall(function() folder:Destroy() end)
-        end
+    local names = {"Geometry", "DeathBarriers", "Barriers", "GeometryHellena"}
+    for i = 1, #names do
+        local f = map:FindFirstChild(names[i])
+        if f then f:Destroy() end
     end
-    mapTrashDeleted = true
+    ragebotStarted = true
 end
 
--- ===== DELETE/RESTORE MAP GEOMETRY ONLY =====
-local function DeleteGeometry()
-    if geometryDeleted then return end
-    local map = Workspace:FindFirstChild("Map")
-    if not map then return end
-    local geometry = map:FindFirstChild("Geometry")
-    if not geometry or not geometry.Parent then return end
-    
-    geometryBackup = {
-        Parent = geometry.Parent,
-        Clone = geometry:Clone()
-    }
-    geometry:Destroy()
-    geometryDeleted = true
-end
-
-local function RestoreGeometry()
-    if not geometryBackup or not geometryBackup.Clone then return end
-    if geometryBackup.Parent and geometryBackup.Parent:FindFirstChild("Geometry") then return end
-    
-    local clone = geometryBackup.Clone:Clone()
-    clone.Parent = geometryBackup.Parent
-    geometryBackup = nil
-    geometryDeleted = false
-end
-
--- ===== WALLBANG (only deletes parts inside Map.Geometry) =====
-local function IsPartInGeometry(part)
-    local map = Workspace:FindFirstChild("Map")
-    if not map then return false end
-    local geometry = map:FindFirstChild("Geometry")
-    if not geometry then return false end
-    
-    local current = part
-    while current do
-        if current == geometry then return true end
-        current = current.Parent
-    end
-    return false
-end
-
+-- ===== WALLBANG =====
 local function IsWallbangProtected(part)
     local current = part
     while current do
@@ -415,7 +370,7 @@ local function WallbangRemove()
     local result = Workspace:Raycast(origin, direction, rp)
     if result and result.Instance and result.Instance.Parent then
         local part = result.Instance
-        if IsPartInGeometry(part) and not IsWallbangProtected(part) and not removedParts[part] then
+        if not IsWallbangProtected(part) and not removedParts[part] then
             local clone = part:Clone()
             clone.Parent = nil
             removedParts[part] = {parent = part.Parent, clone = clone}
@@ -429,17 +384,6 @@ local function WallbangRestore()
         pcall(function() data.clone:Clone().Parent = data.parent end)
     end
     removedParts = {}
-end
-
--- ===== WALLBANG KEY CHECK =====
-local function IsWallbangKeyHeld()
-    local kv = Library.Options["wallbang_key"] and Library.Options["wallbang_key"].Value
-    if not kv or kv == "" then return UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) end
-    if kv == "MB1" then return UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) end
-    if kv == "MB2" then return UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) end
-    if kv == "MB3" then return UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton3) end
-    local kc = Enum.KeyCode[kv]
-    return kc and UIS:IsKeyDown(kc) or false
 end
 
 -- ===== NO RECOIL =====
@@ -524,11 +468,8 @@ end
 
 -- Rage
 local RageBox = RageTab:AddLeftGroupbox("Ragebot")
-RageBox:AddToggle("ragebot_enabled",{Text="Enable Ragebot",Default=false,Callback=function(v)Settings.Ragebot.Enabled=v;if v then DeleteMapTrash()else RestoreGeometry()end end})
-RageBox:AddToggle("wallbang_enabled",{Text="Enable Wallbang",Default=false,Callback=function(v)Settings.Wallbang.Enabled=v;if v then DeleteMapTrash()end end})
-RageBox:AddLabel("Wallbang Key:"):AddKeyPicker("wallbang_key",{Default="MB1",Mode="Hold",Text="Wallbang Key",Callback=function(v)end})
-RageBox:AddToggle("deletemap_enabled",{Text="Delete Map Geometry",Default=false,Callback=function(v)Settings.DeleteMap.Enabled=v;if v then DeleteMapTrash();DeleteGeometry()else RestoreGeometry()end end})
-RageBox:AddButton("Restore Geometry", function() RestoreGeometry(); Settings.DeleteMap.Enabled = false end)
+RageBox:AddToggle("ragebot_enabled",{Text="Enable Ragebot",Default=false,Callback=function(v)Settings.Ragebot.Enabled=v;if v then ragebotStarted=false;DeleteMapFolders()end end})
+RageBox:AddToggle("wallbang_enabled",{Text="Wallbang (Hold LMB)",Default=false,Callback=function(v)Settings.Wallbang.Enabled=v end})
 
 -- Visuals
 local VisualsBox = VisualsTab:AddLeftGroupbox("Visuals")
@@ -546,11 +487,6 @@ RunService.RenderStepped:Connect(function()
     
     UpdatePlatform()
     
-    -- Delete trash if any rage option is on
-    if Settings.Ragebot.Enabled or Settings.Wallbang.Enabled or Settings.DeleteMap.Enabled then
-        DeleteMapTrash()
-    end
-    
     if Settings.Aimbot.Enabled and IsAimKeyHeld() then RunAimbot() end
     
     if Settings.Ragebot.Enabled then
@@ -563,18 +499,17 @@ RunService.RenderStepped:Connect(function()
         elseif rageShotCount >= 3 and now - rageLastShot >= 0.3 then
             rageShotCount = 0
         end
+        if now - lastMapCheck >= 5 then
+            DeleteMapFolders()
+            lastMapCheck = now
+        end
     else
         rageShotCount = 0
-    end
-    
-    if Settings.DeleteMap.Enabled and not geometryDeleted then
-        DeleteGeometry()
-    elseif not Settings.DeleteMap.Enabled and geometryDeleted then
-        RestoreGeometry()
+        ragebotStarted = false
     end
     
     if Settings.Wallbang.Enabled then
-        if IsWallbangKeyHeld() then
+        if UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
             wasWallbanging = true
             WallbangRemove()
         else
