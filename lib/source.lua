@@ -5,7 +5,7 @@
 
     SETUP
     ─────────────────────────────
-    loadstring(game:HttpGet("https://pastebin.com/raw/9bQtwC3D"))()
+    loadstring(game:HttpGet("https://raw.githubusercontent.com/Volodym5/pfasdzxc231/main/lib/source.lua"))()
     local Library     = getgenv().Library
     local SaveManager = Library.SaveManager
 
